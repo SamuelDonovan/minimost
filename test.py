@@ -5,7 +5,13 @@ from flask import (
     Flask, request, jsonify, render_template_string,
     send_from_directory
 )
-from werkzeug.utils import secure_filename
+import os
+import re
+
+def secure_filename(name: str) -> str:
+    name = os.path.basename(name)
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+    return name[:255]
 
 app = Flask(__name__)
 
