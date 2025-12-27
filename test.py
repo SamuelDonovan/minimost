@@ -74,6 +74,8 @@ def create_user(username: str, password: str):
 
 # Demo users
 create_user("alice", "")
+create_user("devon", "")
+create_user("sam", "")
 create_user("bob", "")
 create_user("bob2", "hunter2")
 
@@ -233,6 +235,25 @@ a { color: #9cdcfe; }
 let channel = "general";
 let lastTs = 0;
 
+function updateDMPresence() {
+    fetch("/online_users")
+        .then(r => r.json())
+        .then(onlineUsers => {
+            const dmDivs = document.querySelectorAll("#sidebar div[data-channel^='dm:']");
+            dmDivs.forEach(d => {
+                const channelId = d.dataset.channel;
+                // extract the other username from dm_channel
+                const parts = channelId.split(":"); // ["dm", "alice", "bob"]
+                const user = parts[1] === "{{ session['user'] }}" ? parts[2] : parts[1];
+                const online = onlineUsers.includes(user);
+
+                // update text and color
+                d.innerText = "@ " + user + (online ? " ●" : " ○");
+                d.style.color = online ? "#6cf" : "#888";
+            });
+        });
+}
+
 function updateSidebarActive() {
     const divs = document.querySelectorAll("#sidebar div");
     divs.forEach(d => {
@@ -371,7 +392,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!channel) channel = "general";
     loadChannels();
     switchChannel(channel);
-    setInterval(fetchMessages, 1000); // polling
+    setInterval(() => {
+        updateDMPresence();
+        updateSidebarActive();
+    }, 10000);
+    setInterval(() => {
+        fetchMessages();
+    }, 500);
+
 });
 </script>
 </body>
