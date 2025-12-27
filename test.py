@@ -12,6 +12,20 @@ import secrets
 from flask import session, redirect, url_for
 
 
+def dm_channel(u1: str, u2: str) -> str:
+    a, b = sorted([u1, u2])
+    return f"dm:{a}:{b}"
+
+def is_dm(channel: str) -> bool:
+    return channel.startswith("dm:")
+
+def user_can_access(channel: str, user: str) -> bool:
+    if not is_dm(channel):
+        return True
+    _, u1, u2 = channel.split(":")
+    return user in (u1, u2)
+
+
 def secure_filename(name: str) -> str:
     name = os.path.basename(name)
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
@@ -49,6 +63,7 @@ def create_user(username: str, password: str):
 # Demo users
 create_user("alice", "password123")
 create_user("bob", "hunter2")
+create_user("", "")
 
 from functools import wraps
 
@@ -116,6 +131,17 @@ body {
     display: flex;
     height: 100vh;
 }
+#topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #2d2d2d;
+    padding: 6px 10px;
+    border-bottom: 1px solid #444;
+}
+#topbar input, #topbar button {
+    margin-left: 4px;
+}
 #sidebar {
     width: 200px;
     background: #252526;
@@ -165,10 +191,21 @@ a { color: #9cdcfe; }
 <div id="sidebar"></div>
 
 <div id="main">
-    <div style="padding: 6px">
-        User: <b>{{ session["user"] }}</b>
-<a href="/logout">logout</a>
-        Channel: <span id="chan"></span>
+    <div id="topbar">
+        <div>
+            User: <b>{{ session["user"] }}</b>
+            <a href="/logout">(logout)</a>
+        </div>
+
+        <div>
+            Channel: <span id="chan"></span>
+        </div>
+
+        <div>
+            DM:
+            <input id="dm_user" placeholder="username" style="width:90px">
+            <button onclick="startDM()">Go</button>
+        </div>
     </div>
 
     <div id="chat"></div>
@@ -185,24 +222,62 @@ let channel = "general";
 let lastTs = 0;
 
 function loadChannels() {
-    fetch("/channels").then(r=>r.json()).then(chs=>{
-        const sb = document.getElementById("sidebar");
-        sb.innerHTML = "";
-        chs.forEach(c=>{
-            const d = document.createElement("div");
-            d.innerText = "# " + c;
-            if (c === channel) d.className = "active";
-            d.onclick = ()=>switchChannel(c);
-            sb.appendChild(d);
+    const sb = document.getElementById("sidebar");
+    sb.innerHTML = "";
+
+    const chTitle = document.createElement("b");
+    chTitle.innerText = "Channels";
+    sb.appendChild(chTitle);
+
+    const dmTitle = document.createElement("b");
+    dmTitle.innerText = "Direct Messages";
+
+    Promise.all([fetch("/channels").then(r => r.json()),
+                 fetch("/dms").then(r => r.json())])
+        .then(([chs, dms]) => {
+
+            // Render channels
+            chs.forEach(c => {
+                const d = document.createElement("div");
+                d.innerText = "# " + c;
+                if (c === channel) d.className = "active";
+                d.onclick = () => switchChannel(c);
+                sb.appendChild(d);
+            });
+
+            // DM section
+            const hr = document.createElement("hr");
+            sb.appendChild(hr);
+            sb.appendChild(dmTitle);
+
+            dms.forEach(dm => {
+                const d = document.createElement("div");
+                d.innerText = "@ " + dm.user;
+                if (dm.channel === channel) d.className = "active";
+                d.onclick = () => switchChannel(dm.channel);
+                sb.appendChild(d);
+            });
         });
-    });
+}
+
+function startDM() {
+    const u = document.getElementById("dm_user").value.trim();
+    if (!u) return;
+    window.location = "/dm/" + encodeURIComponent(u);
+}
+
+function channelLabel(c) {
+    if (c.startsWith("dm:")) {
+        return "@ " + c.split(":").find(x => x !== "{{ session['user'] }}");
+    }
+    return "# " + c;
 }
 
 function switchChannel(c) {
     channel = c;
     lastTs = 0;
     document.getElementById("chat").innerHTML = "";
-    document.getElementById("chan").innerText = "#" + c;
+    document.getElementById("chan").innerText = channelLabel(c);
     loadChannels();
 }
 
@@ -265,9 +340,10 @@ function editMsg(id) {
     input.focus();
 }
 
-setInterval(fetchMessages, 1000);
-loadChannels();
-switchChannel("general");
+document.addEventListener("DOMContentLoaded", () => {
+    setInterval(fetchMessages, 1000); // polling
+    loadChannels();          // build the sidebar
+});
 </script>
 </body>
 </html>
@@ -306,18 +382,30 @@ def channels():
 @app.route("/messages/<channel>")
 @login_required
 def messages(channel):
+    user = session["user"]
+
+    if not user_can_access(channel, user):
+        return jsonify([]), 403
+
     since = float(request.args.get("since", 0))
-    return jsonify([m for m in CHANNELS[channel] if m["ts"] > since])
+    return jsonify([m for m in CHANNELS.get(channel, []) if m["ts"] > since])
 
 @app.route("/send/<channel>", methods=["POST"])
 @login_required
 def send(channel):
     user = session["user"]
+
+    if not user_can_access(channel, user):
+        return ("Forbidden", 403)
+
+    if channel not in CHANNELS:
+        CHANNELS[channel] = []
+
     text = request.form.get("text", "")
     file = request.files.get("file")
 
     fname = None
-    if file:
+    if file and file.filename:
         fname = f"{uuid.uuid4()}_{secure_filename(file.filename)}"
         file.save(os.path.join(UPLOAD_DIR, fname))
 
@@ -343,6 +431,34 @@ def edit(channel, mid):
             m["text"] = text
             break
     return ("", 204)
+
+@app.route("/dms")
+@login_required
+def dms():
+    user = session["user"]
+    result = []
+
+    for c in CHANNELS:
+        if is_dm(c):
+            _, u1, u2 = c.split(":")
+            if user in (u1, u2):
+                other = u2 if user == u1 else u1
+                result.append({"channel": c, "user": other})
+
+    return jsonify(result)
+
+@app.route("/dm/<other>")
+@login_required
+def start_dm(other):
+    user = session["user"]
+
+    if other not in USERS or other == user:
+        return redirect("/")
+
+    channel = dm_channel(user, other)
+    CHANNELS.setdefault(channel, [])
+
+    return redirect(f"/#/{channel}")
 
 @app.route("/files/<path:name>")
 @login_required
