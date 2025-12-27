@@ -11,6 +11,18 @@ import hashlib
 import secrets
 from flask import session, redirect, url_for
 
+# presence
+USER_STATUS = {}  # username -> last active timestamp
+ONLINE_TIMEOUT = 30  # seconds
+
+from time import time
+
+def is_online(user: str) -> bool:
+    last = USER_STATUS.get(user)
+    if not last:
+        return False
+    return time() - last < ONLINE_TIMEOUT
+
 
 def dm_channel(u1: str, u2: str) -> str:
     a, b = sorted([u1, u2])
@@ -61,9 +73,9 @@ def create_user(username: str, password: str):
     }
 
 # Demo users
-create_user("alice", "password123")
-create_user("bob", "hunter2")
-create_user("", "")
+create_user("alice", "")
+create_user("bob", "")
+create_user("bob2", "hunter2")
 
 from functools import wraps
 
@@ -221,6 +233,16 @@ a { color: #9cdcfe; }
 let channel = "general";
 let lastTs = 0;
 
+function updateSidebarActive() {
+    const divs = document.querySelectorAll("#sidebar div");
+    divs.forEach(d => {
+        d.classList.remove("active");
+        if (d.dataset.channel === channel) {
+            d.classList.add("active");
+        }
+    });
+}
+
 function loadChannels() {
     const sb = document.getElementById("sidebar");
     sb.innerHTML = "";
@@ -232,32 +254,37 @@ function loadChannels() {
     const dmTitle = document.createElement("b");
     dmTitle.innerText = "Direct Messages";
 
-    Promise.all([fetch("/channels").then(r => r.json()),
-                 fetch("/dms").then(r => r.json())])
-        .then(([chs, dms]) => {
-
-            // Render channels
-            chs.forEach(c => {
-                const d = document.createElement("div");
-                d.innerText = "# " + c;
-                if (c === channel) d.className = "active";
-                d.onclick = () => switchChannel(c);
-                sb.appendChild(d);
-            });
-
-            // DM section
-            const hr = document.createElement("hr");
-            sb.appendChild(hr);
-            sb.appendChild(dmTitle);
-
-            dms.forEach(dm => {
-                const d = document.createElement("div");
-                d.innerText = "@ " + dm.user;
-                if (dm.channel === channel) d.className = "active";
-                d.onclick = () => switchChannel(dm.channel);
-                sb.appendChild(d);
-            });
+    Promise.all([
+        fetch("/channels").then(r => r.json()),
+        fetch("/dms").then(r => r.json()),
+        fetch("/online_users").then(r => r.json())
+    ]).then(([chs, dms, onlineUsers]) => {
+        // Render normal channels
+        chs.forEach(c => {
+            const d = document.createElement("div");
+            d.innerText = "# " + c;
+            d.dataset.channel = c;
+            d.className = (c === channel) ? "active" : "";
+            d.onclick = () => switchChannel(c);
+            sb.appendChild(d);
         });
+
+        // DM section
+        const hr = document.createElement("hr");
+        sb.appendChild(hr);
+        sb.appendChild(dmTitle);
+
+        dms.forEach(dm => {
+            const d = document.createElement("div");
+            const online = onlineUsers.includes(dm.user);
+            d.innerText = "@ " + dm.user + (online ? " ●" : " ○");
+            d.style.color = online ? "#6cf" : "#888";
+            d.dataset.channel = dm.channel;
+            d.className = (dm.channel === channel) ? "active" : "";
+            d.onclick = () => switchChannel(dm.channel);
+            sb.appendChild(d);
+        });
+    });
 }
 
 function startDM() {
@@ -278,14 +305,14 @@ function switchChannel(c) {
     lastTs = 0;
     document.getElementById("chat").innerHTML = "";
     document.getElementById("chan").innerText = channelLabel(c);
-    loadChannels();
+    fetchMessages();
+    updateSidebarActive()
 }
 
 function fetchMessages() {
     fetch(`/messages/${channel}?since=${lastTs}`)
         .then(r=>r.json())
         .then(data=>{
-            console.log("DEBUG: fetched messages:", data);
             const chat = document.getElementById("chat");
             data.forEach(m=>{
                 const d = document.createElement("div");
@@ -341,8 +368,10 @@ function editMsg(id) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    if (!channel) channel = "general";
+    loadChannels();
+    switchChannel(channel);
     setInterval(fetchMessages, 1000); // polling
-    loadChannels();          // build the sidebar
 });
 </script>
 </body>
@@ -379,10 +408,16 @@ def index():
 def channels():
     return jsonify(list(CHANNELS.keys()))
 
+@app.route("/online_users")
+@login_required
+def online_users():
+    return jsonify([u for u in USERS if is_online(u)])
+
 @app.route("/messages/<channel>")
 @login_required
 def messages(channel):
     user = session["user"]
+    USER_STATUS[session['user']] = time()
 
     if not user_can_access(channel, user):
         return jsonify([]), 403
@@ -436,6 +471,7 @@ def edit(channel, mid):
 @login_required
 def dms():
     user = session["user"]
+    seen = set()
     result = []
 
     for c in CHANNELS:
@@ -443,7 +479,9 @@ def dms():
             _, u1, u2 = c.split(":")
             if user in (u1, u2):
                 other = u2 if user == u1 else u1
-                result.append({"channel": c, "user": other})
+                if other not in seen:
+                    result.append({"channel": c, "user": other})
+                    seen.add(other)
 
     return jsonify(result)
 
