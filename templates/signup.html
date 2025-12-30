@@ -1,0 +1,31 @@
+<!doctype html>
+<title>Sign Up</title>
+<style>
+body { font-family: sans-serif; background:#1e1e1e; color:#ddd; }
+form { margin: 100px auto; width: 300px; }
+input, button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 6px;
+    background:#2d2d2d;
+    color:#ddd;
+    border:1px solid #444;
+}
+</style>
+
+<h2>Create Account</h2>
+
+{% if error %}
+<p style="color:red">{{ error }}</p>
+{% endif %}
+
+<form method="post">
+    <input name="username" placeholder="Username" required><br>
+    <input name="password" type="password" placeholder="Password" required><br>
+    <button type="submit">Sign up</button>
+</form>
+
+<p>
+    Already have an account?
+    <a href="/login">Login</a>
+</p>
