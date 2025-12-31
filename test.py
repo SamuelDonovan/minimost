@@ -1,16 +1,18 @@
+# From the python standard library
 from time import time
 import socket 
-from flask import (
-    request, jsonify, render_template, send_from_directory
-)
+import sqlite3
 import os
 import re
-from flask import session, redirect
-from time import time
-import sqlite3
 
+# From Flask 
+from flask import (
+    request, jsonify, render_template, send_from_directory, session, redirect
+)
+
+# Local Imports
 import common
-import login 
+import auth 
 
 # presence
 USER_STATUS = {}  # username -> last active timestamp
@@ -118,8 +120,6 @@ def messages(channel):
 
     USER_STATUS[user] = time()
     return jsonify(rows)
-
-from time import time
 
 @common.app.route("/send/<channel>", methods=["POST"])
 @common.login_required
