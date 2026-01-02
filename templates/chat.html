@@ -158,7 +158,6 @@ function updateSidebarActive() {
         "#sidebar-dynamic [data-channel]"
     );
 
-    if (!el.dataset.channel) return;
     items.forEach(el => {
         if (el.dataset.channel === channel) {
             el.classList.add("active");
