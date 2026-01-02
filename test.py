@@ -82,9 +82,9 @@ def dms():
 
 # Presence endpoint
 @common.app.route("/online_users")
-@common.login_required
 def online_users():
-    return jsonify([u for u in all_users() if is_online(u)])
+    now = time()
+    return jsonify([u for u, ts in USER_STATUS.items() if now - ts < 60])
 
 # Fetch messages
 @common.app.route("/messages/<channel>")

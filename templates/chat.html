@@ -124,6 +124,24 @@ function loadSidebar() {
     });
 }
 
+function refreshPresence() {
+    fetch("/online_users")
+        .then(r => r.json())
+        .then(online => {
+            document.querySelectorAll("#sidebar-dynamic [data-channel^='dm:']").forEach(el => {
+                const users = el.dataset.channel.split(":").slice(1).filter(u => u !== CURRENT_USER);
+                const isOnline = users.some(u => online.includes(u));
+
+                // Rebuild label with dot
+                const baseLabel = "@ " + users.join(", ");
+                el.textContent = baseLabel + (isOnline ? " ●" : " ○");
+
+                // Optional: keep color consistent
+                el.style.color = isOnline ? "#6cf" : "#888";
+            });
+        });
+}
+
 function sidebarEntry(label, channelName, online = []) {
     const sb = document.getElementById("sidebar-dynamic");
 
@@ -279,7 +297,12 @@ document.getElementById("dm-start").onclick = () => {
 document.addEventListener("DOMContentLoaded", () => {
     loadSidebar();
     switchChannel(channel);
+    setInterval(() => {
+        fetch("/heartbeat", { method: "POST" });
+    }, 10000);
     setInterval(fetchMessages, 500);
+    setInterval(refreshPresence, 10000);
+
 });
 
 </script>
