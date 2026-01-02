@@ -13,6 +13,7 @@ The Mattermost at home:
 The two hardest problems in computer science are:
 1. ~~Cache invalidation~~
 2. ~~naming things~~
+
 1. Communication
 2. Convincing others its communication
 
@@ -55,6 +56,7 @@ To launch the server all that is needed is python3 and flask. That's it. For the
 - [ ] Autocomplete username for new DMs 
 - [ ] Clickable URLs 
 - [ ] Bold/Underline/Italic modifiers
+- [ ] Typing indicators
 
 ## Real FAQ
 
