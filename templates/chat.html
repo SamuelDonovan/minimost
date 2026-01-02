@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -7,7 +7,19 @@
 </head>
 <body>
 
-<div id="sidebar"></div>
+<!-- expose current user to JS -->
+<script>
+    const CURRENT_USER = "{{ session['user'] }}";
+</script>
+
+<div id="sidebar">
+    <div id="sidebar-static">
+        <button id="new-dm-btn">+ New DM</button>
+        <hr>
+    </div>
+
+    <div id="sidebar-dynamic"></div>
+</div>
 
 <div id="main">
     <div id="topbar">
@@ -19,145 +31,162 @@
         <div>
             Channel: <span id="chan"></span>
         </div>
-
-        <div>
-            DM:
-            <input id="dm_user" placeholder="username" style="width:90px">
-            <button onclick="startDM()">Go</button>
-        </div>
     </div>
 
     <div id="chat"></div>
 
     <div id="input">
-        <input id="msg" style="width:60%">
-        <input type="file" id="file">
+        <!-- textarea allows Enter / Shift+Enter -->
+        <textarea
+            id="msg"
+            rows="3"
+            placeholder="Type a message…"
+            style="width:60%"
+        ></textarea>
+
         <button onclick="send()">Send</button>
     </div>
 </div>
 
+<!-- DM Modal -->
+<div id="dm-modal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Start Direct Message</h3>
+
+        <input
+            id="dm-users"
+            placeholder="Enter usernames (comma separated)"
+        />
+
+        <div class="modal-actions">
+            <button id="dm-start">Start</button>
+            <button id="dm-cancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- keyboard handling -->
 <script>
+document.getElementById("msg").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+    }
+});
+
+// Core state
 let channel = "general";
 let lastTs = 0;
+let unread = new Set();
+const seen = new Set();
 
-function updateDMPresence() {
-    fetch("/online_users")
-        .then(r => r.json())
-        .then(onlineUsers => {
-            const dmDivs = document.querySelectorAll("#sidebar div[data-channel^='dm:']");
-            dmDivs.forEach(d => {
-                const channelId = d.dataset.channel;
-                // extract the other username from dm_channel
-                const parts = channelId.split(":"); // ["dm", "alice", "bob"]
-                const user = parts[1] === "{{ session['user'] }}" ? parts[2] : parts[1];
-                const online = onlineUsers.includes(user);
-
-                // update text and color
-                d.innerText = "@ " + user + (online ? " ●" : " ○");
-                d.style.color = online ? "#6cf" : "#888";
-            });
-        });
+// User color
+function userColor(name) {
+    let h = 0;
+    for (let c of name) h = c.charCodeAt(0) + ((h << 5) - h);
+    return `hsl(${Math.abs(h) % 360}, 65%, 55%)`;
 }
 
-function updateSidebarActive() {
-    const divs = document.querySelectorAll("#sidebar div");
-    divs.forEach(d => {
-        d.classList.remove("active");
-        if (d.dataset.channel === channel) {
-            d.classList.add("active");
-        }
-    });
-}
-
-function loadChannels() {
-    const sb = document.getElementById("sidebar");
+// Sidebar loading
+function loadSidebar() {
+    const sb = document.getElementById("sidebar-dynamic");
     sb.innerHTML = "";
-
-    const chTitle = document.createElement("b");
-    chTitle.innerText = "Channels";
-    sb.appendChild(chTitle);
-
-    const dmTitle = document.createElement("b");
-    dmTitle.innerText = "Direct Messages";
 
     Promise.all([
         fetch("/channels").then(r => r.json()),
         fetch("/dms").then(r => r.json()),
         fetch("/online_users").then(r => r.json())
-    ]).then(([chs, dms, onlineUsers]) => {
-        // Render normal channels
+    ]).then(([chs, dms, online]) => {
+
+        // Channels
+        const chTitle = document.createElement("b");
+        chTitle.innerText = "Channels";
+        sb.appendChild(chTitle);
+
         chs.forEach(c => {
-            const d = document.createElement("div");
-            d.innerText = "# " + c;
-            d.dataset.channel = c;
-            d.className = (c === channel) ? "active" : "";
-            d.onclick = () => switchChannel(c);
-            sb.appendChild(d);
+            sidebarEntry("# " + c, c);
         });
 
-        // DM section
-        const hr = document.createElement("hr");
-        sb.appendChild(hr);
+        sb.appendChild(document.createElement("hr"));
+
+        // DMs
+        const dmTitle = document.createElement("b");
+        dmTitle.innerText = "Direct Messages";
         sb.appendChild(dmTitle);
 
         dms.forEach(dm => {
-            const d = document.createElement("div");
-            const online = onlineUsers.includes(dm.user);
-            d.innerText = "@ " + dm.user + (online ? " ●" : " ○");
-            d.style.color = online ? "#6cf" : "#888";
-            d.dataset.channel = dm.channel;
-            d.className = (dm.channel === channel) ? "active" : "";
-            d.onclick = () => switchChannel(dm.channel);
-            sb.appendChild(d);
+            const label = "@ " + dm.users.join(", ");
+            sidebarEntry(label, dm.channel, online);
         });
+
+        // 🔑 ensure highlight is correct after rebuild
+        updateSidebarActive();
     });
 }
 
-function startDM() {
-    const u = document.getElementById("dm_user").value.trim();
-    if (!u) return;
-    window.location = "/dm/" + encodeURIComponent(u);
+function sidebarEntry(label, channelName, online = []) {
+    const sb = document.getElementById("sidebar-dynamic");
+
+    const d = document.createElement("div");
+
+    // 🔑 REQUIRED for highlighting
+    d.className = "sidebar-item";
+    d.dataset.channel = channelName;
+
+    // Optional presence indicator for DMs
+    if (channelName.startsWith("dm:")) {
+        const users = channelName
+            .split(":")
+            .slice(1)
+            .filter(u => u !== CURRENT_USER);
+
+        const isOnline = users.some(u => online.includes(u));
+        d.textContent = label + (isOnline ? " ●" : " ○");
+        d.style.color = isOnline ? "#6cf" : "#888";
+    } else {
+        d.textContent = label;
+    }
+
+    d.onclick = () => switchChannel(channelName);
+
+    sb.appendChild(d);
 }
 
-function channelLabel(c) {
-    if (c.startsWith("dm:")) {
-        return "@ " + c.split(":").find(x => x !== "{{ session['user'] }}");
-    }
-    return "# " + c;
+// Switch Channel
+function updateSidebarActive() {
+    const items = document.querySelectorAll(
+        "#sidebar-dynamic [data-channel]"
+    );
+
+    if (!el.dataset.channel) return;
+    items.forEach(el => {
+        if (el.dataset.channel === channel) {
+            el.classList.add("active");
+        } else {
+            el.classList.remove("active");
+        }
+    });
 }
 
 function switchChannel(c) {
+    if (channel == c) return;
     channel = c;
     lastTs = 0;
+    seen.clear();
     document.getElementById("chat").innerHTML = "";
-    document.getElementById("chan").innerText = channelLabel(c);
+    document.getElementById("chan").innerText = c;
     fetchMessages();
-    updateSidebarActive()
+    updateSidebarActive();
 }
 
-function userColor(name) {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-
-    const hue = Math.abs(hash) % 360;
-    return `hsl(${hue}, 65%, 55%)`;
-}
-
-const seen = new Set();
-
+// Fetch Messages
 function fetchMessages() {
-    fetch(`/messages/${channel}?since=${lastTs}`)
+    fetch(`/messages/${channel}?after=${lastTs}`)
         .then(r => r.json())
         .then(data => {
             const chat = document.getElementById("chat");
 
             data.forEach(m => {
-                const key = `${m.sender}:${m.ts}`;
-                if (seen.has(key)) return;
-                seen.add(key);
-
                 const d = document.createElement("div");
                 d.className = "msg";
 
@@ -166,9 +195,7 @@ function fetchMessages() {
 
                 d.innerHTML = `
                     <span class="time">[${time}]</span>
-                    <span class="user" style="color:${color}">
-                        ${m.sender}
-                    </span>:
+                    <span class="user" style="color:${color}">${m.sender}</span>:
                     <span class="text">${m.content}</span>
                 `;
 
@@ -176,61 +203,86 @@ function fetchMessages() {
                 lastTs = Math.max(lastTs, m.ts);
             });
 
-            if (data.length > 0) {
+            if (data.length) {
                 chat.scrollTop = chat.scrollHeight;
             }
         });
 }
 
-function send() {
-    const text = document.getElementById("msg").value;
-    const file = document.getElementById("file").files[0];
-
-    if (!text && !file) return; // prevent empty sends
-
-    const form = new FormData();
-    form.append("text", text);
-    if (file) form.append("file", file);
-
-    fetch(`/send/${channel}`, {method:"POST", body: form});
-
-    document.getElementById("msg").value = "";
-    document.getElementById("file").value = "";
+// Edit message
+function editMsg(id, text) {
+    fetch(`/edit/${id}`, {
+        method: "POST",
+        body: new URLSearchParams({text})
+    });
 }
 
-function editMsg(id) {
-    const span = document.getElementById("text-" + id);
-    const old = span.innerText;
-    const input = document.createElement("input");
-    input.value = old;
-    input.onblur = ()=>{
-        fetch(`/edit/${channel}/${id}`, {
-            method:"POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({text: input.value})
-        });
-        span.innerText = input.value;
-        span.style.display = "inline";
-        input.remove();
-    };
-    span.style.display = "none";
-    span.parentNode.insertBefore(input, span);
-    input.focus();
-}
+// Send messages
+const msgBox = document.getElementById("msg");
 
-document.addEventListener("DOMContentLoaded", () => {
-    if (!channel) channel = "general";
-    loadChannels();
-    switchChannel(channel);
-    setInterval(() => {
-        updateDMPresence();
-        updateSidebarActive();
-    }, 10000);
-    setInterval(() => {
-        fetchMessages();
-    }, 500);
-
+msgBox.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+    }
 });
+
+function send() {
+    const text = msgBox.value.trim();
+    if (!text) return;
+
+    fetch(`/send/${channel}`, {
+        method: "POST",
+        body: new URLSearchParams({text})
+    });
+
+    msgBox.value = "";
+}
+
+// Direct Messages
+const dmModal = document.getElementById("dm-modal");
+
+document.getElementById("new-dm-btn").onclick = () => {
+    dmModal.classList.remove("hidden");
+};
+
+document.getElementById("dm-cancel").onclick = () => {
+    dmModal.classList.add("hidden");
+};
+
+document.getElementById("dm-start").onclick = () => {
+    const raw = document.getElementById("dm-users").value.trim();
+    if (!raw) return;
+
+    const users = raw
+        .split(",")
+        .map(u => u.trim())
+        .filter(Boolean);
+
+    if (!users.length) return;
+
+    // Always include yourself
+    if (!users.includes(CURRENT_USER)) {
+        users.push(CURRENT_USER);
+    }
+
+    users.sort(); // IMPORTANT: consistent channel naming
+
+    const dmChannel = "dm:" + users.join(":");
+
+    dmModal.classList.add("hidden");
+    document.getElementById("dm-users").value = "";
+
+    switchChannel(dmChannel);
+};
+
+// Starup
+document.addEventListener("DOMContentLoaded", () => {
+    loadSidebar();
+    switchChannel(channel);
+    setInterval(fetchMessages, 500);
+});
+
 </script>
 </body>
 </html>

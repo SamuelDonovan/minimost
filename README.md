@@ -17,14 +17,14 @@ Is it not Skype?
 ## Features
 
 - [x] Channels
-- [x] Editables messages
+- [ ] Editables messages
 - [x] Separate users
-- [x] User presence
-- [ ] Peristant messages
+- [ ] User presence
+- [x] Peristant messages
 - [ ] Message search
 - [x] File uploads
 - [ ] Picture previews
-- [ ] User sign up
+- [x] User sign up
 - [x] Direct messages
-- [ ] Group messages
+- [x] Group messages
 - [ ] Password protected database

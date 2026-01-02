@@ -29,6 +29,9 @@ body {
 #sidebar div.active {
     background: #007acc;
 }
+#sidebar-dynamic div.active {
+    background: #007acc;
+}
 #main {
     flex: 1;
     display: flex;
@@ -56,6 +59,26 @@ body {
 
 .text {
     white-space: pre-wrap;
+}
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    background: #2b2b2b;
+    padding: 16px;
+    border-radius: 6px;
+    width: 300px;
 }
 button, input {
     background: #2d2d2d;
