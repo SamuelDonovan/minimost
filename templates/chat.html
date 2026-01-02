@@ -272,11 +272,12 @@ function send() {
 const dmModal = document.getElementById("dm-modal");
 
 document.getElementById("new-dm-btn").onclick = () => {
-    dmModal.classList.remove("hidden");
+    dmModal.style.display = "block";
+    dm-users.focus();
 };
 
 document.getElementById("dm-cancel").onclick = () => {
-    dmModal.classList.add("hidden");
+    dmModal.style.display = "none";
 };
 
 document.getElementById("dm-start").onclick = () => {
@@ -324,6 +325,7 @@ document.getElementById("msg-search-close").onclick = () => {
 // Close modal on outside click
 window.onclick = e => {
     if (e.target === searchModal) searchModal.style.display = "none";
+    if (e.target === dmModal) dmModal.style.display = "none";
 };
 
 // debounce helper
