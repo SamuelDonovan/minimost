@@ -80,7 +80,7 @@ body {
     border-radius: 6px;
     width: 300px;
 }
-button, input {
+button, input, textarea{
     background: #2d2d2d;
     color: #ddd;
     border: 1px solid #444;
