@@ -132,6 +132,32 @@ def send(channel):
     USER_STATUS[sender] = ts
     return "ok"
 
+# Search messages
+@common.app.route("/search_messages")
+@common.login_required
+def search_messages():
+    user = session["user"]
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify([])
+
+    db = get_db(user)
+
+    # Search in all messages (limit results for performance)
+    cur = db.execute(
+        """
+        SELECT id, channel, sender, content, ts
+        FROM messages
+        WHERE content LIKE ?
+        ORDER BY ts DESC
+        LIMIT 50
+        """,
+        (f"%{query}%",)
+    )
+    results = [dict(r) for r in cur.fetchall()]
+    db.close()
+    return jsonify(results)
+
 # Edit message
 @common.app.route("/edit/<int:msg_id>", methods=["POST"])
 @common.login_required

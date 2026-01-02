@@ -28,6 +28,8 @@
             <a href="/logout">(logout)</a>
         </div>
 
+        <button id="msg-search-btn">Search Messages</button>
+
         <div>
             Channel: <span id="chan"></span>
         </div>
@@ -62,6 +64,15 @@
             <button id="dm-start">Start</button>
             <button id="dm-cancel">Cancel</button>
         </div>
+    </div>
+</div>
+
+<!-- Search Modal -->
+<div id="msg-search-modal" class="modal">
+    <div class="modal-content">
+        <input type="text" id="msg-search-input" placeholder="Search messages…">
+        <div id="msg-search-results"></div>
+        <button id="msg-search-close">Close</button>
     </div>
 </div>
 
@@ -215,6 +226,7 @@ function fetchMessages() {
                     <span class="user" style="color:${color}">${m.sender}</span>:
                     <span class="text">${m.content}</span>
                 `;
+                d.id = `msg-${m.id}`;
 
                 chat.appendChild(d);
                 lastTs = Math.max(lastTs, m.ts);
@@ -292,6 +304,70 @@ document.getElementById("dm-start").onclick = () => {
 
     switchChannel(dmChannel);
 };
+
+// Message search
+const searchModal = document.getElementById("msg-search-modal");
+const searchInput = document.getElementById("msg-search-input");
+const searchResults = document.getElementById("msg-search-results");
+
+document.getElementById("msg-search-btn").onclick = () => {
+    searchModal.style.display = "block";
+    searchInput.value = "";
+    searchResults.innerHTML = "";
+    searchInput.focus();
+};
+
+document.getElementById("msg-search-close").onclick = () => {
+    searchModal.style.display = "none";
+};
+
+// Close modal on outside click
+window.onclick = e => {
+    if (e.target === searchModal) searchModal.style.display = "none";
+};
+
+// debounce helper
+function debounce(func, wait = 200) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+// Live search
+searchInput.addEventListener("input", debounce(() => {
+    const q = searchInput.value.trim();
+    if (!q) {
+        searchResults.innerHTML = "";
+        return;
+    }
+
+    fetch(`/search_messages?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+            searchResults.innerHTML = "";
+
+            data.forEach(msg => {
+                const d = document.createElement("div");
+                const time = new Date(msg.ts*1000).toLocaleTimeString();
+                d.innerHTML = `[${time}] <b>${msg.sender}</b>: ${msg.content}`;
+                d.onclick = () => {
+                    searchModal.style.display = "none";
+
+                    // switch to the message's channel
+                    switchChannel(msg.channel);
+
+                    // scroll to the message once loaded
+                    setTimeout(() => {
+                        const el = document.getElementById(`msg-${msg.id}`);
+                        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }, 200); // delay to ensure messages have loaded
+                };
+                searchResults.appendChild(d);
+            });
+        });
+}, 250));
 
 // Starup
 document.addEventListener("DOMContentLoaded", () => {
