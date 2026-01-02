@@ -11,9 +11,10 @@ The Mattermost at home:
 # MiniMost
 
 The two hardest problems in computer science are:
-~~1. Cache invalidation~~
 
-~~2. Naming things~~
+emsp;~~1. Cache invalidation~~
+
+emsp;~~2. Naming things~~
 
 1. Communication
 2. Convincing others its communication
