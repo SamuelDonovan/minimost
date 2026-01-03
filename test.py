@@ -196,16 +196,6 @@ def users():
 def index():
     return render_template("chat.html")
 
-@common.app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(os.path.join(common.app.root_path, 'static'),
-                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
-
-@common.app.route('/site.webmanifest')
-def manifest():
-    return send_from_directory(os.path.join(common.app.root_path, 'static'),
-                               'site.webmanifest', mimetype='application/manifest+json')
-
 if __name__ == "__main__":
     common.app.run(host="0.0.0.0", port=6767, debug=True)
 
