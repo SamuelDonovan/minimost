@@ -4,9 +4,9 @@ Mom: We have Mattermost at home.
 
 The Mattermost at home:
 
-![Skype Logo](./docs/skype.png)
+![Skype Logo](./imgs/skype.png)
 
-![Smurf Fine](./docs/smurf.png)
+![Smurf Fine](./imgs/smurf.png)
 
 # MiniMost
 
@@ -54,13 +54,19 @@ To launch the server all that is needed is python3 and flask. That's it. For the
 - [x] Group messages
 - [ ] Password protected database
 - [ ] Password reset 
+- [x] Read protected databases 
 - [ ] Sort users by most recently messaged 
 - [ ] Autocomplete username for new DMs 
 - [ ] Clickable URLs 
 - [ ] Bold/Underline/Italic modifiers
 - [ ] Typing indicators
+- [ ] New message indicators
 
 ## Real FAQ
+
+Are my messages secure?
+
+> There is no end to end encryption for messages. Each user gets their own sqlite database to prevent intermixing of messages. These databases are files on the file system and are not encrypted but are not read accessible to all users. There is an additional auth database which stores all users usernames and a sha256 hash of their passwords meaning no passwords are stored plain text.This does mean without a password reset mechanism that any user who forgets their password wouldn't be able to get back into their account.
 
 This is great, but could it also have feature x?
 

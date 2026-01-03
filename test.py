@@ -7,7 +7,7 @@ import re
 
 # From Flask 
 from flask import (
-    request, jsonify, render_template, send_from_directory, session, redirect
+    request, jsonify, render_template, send_from_directory, session, redirect, send_from_directory, current_app
 )
 
 # Local Imports
@@ -183,11 +183,29 @@ def edit(msg_id):
     db.close()
     return "ok"
 
+@common.app.route("/users")
+@common.login_required
+def users():
+    """Return all usernames except the current user"""
+    me = session["user"]
+    users = [u for u in all_users() if u != me]
+    return jsonify(users)
+
 @common.app.route("/")
 @common.login_required
 def index():
     return render_template("chat.html")
 
+@common.app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(common.app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
+@common.app.route('/site.webmanifest')
+def manifest():
+    return send_from_directory(os.path.join(common.app.root_path, 'static'),
+                               'site.webmanifest', mimetype='application/manifest+json')
+
 if __name__ == "__main__":
-    common.app.run(host=socket.gethostname(), port=6767, debug=True)
+    common.app.run(host="0.0.0.0", port=6767, debug=True)
 
