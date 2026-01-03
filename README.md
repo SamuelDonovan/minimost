@@ -57,7 +57,7 @@ To launch the server all that is needed is python3 and flask. That's it. For the
 - [x] Read protected databases 
 - [ ] Sort users by most recently messaged 
 - [ ] Autocomplete username for new DMs 
-- [ ] Clickable URLs 
+- [x] Clickable URLs 
 - [ ] Bold/Underline/Italic modifiers
 - [ ] Typing indicators
 - [ ] New message indicators
