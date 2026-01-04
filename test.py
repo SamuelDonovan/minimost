@@ -4,10 +4,11 @@ import socket
 import sqlite3
 import os
 import re
+import uuid 
 
 # From Flask 
 from flask import (
-    request, jsonify, render_template, send_from_directory, session, redirect, send_from_directory, current_app
+    request, jsonify, render_template, send_from_directory, session, redirect
 )
 
 # Local Imports
@@ -18,6 +19,9 @@ import auth
 # presence
 USER_STATUS = {}  # username -> last active timestamp
 ONLINE_WINDOW = 30  # seconds
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 def now():
     return time()
@@ -95,7 +99,7 @@ def messages(channel):
 
     db = get_db(user)
     rows = db.execute("""
-        SELECT id, channel, sender, content, ts
+        SELECT id, channel, sender, content, filename, ts
         FROM messages
         WHERE channel = ? AND ts > ?
         ORDER BY ts
@@ -111,7 +115,22 @@ def messages(channel):
 def send(channel):
     sender = session["user"]
     text = (request.form.get("text") or "").rstrip()
-    if not text:
+
+    file = request.files.get("file")
+    filename = None
+
+    # 📌 HANDLE FILE (paste OR upload)
+    if file:
+        ext = os.path.splitext(file.filename)[1]
+        if not ext:
+            ext = ".png"  # clipboard images often lack extension
+
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        file.save(filepath)
+
+    # prevent empty messages
+    if not text and not filename:
         return "empty", 400
 
     ts = now()
@@ -119,18 +138,26 @@ def send(channel):
     if sender not in recipients:
         recipients.append(sender)
 
+    if not recipients:
+        return "no recipients", 400
+
     for r in recipients:
         common.init_user_db(r)
         db = get_db(r)
         db.execute("""
-            INSERT INTO messages (channel, sender, content, ts)
-            VALUES (?, ?, ?, ?)
-        """, (channel, sender, text, ts))
+            INSERT INTO messages (channel, sender, content, filename, ts)
+            VALUES (?, ?, ?, ?, ?)
+        """, (channel, sender, text, filename, ts))
         db.commit()
         db.close()
 
     USER_STATUS[sender] = ts
     return "ok"
+
+@common.app.route("/files/<path:filename>")
+@common.login_required
+def files(filename):
+    return send_from_directory("uploads", filename)
 
 # Search messages
 @common.app.route("/search_messages")

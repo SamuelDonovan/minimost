@@ -46,7 +46,13 @@ body {
     margin: 2px 0;
     font-family: system-ui, sans-serif;
 }
-
+.chat-image {
+    max-width: 300px;
+    max-height: 300px;
+    border-radius: 6px;
+    margin-top: 6px;
+    cursor: pointer;
+}
 .time {
     color: #888;
     margin-right: 4px;

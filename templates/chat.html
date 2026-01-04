@@ -34,7 +34,7 @@
             <a href="/logout">(logout)</a>
         </div>
 
-        <button id="msg-search-btn">Search Messages</button>
+        <button id="msg-search-btn">Search</button>
 
         <div>
             Channel: <span id="chan"></span>
@@ -90,6 +90,22 @@ document.getElementById("msg").addEventListener("keydown", e => {
         send();
     }
 });
+
+document.getElementById("msg").addEventListener("paste", e => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+        if (item.type.startsWith("image/")) {
+            e.preventDefault();
+
+            const file = item.getAsFile();
+            sendImage(file);
+            break;
+        }
+    }
+});
+
 
 // Core state
 let channel = "general";
@@ -210,7 +226,7 @@ function switchChannel(c) {
     document.getElementById("chat").innerHTML = "";
     document.getElementById("chan").innerText = c;
     fetchMessages();
-    updateSidebarActive();
+    loadSidebar();
 }
 
 // Fetch Messages
@@ -223,6 +239,7 @@ function fetchMessages() {
             data.forEach(m => {
                 const d = document.createElement("div");
                 d.className = "msg";
+                d.id = `msg-${m.id}`;
 
                 const time = new Date(m.ts * 1000).toLocaleTimeString();
                 const color = userColor(m.sender);
@@ -230,9 +247,23 @@ function fetchMessages() {
                 d.innerHTML = `
                     <span class="time">[${time}]</span>
                     <span class="user" style="color:${color}">${m.sender}</span>:
-                    <span class="text">${linkify(m.content)}</span>
+                    <span class="text">${linkify(m.content || "")}</span>
                 `;
-                d.id = `msg-${m.id}`;
+
+                // ✅ IMAGE ATTACHMENT
+                if (m.filename && /\.(png|jpg|jpeg|gif|webp)$/i.test(m.filename)) {
+                    const imgLink = document.createElement("a");
+                    imgLink.href = `/files/${m.filename}`;
+                    imgLink.target = "_blank";
+
+                    const img = document.createElement("img");
+                    img.src = `/files/${m.filename}`;
+                    img.className = "chat-image";
+
+                    imgLink.appendChild(img);
+                    d.appendChild(document.createElement("br"));
+                    d.appendChild(imgLink);
+                }
 
                 chat.appendChild(d);
                 lastTs = Math.max(lastTs, m.ts);
@@ -264,15 +295,36 @@ msgBox.addEventListener("keydown", e => {
 
 function send() {
     const text = msgBox.value.trim();
-    if (!text) return;
+
+    const fileInput = document.getElementById("file");
+    const file = fileInput ? fileInput.files[0] : null;
+
+    if (!text && !file) return;
+
+    const form = new FormData();
+    if (text) form.append("text", text);
+    if (file) form.append("file", file);
 
     fetch(`/send/${channel}`, {
         method: "POST",
-        body: new URLSearchParams({text})
+        body: form
     });
 
     msgBox.value = "";
+    if (fileInput) fileInput.value = "";
 }
+
+// Send images
+function sendImage(file) {
+    const form = new FormData();
+    form.append("file", file);
+
+    fetch(`/send/${channel}`, {
+        method: "POST",
+        body: form
+    });
+}
+
 
 // Direct Messages
 const dmModal = document.getElementById("dm-modal");
@@ -310,6 +362,7 @@ document.getElementById("dm-start").onclick = () => {
     document.getElementById("dm-users").value = "";
 
     switchChannel(dmChannel);
+    dmModal.style.display = "none";
 };
 
 // Message search

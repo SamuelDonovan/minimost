@@ -47,7 +47,7 @@ To launch the server all that is needed is python3 and flask. That's it. For the
 - [x] User presence
 - [x] Persistent messages
 - [x] Message search
-- [x] File uploads
+- [x] Embedded images 
 - [ ] Picture previews
 - [x] User sign up
 - [x] Direct messages
@@ -61,6 +61,7 @@ To launch the server all that is needed is python3 and flask. That's it. For the
 - [ ] Bold/Underline/Italic modifiers
 - [ ] Typing indicators
 - [ ] New message indicators
+- [ ] Date/time stamps on messages  
 
 ## Real FAQ
 
