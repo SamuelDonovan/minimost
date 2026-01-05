@@ -39,6 +39,12 @@ MiniMost is lightweight, self-host collaboration platform for messaging. The goa
 
 To launch the server all that is needed is python3 and flask. That's it. For the database sqlite is used meaning no external database is required.
 
+## Advantages to skype
+
+MiniMost has peristent chat, meaning if you send a message to someone, you can just scroll back to find it. These messages are also much easier to search through. It also has inline images, meaning you don't have to download images to see them in the chat.Since MiniMost uses your browser users are also free to chat on Linux machines rather than neededing to run back and fourth between a Linux and Windows machine to do work.
+
+The biggest advantage is, we control the source and could make changes we want.
+
 ## Features
 
 - [x] Channels
@@ -63,6 +69,10 @@ To launch the server all that is needed is python3 and flask. That's it. For the
 - [ ] New message indicators
 - [ ] Date/time stamps on messages  
 
+## Known Bugs/Work Arounds
+
+- [ ]
+
 ## Real FAQ
 
 Are my messages secure?
@@ -71,7 +81,7 @@ Are my messages secure?
 
 This is great, but could it also have feature x?
 
-> Yeah! The great part of having the source code for this is that edits can be made! Feel free to create a PR with some proof showing the new feature works and it can be merged and redeployed.
+> Yeah! The great part of having the source code for this is that edits can be made! Feel free to create a PR with some proof showing the new feature works and it can be merged and redeployed.Bonus points if you can diff the changes down to the low side as any edits I make would be at home on my own time.
 
 I really want feature x but don't want to put in the time to figure out how to implement it. Can you add it?
 
