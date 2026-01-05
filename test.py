@@ -116,21 +116,25 @@ def send(channel):
     sender = session["user"]
     text = (request.form.get("text") or "").rstrip()
 
-    file = request.files.get("file")
-    filename = None
+    files = request.files.getlist("files")
+    filenames = []
 
-    # 📌 HANDLE FILE (paste OR upload)
-    if file:
-        ext = os.path.splitext(file.filename)[1]
-        if not ext:
-            ext = ".png"  # clipboard images often lack extension
+    for f in files:
+        # 🔒 Guard: ensure this is a FileStorage
+        if not hasattr(f, "filename"):
+            continue
 
+        if not f.filename:
+            continue
+
+        ext = os.path.splitext(f.filename)[1] or ".png"
         filename = f"{uuid.uuid4().hex}{ext}"
-        filepath = os.path.join(UPLOAD_DIR, filename)
-        file.save(filepath)
+
+        f.save(os.path.join(UPLOAD_DIR, filename))
+        filenames.append(filename)
 
     # prevent empty messages
-    if not text and not filename:
+    if not text:
         return "empty", 400
 
     ts = now()
@@ -142,12 +146,20 @@ def send(channel):
         return "no recipients", 400
 
     for r in recipients:
-        common.init_user_db(r)
         db = get_db(r)
+        # insert ONE message row (text only)
         db.execute("""
             INSERT INTO messages (channel, sender, content, filename, ts)
-            VALUES (?, ?, ?, ?, ?)
-        """, (channel, sender, text, filename, ts))
+            VALUES (?, ?, ?, NULL, ?)
+        """, (channel, sender, text, ts))
+
+# insert image rows (no text)
+        for filename in filenames:
+            db.execute("""
+                INSERT INTO messages (channel, sender, content, filename, ts)
+                VALUES (?, ?, '', ?, ?)
+            """, (channel, sender, filename, ts))
+
         db.commit()
         db.close()
 

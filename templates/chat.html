@@ -43,8 +43,9 @@
 
     <div id="chat"></div>
 
+    <div id="image-preview"></div>
+
     <div id="input">
-        <!-- textarea allows Enter / Shift+Enter -->
         <textarea
             id="msg"
             rows="3"
@@ -52,8 +53,18 @@
             style="width:80%"
         ></textarea>
 
+        <input
+            type="file"
+            id="fileInput"
+            multiple
+            accept="image/*"
+            hidden
+        >
+
+        <button onclick="fileInput.click()">📎</button>
         <button onclick="send()">Send</button>
     </div>
+
 </div>
 
 <!-- DM Modal -->
@@ -84,6 +95,18 @@
 
 <!-- keyboard handling -->
 <script>
+
+// Core state
+let channel = "general";
+let lastTs = 0;
+let unread = new Set();
+const seen = new Set();
+const fileInput = document.getElementById("fileInput");
+const preview = document.getElementById("image-preview");
+const msgBox = document.getElementById("msg");
+
+let pendingFiles = [];
+
 document.getElementById("msg").addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -91,27 +114,51 @@ document.getElementById("msg").addEventListener("keydown", e => {
     }
 });
 
-document.getElementById("msg").addEventListener("paste", e => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
+msgBox.addEventListener("paste", e => {
+    const items = e.clipboardData?.items || [];
+    const files = [];
 
     for (const item of items) {
         if (item.type.startsWith("image/")) {
-            e.preventDefault();
-
-            const file = item.getAsFile();
-            sendImage(file);
-            break;
+            files.push(item.getAsFile());
         }
+    }
+
+    if (files.length) {
+        e.preventDefault();
+        addFiles(files);
     }
 });
 
+fileInput.addEventListener("change", () => {
+    addFiles([...fileInput.files]);
+    fileInput.value = "";
+});
 
-// Core state
-let channel = "general";
-let lastTs = 0;
-let unread = new Set();
-const seen = new Set();
+
+// Preview Renderer
+function addFiles(files) {
+    files.forEach(file => {
+        pendingFiles.push(file);
+
+        const div = document.createElement("div");
+        div.className = "preview-img";
+
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+
+        const btn = document.createElement("button");
+        btn.textContent = "×";
+        btn.onclick = () => {
+            pendingFiles = pendingFiles.filter(f => f !== file);
+            div.remove();
+        };
+
+        div.appendChild(img);
+        div.appendChild(btn);
+        preview.appendChild(div);
+    });
+}
 
 // User color
 function userColor(name) {
@@ -284,8 +331,6 @@ function editMsg(id, text) {
 }
 
 // Send messages
-const msgBox = document.getElementById("msg");
-
 msgBox.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -293,17 +338,18 @@ msgBox.addEventListener("keydown", e => {
     }
 });
 
+// Send messages
 function send() {
     const text = msgBox.value.trim();
 
-    const fileInput = document.getElementById("file");
-    const file = fileInput ? fileInput.files[0] : null;
-
-    if (!text && !file) return;
+    if (!text && pendingFiles.length === 0) return;
 
     const form = new FormData();
-    if (text) form.append("text", text);
-    if (file) form.append("file", file);
+    form.append("text", text);
+
+    pendingFiles.forEach(f => {
+        form.append("files", f);
+    });
 
     fetch(`/send/${channel}`, {
         method: "POST",
@@ -311,7 +357,8 @@ function send() {
     });
 
     msgBox.value = "";
-    if (fileInput) fileInput.value = "";
+    pendingFiles = [];
+    preview.innerHTML = "";
 }
 
 // Send images

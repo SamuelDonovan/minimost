@@ -42,6 +42,35 @@ body {
     overflow-y: auto;
     padding: 10px;
 }
+#image-preview {
+    display: flex;
+    gap: 8px;
+    padding: 6px 10px;
+    flex-wrap: wrap;
+}
+
+.preview-img {
+    position: relative;
+}
+
+.preview-img img {
+    max-height: 120px;
+    border-radius: 6px;
+    border: 1px solid #444;
+}
+
+.preview-img button {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: #900;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
 .msg {
     margin: 2px 0;
     font-family: system-ui, sans-serif;

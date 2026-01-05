@@ -39,9 +39,9 @@ MiniMost is lightweight, self-host collaboration platform for messaging. The goa
 
 To launch the server all that is needed is python3 and flask. That's it. For the database sqlite is used meaning no external database is required.
 
-## Advantages to skype
+## Advantages to Skype
 
-MiniMost has peristent chat, meaning if you send a message to someone, you can just scroll back to find it. These messages are also much easier to search through. It also has inline images, meaning you don't have to download images to see them in the chat.Since MiniMost uses your browser users are also free to chat on Linux machines rather than neededing to run back and fourth between a Linux and Windows machine to do work.
+MiniMost has persistent chat, meaning if you send a message to someone, you can just scroll back to find it. These messages are also much easier to search through. It also has inline images, meaning you don't have to download images to see them in the chat. Since MiniMost uses your browser users are also free to chat on Linux machines rather than needing to run back and fourth between a Linux and Windows machine to do work. MiniMost also doesn't limit your message length, if you want to write a larger message to others you don't need to break it up into several different messages.
 
 The biggest advantage is, we control the source and could make changes we want.
 
