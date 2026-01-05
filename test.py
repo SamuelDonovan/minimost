@@ -134,7 +134,7 @@ def send(channel):
         filenames.append(filename)
 
     # prevent empty messages
-    if not text:
+    if not text and not filenames:
         return "empty", 400
 
     ts = now()

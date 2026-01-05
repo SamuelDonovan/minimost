@@ -43,9 +43,8 @@
 
     <div id="chat"></div>
 
-    <div id="image-preview"></div>
-
-    <div id="input">
+    <div id="input" class="dropzone">
+        <div id="image-preview"></div>
         <textarea
             id="msg"
             rows="3"
@@ -95,19 +94,19 @@
 
 <!-- keyboard handling -->
 <script>
-
-// Core state
-let channel = "general";
-let lastTs = 0;
-let unread = new Set();
-const seen = new Set();
 const fileInput = document.getElementById("fileInput");
 const preview = document.getElementById("image-preview");
 const msgBox = document.getElementById("msg");
-
-let pendingFiles = [];
+const dropzone = document.getElementById("input");
 
 document.getElementById("msg").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+    }
+});
+
+msgBox.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         send();
@@ -135,10 +134,36 @@ fileInput.addEventListener("change", () => {
     fileInput.value = "";
 });
 
+dropzone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+});
+
+dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+});
+
+dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+
+    addFiles(e.dataTransfer.files);
+});
+
+
+// Core state
+let channel = "general";
+let lastTs = 0;
+let unread = new Set();
+const seen = new Set();
+
+let pendingFiles = [];
 
 // Preview Renderer
 function addFiles(files) {
-    files.forEach(file => {
+    for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+
         pendingFiles.push(file);
 
         const div = document.createElement("div");
@@ -149,6 +174,7 @@ function addFiles(files) {
 
         const btn = document.createElement("button");
         btn.textContent = "×";
+        btn.className = "remove-img";
         btn.onclick = () => {
             pendingFiles = pendingFiles.filter(f => f !== file);
             div.remove();
@@ -157,7 +183,7 @@ function addFiles(files) {
         div.appendChild(img);
         div.appendChild(btn);
         preview.appendChild(div);
-    });
+    }
 }
 
 // User color
@@ -279,7 +305,10 @@ function switchChannel(c) {
 // Fetch Messages
 function fetchMessages() {
     fetch(`/messages/${channel}?after=${lastTs}`)
-        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) return null;
+            return r.json();
+        })
         .then(data => {
             const chat = document.getElementById("chat");
 
@@ -331,14 +360,6 @@ function editMsg(id, text) {
 }
 
 // Send messages
-msgBox.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
-    }
-});
-
-// Send messages
 function send() {
     const text = msgBox.value.trim();
 
@@ -360,18 +381,6 @@ function send() {
     pendingFiles = [];
     preview.innerHTML = "";
 }
-
-// Send images
-function sendImage(file) {
-    const form = new FormData();
-    form.append("file", file);
-
-    fetch(`/send/${channel}`, {
-        method: "POST",
-        body: form
-    });
-}
-
 
 // Direct Messages
 const dmModal = document.getElementById("dm-modal");
@@ -497,9 +506,6 @@ searchInput.addEventListener("input", debounce(() => {
 document.addEventListener("DOMContentLoaded", () => {
     loadSidebar();
     switchChannel(channel);
-    setInterval(() => {
-        fetch("/heartbeat", { method: "POST" });
-    }, 10000);
     setInterval(fetchMessages, 500);
     setInterval(refreshPresence, 10000);
 
