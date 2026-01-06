@@ -343,7 +343,11 @@ function fetchMessages() {
                 d.className = "msg";
                 d.id = `msg-${m.id}`;
 
-                const time = new Date(m.ts * 1000).toLocaleTimeString();
+                const time = msgDate.toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit"
+                });
+
                 const color = userColor(m.sender);
 
                 let html = `
