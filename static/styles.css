@@ -82,6 +82,11 @@ body {
     border-radius: 6px;
     margin-top: 6px;
     cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.chat-image.loaded {
+    opacity: 1;
 }
 .time {
     color: #888;

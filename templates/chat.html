@@ -106,6 +106,12 @@ document.getElementById("msg").addEventListener("keydown", e => {
     }
 });
 
+document.addEventListener("load", e => {
+    if (e.target.tagName === "IMG") {
+        e.target.classList.add("loaded");
+    }
+}, true);
+
 msgBox.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -337,7 +343,11 @@ function fetchMessages() {
                         if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
                             html += `
                                 <a href="/files/${f}" target="_blank">
-                                    <img src="/files/${f}" class="chat-image">
+                                    <img
+                                        src="/files/${f}"
+                                        class="chat-image"
+                                        loading="lazy"
+                                    >
                                 </a>
                             `;
                         }
