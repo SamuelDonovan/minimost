@@ -54,7 +54,7 @@ The biggest advantage is, we control the source and could make changes we want.
 - [x] Persistent messages
 - [x] Message search
 - [x] Embedded images 
-- [ ] Picture previews
+- [x] Picture previews
 - [x] User sign up
 - [x] Direct messages
 - [x] Group messages
@@ -67,7 +67,8 @@ The biggest advantage is, we control the source and could make changes we want.
 - [ ] Bold/Underline/Italic modifiers
 - [ ] Typing indicators
 - [ ] New message indicators
-- [ ] Date/time stamps on messages  
+- [x] Date/time stamps on messages  
+- [ ] Bitbucket source previes for links
 
 ## Known Bugs/Work Arounds
 

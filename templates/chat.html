@@ -162,6 +162,7 @@ let channel = "general";
 let lastTs = 0;
 let unread = new Set();
 const seen = new Set();
+let lastRenderedDate = null;
 
 let pendingFiles = [];
 
@@ -301,6 +302,7 @@ function switchChannel(c) {
     if (channel == c) return;
     channel = c;
     lastTs = 0;
+    lastRenderedDate = null;
     seen.clear();
     document.getElementById("chat").innerHTML = "";
     document.getElementById("chan").innerText = c;
@@ -319,6 +321,24 @@ function fetchMessages() {
             const chat = document.getElementById("chat");
 
             data.forEach(m => {
+                const msgDate = new Date(m.ts * 1000);
+                const dateKey = msgDate.toDateString();
+
+                if (dateKey !== lastRenderedDate) {
+                    const divider = document.createElement("div");
+                    divider.className = "date-divider";
+                    divider.textContent = msgDate.toLocaleDateString(undefined, {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric"
+                    });
+
+                    chat.appendChild(divider);
+                    lastRenderedDate = dateKey;
+                }
+
+
                 const d = document.createElement("div");
                 d.className = "msg";
                 d.id = `msg-${m.id}`;

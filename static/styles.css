@@ -88,6 +88,18 @@ body {
 .chat-image.loaded {
     opacity: 1;
 }
+.date-divider {
+    text-align: center;
+    margin: 12px 0;
+    color: #aaa;
+    font-size: 0.85em;
+    border-bottom: 1px solid #333;
+    line-height: 0.1em;
+}
+
+.date-divider::before {
+    content: "";
+}
 .time {
     color: #888;
     margin-right: 4px;
