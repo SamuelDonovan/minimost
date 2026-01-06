@@ -320,26 +320,31 @@ function fetchMessages() {
                 const time = new Date(m.ts * 1000).toLocaleTimeString();
                 const color = userColor(m.sender);
 
-                d.innerHTML = `
+                let html = `
                     <span class="time">[${time}]</span>
-                    <span class="user" style="color:${color}">${m.sender}</span>:
-                    <span class="text">${linkify(m.content || "")}</span>
-                `;
+                    <span class="user" style="color:${color}">${m.sender}</span>: `;
 
-                // ✅ IMAGE ATTACHMENT
-                if (m.filename && /\.(png|jpg|jpeg|gif|webp)$/i.test(m.filename)) {
-                    const imgLink = document.createElement("a");
-                    imgLink.href = `/files/${m.filename}`;
-                    imgLink.target = "_blank";
-
-                    const img = document.createElement("img");
-                    img.src = `/files/${m.filename}`;
-                    img.className = "chat-image";
-
-                    imgLink.appendChild(img);
-                    d.appendChild(document.createElement("br"));
-                    d.appendChild(imgLink);
+                // ✅ Only render text if it exists
+                if (m.content && m.content.trim()) {
+                    html += ` <span class="text">${linkify(m.content)}</span>
+                    `;
                 }
+
+                // ✅ Render images in the SAME message bubble
+                if (m.filename) {
+                    const files = m.filename.split(",");
+                    for (const f of files) {
+                        if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
+                            html += `
+                                <a href="/files/${f}" target="_blank">
+                                    <img src="/files/${f}" class="chat-image">
+                                </a>
+                            `;
+                        }
+                    }
+                }
+
+                d.innerHTML = html;
 
                 chat.appendChild(d);
                 lastTs = Math.max(lastTs, m.ts);

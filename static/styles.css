@@ -76,6 +76,7 @@ body {
     font-family: system-ui, sans-serif;
 }
 .chat-image {
+    display: block;
     max-width: 300px;
     max-height: 300px;
     border-radius: 6px;
