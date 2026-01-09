@@ -44,9 +44,16 @@ def signup():
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
+        confirm = request.form["confirm_password"]
 
         if not username or not password:
             return render_template("signup.html", error="Missing fields")
+
+        if password != confirm:
+            return render_template(
+                "signup.html",
+                error="Passwords do not match"
+            )
 
         db = sqlite3.connect(common.AUTH_DB)
         try:
