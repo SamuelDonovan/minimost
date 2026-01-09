@@ -51,7 +51,7 @@ def channel_users(channel: str) -> list[str]:
     return all_users()
 
 # Channels endpoint
-CHANNELS = ["general", "random", "dev"]
+CHANNELS = ["general", "off-topic", "dev"]
 
 @common.app.route("/channels")
 @common.login_required
