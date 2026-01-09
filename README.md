@@ -48,7 +48,7 @@ The biggest advantage is, we control the source and could make changes we want.
 ## Features
 
 - [x] Channels
-- [ ] Editable messages
+- [x] Editable messages
 - [x] Separate users
 - [x] User presence
 - [x] Persistent messages

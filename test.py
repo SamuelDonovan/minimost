@@ -201,25 +201,38 @@ def search_messages():
 @common.app.route("/edit/<int:msg_id>", methods=["POST"])
 @common.login_required
 def edit(msg_id):
-    user = session["user"]
+    editor = session["user"]
     new_text = request.form.get("text", "").strip()
 
-    db = get_db(user)
+    # 1. Fetch message metadata from editor DB
+    db = get_db(editor)
     row = db.execute(
-        "SELECT sender FROM messages WHERE id = ?",
+        "SELECT channel, sender, ts FROM messages WHERE id = ?",
         (msg_id,)
     ).fetchone()
+    db.close()
 
-    if not row or row["sender"] != user:
-        db.close()
+    if not row or row["sender"] != editor:
         return "forbidden", 403
 
-    db.execute(
-        "UPDATE messages SET content = ? WHERE id = ?",
-        (new_text, msg_id)
-    )
-    db.commit()
-    db.close()
+    channel = row["channel"]
+    ts = row["ts"]
+
+    # 2. Determine all recipients
+    recipients = channel_users(channel)
+    if editor not in recipients:
+        recipients.append(editor)
+
+    # 3. Update the message in each recipient DB using timestamp
+    for r in recipients:
+        db = get_db(r)
+        db.execute(
+            "UPDATE messages SET content = ?, edited = 1 WHERE channel = ? AND sender = ? AND ts = ?",
+            (new_text, channel, editor, ts)
+        )
+        db.commit()
+        db.close()
+
     return "ok"
 
 @common.app.route("/users")

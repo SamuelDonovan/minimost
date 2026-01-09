@@ -26,13 +26,14 @@ def init_user_db(username: str):
     cur = db.cursor()
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS messages (
+    CREATE TABLE messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         channel TEXT NOT NULL,
         sender TEXT NOT NULL,
         content TEXT,
         filename TEXT,
-        ts REAL
+        ts REAL,
+        edited INTEGER DEFAULT 0
     )
     """)
 
