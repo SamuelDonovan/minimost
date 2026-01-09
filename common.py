@@ -26,7 +26,7 @@ def init_user_db(username: str):
     cur = db.cursor()
 
     cur.execute("""
-    CREATE TABLE messages (
+    CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         channel TEXT NOT NULL,
         sender TEXT NOT NULL,
