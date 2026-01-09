@@ -64,7 +64,7 @@ The biggest advantage is, we control the source and could make changes we want.
 - [ ] Sort users by most recently messaged 
 - [ ] Autocomplete username for new DMs 
 - [x] Clickable URLs 
-- [ ] Bold/Underline/Italic modifiers
+- [x] Bold/Underline/Italic modifiers
 - [ ] Typing indicators
 - [ ] New message indicators
 - [x] Date/time stamps on messages  

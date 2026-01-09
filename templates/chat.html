@@ -156,6 +156,7 @@ dropzone.addEventListener("drop", e => {
     addFiles(e.dataTransfer.files);
 });
 
+document.addEventListener("keydown", formattingShortcuts);
 
 // Core state
 let channel = "general";
@@ -356,7 +357,7 @@ function fetchMessages() {
 
                 // ✅ Only render text if it exists
                 if (m.content && m.content.trim()) {
-                    html += ` <span class="text">${linkify(m.content)}</span>
+                    html += ` <span class="text">${formatText(m.content)}</span>
                     `;
                 }
 
@@ -496,6 +497,104 @@ function linkify(text) {
         let href = url;
         return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
     });
+}
+
+// Text formating
+function boldify(text) {
+    return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function italicize(text) {
+    return text.replace(/\*(.+?)\*/g, "<em>$1</em>");
+}
+
+function underline(text) {
+    return text.replace(/__(.+?)__/g, "<u>$1</u>");
+}
+
+function strikethrough(text) {
+    return text.replace(/~~(.+?)~~/g, "<s>$1</s>");
+}
+
+function formatText(text) {
+    // 1. Escape HTML
+    const div = document.createElement("div");
+    div.textContent = text;
+    let safe = div.innerHTML;
+
+    // 2. Text formatting
+    safe = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    safe = safe.replace(/__(.+?)__/g, "<u>$1</u>");
+    safe = safe.replace(/~~(.+?)~~/g, "<s>$1</s>");
+    safe = safe.replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+    // 3. Links last
+    safe = safe.replace(
+        /((https?:\/\/|www\.)[^\s]+)/g,
+        url => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+    );
+
+    return safe;
+}
+
+function wrapSelection(el, wrapper) {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const value = el.value;
+
+    if (start !== end) {
+        // Wrap selected text
+        el.value =
+            value.slice(0, start) +
+            wrapper +
+            value.slice(start, end) +
+            wrapper +
+            value.slice(end);
+
+        el.selectionStart = start + wrapper.length;
+        el.selectionEnd = end + wrapper.length;
+    } else {
+        // Insert wrapper and place cursor in between
+        el.value =
+            value.slice(0, start) +
+            wrapper + wrapper +
+            value.slice(end);
+
+        el.selectionStart = el.selectionEnd = start + wrapper.length;
+    }
+}
+
+function formattingShortcuts(e) {
+    const el = e.target;
+
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+        return;
+    }
+
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    // Bold
+    if (ctrl && e.key === "b") {
+        e.preventDefault();
+        wrapSelection(el, "**");
+    }
+    // Italic
+    if (ctrl && e.key === "i") {
+        e.preventDefault();
+        wrapSelection(el, "*");
+    }
+
+    // Underline
+    if (ctrl && e.key === "u") {
+        e.preventDefault();
+        wrapSelection(el, "__");
+    }
+
+    // Strikethrough
+    if (ctrl && e.key === "s") {
+        e.preventDefault();
+        wrapSelection(el, "~~");
+    }
 }
 
 // Debounce helper
