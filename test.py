@@ -99,15 +99,20 @@ def messages(channel):
 
     db = get_db(user)
     rows = db.execute("""
-        SELECT id, channel, sender, content, filename, ts
+        SELECT id, channel, sender, content, filename, ts, edited
         FROM messages
-        WHERE channel = ? AND ts > ?
+        WHERE channel = ?
+          AND (
+                ts > ?
+                OR edited = 1
+              )
         ORDER BY ts
     """, (channel, after)).fetchall()
     db.close()
 
     USER_STATUS[user] = now()
     return jsonify([dict(r) for r in rows])
+
 
 # Send
 @common.app.route("/send/<channel>", methods=["POST"])

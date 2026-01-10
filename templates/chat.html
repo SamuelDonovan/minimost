@@ -325,9 +325,12 @@ function fetchMessages() {
                 const dateKey = msgDate.toDateString();
 
                 // Date divider
-                if (dateKey !== lastRenderedDate) {
+                const dividerId = `date-${dateKey}`;
+
+                if (!document.getElementById(dividerId)) {
                     const divider = document.createElement("div");
                     divider.className = "date-divider";
+                    divider.id = dividerId;
                     divider.textContent = msgDate.toLocaleDateString(undefined, {
                         weekday: "long",
                         year: "numeric",
@@ -335,13 +338,10 @@ function fetchMessages() {
                         day: "numeric"
                     });
                     chat.appendChild(divider);
-                    lastRenderedDate = dateKey;
                 }
 
-                const d = document.createElement("div");
-                d.className = "msg";
-                d.id = `msg-${m.id}`;
-                d.dataset.msgId = m.id;
+
+                const existing = document.getElementById(`msg-${m.id}`);
 
                 const time = msgDate.toLocaleTimeString([], {
                     hour: "numeric",
@@ -352,16 +352,16 @@ function fetchMessages() {
 
                 let html = `
                     <span class="time">[${time}]</span>
-                    <span class="user" style="color:${color}">
-                        ${m.sender}
-                    </span>
+                    <span class="user" style="color:${color}">${m.sender}</span>
                 `;
 
-                // Edit button (only for own messages)
+                if (m.edited) {
+                    html += `<span class="edited"> (edited)</span>`;
+                }
+
                 if (m.sender === CURRENT_USER) {
                     html += `
-                        <button class="edit-btn"
-                                onclick="startEdit(${m.id})">
+                        <button class="edit-btn" onclick="startEdit(${m.id})">
                             Edit
                         </button>
                     `;
@@ -369,31 +369,33 @@ function fetchMessages() {
 
                 html += `: `;
 
-                // Message text (editable)
                 if (m.content && m.content.trim()) {
                     html += `<span class="text" id="msg-text-${m.id}">${formatText(m.content)}</span>`;
                 }
 
-                // Images (unchanged)
                 if (m.filename) {
                     const files = m.filename.split(",");
                     for (const f of files) {
                         if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
                             html += `
                                 <a href="/files/${f}" target="_blank">
-                                    <img
-                                        src="/files/${f}"
-                                        class="chat-image"
-                                        loading="lazy"
-                                    >
+                                    <img src="/files/${f}" class="chat-image" loading="lazy">
                                 </a>
                             `;
                         }
                     }
                 }
 
-                d.innerHTML = html;
-                chat.appendChild(d);
+                // 🔑 UPDATE OR INSERT
+                if (existing) {
+                    existing.innerHTML = html;
+                } else {
+                    const d = document.createElement("div");
+                    d.className = "msg";
+                    d.id = `msg-${m.id}`;
+                    d.innerHTML = html;
+                    chat.appendChild(d);
+                }
 
                 lastTs = Math.max(lastTs, m.ts);
             });

@@ -70,6 +70,7 @@ The biggest advantage is, we control the source and could make changes we want.
 - [x] Date/time stamps on messages  
 - [ ] Scrollable sidebar 
 - [ ] Bitbucket source previes for links
+- [ ] Deletable messages 
 
 ## Known Bugs/Work Arounds
 
