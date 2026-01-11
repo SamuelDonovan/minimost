@@ -55,10 +55,12 @@ Skype currently provides the only way to call or screenshare.
 
 * Ctrl+b to **bold** text.
 * Ctrl+i to *italicize* text.
-* Ctrl+u to __underline__ text.
+* Ctrl+u to <u>underline</u> text.
 * Ctrl+s to ~~strikethrough~~ text.
 
-All text modifiers use markdown syntax. The modifier can be started and ended with the corresponding hotkeys. Highlighted text can also be modified with the corresponding hotkeys.
+All text modifiers use markdown syntax[^1]. The modifier can be started and ended with the corresponding hotkeys. Highlighted text can also be modified with the corresponding hotkeys.
+
+[^1]: Except for underlining which is two underscores (__) as markdown somehow actually doesn't natively support underlining and users just need to break out to HTML.
 
 ### Images
 
