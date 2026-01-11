@@ -3,8 +3,8 @@ Mom, can we have Mattermost?
 Mom: We have Mattermost at home.
 
 <details>
-  <summaryMattermost at home:</summary>
-  ![Skype Logo](./imgs/skype.png)
+  <summary>Mattermost at home:</summary>
+  <img src="./imgs/skype.png" alt="Skype Logo">
 </details>
 
 
