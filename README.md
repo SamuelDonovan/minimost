@@ -143,7 +143,13 @@ To run your server simply:
 
 If using a pip.conf that is configured to point to pypi external Nexus:
 
+=== "Linux"
+
 `python3 -m pip install --user flask`
+
+=== "Windows"
+
+`py -m pip install --user flask`
 
 If not, manually download the flask wheel and its dependencies and install with:
 
