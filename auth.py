@@ -1,6 +1,7 @@
 # From the python standard library
 import sqlite3
 from hashlib import sha256
+import time
 
 # From Flask 
 from flask import session, redirect, url_for, request, render_template
@@ -25,6 +26,8 @@ def login():
         db.close()
 
         if not row or row[0] != hash_password(password):
+            # Delay to prevent users from brute forcing others passwords
+            time.sleep(1)
             return render_template("login.html", error="Invalid credentials")
 
         session["user"] = username
