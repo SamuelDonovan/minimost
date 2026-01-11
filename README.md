@@ -102,6 +102,8 @@ Images can be attached using the paperclip icon next to the message box but also
 - [ ] Bitbucket source previews for links
 - [ ] Deletable messages 
 - [x] Vim motions
+- [ ] Quote reply messages
+- [ ] Collapsable sidebar
 
 ## Known Bugs/Work Arounds
 
