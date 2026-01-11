@@ -1,4 +1,4 @@
-Mom, can we have Mattermost?
+Mommy, can we have Mattermost?
 
 Mom: We have Mattermost at home.
 
@@ -142,6 +142,28 @@ To run your server simply:
 ### Install flask
 
 If using a pip.conf that is configured to point to pypi external Nexus:
+
+<div class="tab">
+  <button class="tablinks" onclick="openTab(event, 'Tab1')">Tab 1</button>
+  <button class="tablinks" onclick="openTab(event, 'Tab2')">Tab 2</button>
+  <button class="tablinks" onclick="openTab(event, 'Tab3')">Tab 3</button>
+</div>
+
+<div id="Tab1" class="tabcontent">
+  <h3>Tab 1</h3>
+  <p>Content for Tab 1.</p>
+</div>
+
+<div id="Tab2" class="tabcontent" style="display:none;">
+  <h3>Tab 2</h3>
+  <p>Content for Tab 2.</p>
+</div>
+
+<div id="Tab3" class="tabcontent" style="display:none;">
+  <h3>Tab 3</h3>
+  <p>Content for Tab 3.</p>
+</div>
+
 
 === "Linux"
 
