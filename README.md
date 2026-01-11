@@ -155,7 +155,7 @@ After installing the dependencies, clone and repo and run the following:
 
 `python3 test.py`[^2]
 
-[2]: If using Windows use `py` rather than `python3`
+[^2]: If using Windows use `py` rather than `python3`
 
 This with start a server on [http://127.0.0.1:5000/](http://127.0.0.1:5000/) on the machine you started the server on.
 
