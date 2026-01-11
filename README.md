@@ -7,6 +7,7 @@ Mom: We have Mattermost at home.
   <img src="./imgs/skype.png" alt="Skype Logo">
 </details>
 
+---
 
 ![Smurf Fine](./imgs/smurf.png)
 
