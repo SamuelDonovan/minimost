@@ -164,6 +164,7 @@ let lastTs = 0;
 let unread = new Set();
 const seen = new Set();
 let lastRenderedDate = null;
+let forceScrollToBottom = false;
 
 let pendingFiles = [];
 
@@ -307,11 +308,16 @@ function switchChannel(c) {
     seen.clear();
     document.getElementById("chat").innerHTML = "";
     document.getElementById("chan").innerText = c;
+    forceScrollToBottom = true;
     fetchMessages();
     loadSidebar();
 }
 
 // Fetch Messages
+function isNearBottom(el, threshold = 50) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+}
+
 function fetchMessages() {
     fetch(`/messages/${channel}?after=${lastTs}`)
         .then(r => r.ok ? r.json() : null)
@@ -319,6 +325,7 @@ function fetchMessages() {
             if (!data) return;
 
             const chat = document.getElementById("chat");
+            let appended = false;
 
             data.forEach(m => {
                 const msgDate = new Date(m.ts * 1000);
@@ -395,13 +402,17 @@ function fetchMessages() {
                     d.id = `msg-${m.id}`;
                     d.innerHTML = html;
                     chat.appendChild(d);
+                    let appended = true;
                 }
 
                 lastTs = Math.max(lastTs, m.ts);
             });
 
-            if (data.length) {
+            const shouldAutoScroll = isNearBottom(chat);
+
+            if ((forceScrollToBottom || appended && shouldAutoScroll)) {
                 chat.scrollTop = chat.scrollHeight;
+                forceScrollToBottom = false;   // reset
             }
         });
 }
@@ -418,6 +429,8 @@ function send() {
     pendingFiles.forEach(f => {
         form.append("files", f);
     });
+
+    forceScrollToBottom = true;
 
     fetch(`/send/${channel}`, {
         method: "POST",
