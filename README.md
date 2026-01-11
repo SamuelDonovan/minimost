@@ -2,9 +2,11 @@ Mom, can we have Mattermost?
 
 Mom: We have Mattermost at home.
 
-The Mattermost at home:
+<details>
+  <summaryMattermost at home:</summary>
+  ![Skype Logo](./imgs/skype.png)
+</details>
 
-![Skype Logo](./imgs/skype.png)
 
 ![Smurf Fine](./imgs/smurf.png)
 
@@ -115,9 +117,9 @@ Are my messages secure?
 
 > There is no end to end encryption for messages. Each user gets their own sqlite database to prevent intermixing of messages. These databases are files on the file system and are not encrypted but are not read accessible to all users. There is an additional auth database which stores all users usernames and a sha256 hash of their passwords meaning no passwords are stored plain text.This does mean without a password reset mechanism that any user who forgets their password wouldn't be able to get back into their account.
 
-Does this have all the same features as a chat app like Slack, Discord, or MatterMost?
+Does this have all the same features as a chat app like Slack, Discord, or Mattermost?
 
-> Apps like MatterMost have 100+ employees, 4000+
+> Apps like Mattermost have 100+ employees, 4000+
 contributors, and over a decade of development. This app was developed by one person on and off over a few weeks, generally while waiting Netflix. Adjust your expectations accordingly.
 
 When was this developed?
