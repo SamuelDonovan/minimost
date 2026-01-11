@@ -143,45 +143,19 @@ To run your server simply:
 
 If using a pip.conf that is configured to point to pypi external Nexus:
 
-<div class="tab">
-  <button class="tablinks" onclick="openTab(event, 'Tab1')">Tab 1</button>
-  <button class="tablinks" onclick="openTab(event, 'Tab2')">Tab 2</button>
-  <button class="tablinks" onclick="openTab(event, 'Tab3')">Tab 3</button>
-</div>
-
-<div id="Tab1" class="tabcontent">
-  <h3>Tab 1</h3>
-  <p>Content for Tab 1.</p>
-</div>
-
-<div id="Tab2" class="tabcontent" style="display:none;">
-  <h3>Tab 2</h3>
-  <p>Content for Tab 2.</p>
-</div>
-
-<div id="Tab3" class="tabcontent" style="display:none;">
-  <h3>Tab 3</h3>
-  <p>Content for Tab 3.</p>
-</div>
-
-
-=== "Linux"
-
-`python3 -m pip install --user flask`
-
-=== "Windows"
-
-`py -m pip install --user flask`
+`python3 -m pip install --user flask`[^2]
 
 If not, manually download the flask wheel and its dependencies and install with:
 
-`python3 -m pip install --user *.whl`
+`python3 -m pip install --user *.whl`[^2]
 
 ### Running a server
 
 After installing the dependencies, clone and repo and run the following:
 
-`python3 test.py`
+`python3 test.py`[^2]
+
+[2]: If using Windows use `py` rather than `python3`
 
 This with start a server on [http://127.0.0.1:5000/](http://127.0.0.1:5000/) on the machine you started the server on.
 
