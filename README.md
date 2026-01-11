@@ -68,7 +68,7 @@ The biggest advantage is, we control the source and could make changes we want.
 - [ ] Typing indicators
 - [ ] New message indicators
 - [x] Date/time stamps on messages  
-- [ ] Scrollable sidebar 
+- [x] Scrollable sidebar 
 - [ ] Bitbucket source previes for links
 - [ ] Deletable messages 
 
