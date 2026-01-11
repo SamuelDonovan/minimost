@@ -1,4 +1,4 @@
-Mommy, can we have Mattermost?
+Mom, can we have Mattermost?
 
 Mom: We have Mattermost at home.
 
