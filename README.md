@@ -55,7 +55,7 @@ Skype currently provides the only way to call or screenshare.
 
 * Ctrl+b to **bold** text.
 * Ctrl+i to *italicize* text.
-* Ctrl+u to __underline text.
+* Ctrl+u to __underline__ text.
 * Ctrl+s to ~~strikethrough~~ text.
 
 All text modifiers use markdown syntax. The modifier can be started and ended with the corresponding hotkeys. Highlighted text can also be modified with the corresponding hotkeys.
@@ -97,7 +97,7 @@ Images can be attached using the paperclip icon next to the message box but also
 - [ ] New message indicators
 - [x] Date/time stamps on messages  
 - [x] Scrollable sidebar 
-- [ ] Bitbucket source previes for links
+- [ ] Bitbucket source previews for links
 - [ ] Deletable messages 
 - [x] Vim motions
 
@@ -130,7 +130,21 @@ I really want feature x but don't want to put in the time to figure out how to i
 
 ## How to run
 
-To run your server simply run:
+To run your server simply:
+
+### Install flask
+
+If using a pip.conf that is configured to point to pypi external Nexus:
+
+`python3 -m pip install --user flask`
+
+If not, manually download the flask wheel and its dependencies and install with:
+
+`python3 -m pip install --user *.whl`
+
+### Running a server
+
+After installing the dependencies, clone and repo and run the following:
 
 `python3 test.py`
 
