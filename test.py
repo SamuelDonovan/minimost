@@ -66,17 +66,27 @@ def dms():
     db = get_db(user)
 
     rows = db.execute("""
-        SELECT DISTINCT channel
+        SELECT
+            channel,
+            MAX(ts) AS last_ts
         FROM messages
         WHERE channel LIKE 'dm:%'
-        ORDER BY channel
-    """).fetchall()
+          AND (
+                channel LIKE 'dm:' || ? || ':%'
+             OR channel LIKE 'dm:%:' || ?
+             OR channel LIKE 'dm:%:' || ? || ':%'
+          )
+        GROUP BY channel
+        ORDER BY last_ts DESC
+    """, (user, user, user)).fetchall()
+
     db.close()
 
     result = []
     for r in rows:
         users = r["channel"].split(":")[1:]
         others = [u for u in users if u != user]
+
         result.append({
             "channel": r["channel"],
             "users": others

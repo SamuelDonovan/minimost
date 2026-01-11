@@ -156,7 +156,7 @@ dropzone.addEventListener("drop", e => {
     addFiles(e.dataTransfer.files);
 });
 
-document.addEventListener("keydown", formattingShortcuts);
+document.addEventListener("keydown", userInput);
 
 // Core state
 let channel = "general";
@@ -165,6 +165,7 @@ let unread = new Set();
 const seen = new Set();
 let lastRenderedDate = null;
 let forceScrollToBottom = false;
+let ONLINE_USERS = [];
 
 let pendingFiles = [];
 
@@ -229,9 +230,11 @@ function loadSidebar() {
         dmTitle.innerText = "Direct Messages";
         sb.appendChild(dmTitle);
 
+        ONLINE_USERS = online;
+
         dms.forEach(dm => {
             const label = "@ " + dm.users.join(", ");
-            sidebarEntry(label, dm.channel, online);
+            sidebarEntry(label, dm.channel);
         });
 
         // 🔑 ensure highlight is correct after rebuild
@@ -239,43 +242,75 @@ function loadSidebar() {
     });
 }
 
+function refreshDMs() {
+    fetch("/dms")
+        .then(r => r.json())
+        .then(dms => {
+            const sb = document.getElementById("sidebar-dynamic");
+
+            // Locate "Direct Messages" header
+            const dmHeader = Array.from(sb.children)
+                .find(e => e.tagName === "B" && e.innerText === "Direct Messages");
+
+            if (!dmHeader) return;
+
+            // Remove existing DM entries
+            sb.querySelectorAll(".sidebar-dm").forEach(e => e.remove());
+
+            // Insert in sorted order immediately after header
+            let insertAfter = dmHeader;
+
+            dms.forEach(dm => {
+                const label = "@ " + dm.users.join(", ");
+                const el = sidebarEntry(label, dm.channel);
+
+                sb.insertBefore(el, insertAfter.nextSibling);
+                insertAfter = el;
+            });
+
+            updateSidebarActive();
+        });
+}
+
 function refreshPresence() {
     fetch("/online_users")
         .then(r => r.json())
         .then(online => {
-            document.querySelectorAll("#sidebar-dynamic [data-channel^='dm:']").forEach(el => {
-                const users = el.dataset.channel.split(":").slice(1).filter(u => u !== CURRENT_USER);
-                const isOnline = users.some(u => online.includes(u));
+            ONLINE_USERS = online;
 
-                // Rebuild label with dot
-                const baseLabel = "@ " + users.join(", ");
-                el.textContent = baseLabel + (isOnline ? " ●" : " ○");
+            document.querySelectorAll(".sidebar-dm").forEach(el => {
+                const channel = el.dataset.channel;
+                const users = channel
+                    .split(":")
+                    .slice(1)
+                    .filter(u => u !== CURRENT_USER);
 
-                // Optional: keep color consistent
+                const isOnline = users.some(u => ONLINE_USERS.includes(u));
+                el.textContent = "@ " + users.join(", ") + (isOnline ? " ●" : " ○");
                 el.style.color = isOnline ? "#6cf" : "#888";
             });
         });
 }
 
-function sidebarEntry(label, channelName, online = []) {
+function sidebarEntry(label, channelName) {
     const sb = document.getElementById("sidebar-dynamic");
-
     const d = document.createElement("div");
 
-    // 🔑 REQUIRED for highlighting
     d.className = "sidebar-item";
     d.dataset.channel = channelName;
 
-    // Optional presence indicator for DMs
     if (channelName.startsWith("dm:")) {
         const users = channelName
             .split(":")
             .slice(1)
             .filter(u => u !== CURRENT_USER);
 
-        const isOnline = users.some(u => online.includes(u));
+        const isOnline = users.some(u => ONLINE_USERS.includes(u));
+
         d.textContent = label + (isOnline ? " ●" : " ○");
         d.style.color = isOnline ? "#6cf" : "#888";
+
+        d.classList.add("sidebar-dm"); // 🔑 tag DM nodes
     } else {
         d.textContent = label;
     }
@@ -283,6 +318,7 @@ function sidebarEntry(label, channelName, online = []) {
     d.onclick = () => switchChannel(channelName);
 
     sb.appendChild(d);
+    return d; // 🔑 allow controlled insertion
 }
 
 // Switch Channel
@@ -322,7 +358,7 @@ function fetchMessages() {
     fetch(`/messages/${channel}?after=${lastTs}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-            if (!data) return;
+            if (!data || data.lenght === 0) return;
 
             const chat = document.getElementById("chat");
             let appended = false;
@@ -406,8 +442,10 @@ function fetchMessages() {
                 }
 
                 lastTs = Math.max(lastTs, m.ts);
+                refreshDMs();
             });
 
+            // Scrolling
             const shouldAutoScroll = isNearBottom(chat);
 
             if ((forceScrollToBottom || appended && shouldAutoScroll)) {
@@ -435,11 +473,15 @@ function send() {
     fetch(`/send/${channel}`, {
         method: "POST",
         body: form
+    }).then(r =>  {
+        if (r.ok) {
+            msgBox.value = "";
+            pendingFiles = [];
+            preview.innerHTML = "";
+            fetchMessages();
+            loadSidebar();
+        }
     });
-
-    msgBox.value = "";
-    pendingFiles = [];
-    preview.innerHTML = "";
 }
 
 // Direct Messages
@@ -570,16 +612,20 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;");
 }
 
+function startSearch() {
+    searchModal.style.display = "block";
+    searchInput.value = "";
+    searchResults.innerHTML = "";
+    searchInput.focus();
+}
+
 // Message search
 const searchModal = document.getElementById("msg-search-modal");
 const searchInput = document.getElementById("msg-search-input");
 const searchResults = document.getElementById("msg-search-results");
 
 document.getElementById("msg-search-btn").onclick = () => {
-    searchModal.style.display = "block";
-    searchInput.value = "";
-    searchResults.innerHTML = "";
-    searchInput.focus();
+    startSearch();
 };
 
 document.getElementById("msg-search-close").onclick = () => {
@@ -673,23 +719,29 @@ function wrapSelection(el, wrapper) {
     }
 }
 
-function formattingShortcuts(e) {
-
+function userInput(e) {
     // Vim Motions
     const scrollContainer = document.getElementById('chat');
     const scrollRate = 100;
     if (e.key === "j") {
          scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
     }
-    if (e.key === "k") {
+    else if (e.key === "k") {
          scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
     }
-    if (e.key === "G") {
+    else if (e.key === "G") {
          scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
-    if (e.key === "g") {
+    else if (e.key === "g") {
          scrollContainer.scrollTop = 0;
     }
+    else if (e.key === "/") {
+         scrollContainer.scrollTop = 0;
+    }
+
+
+
+    //Formatting Shortcuts
     const el = e.target;
 
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {

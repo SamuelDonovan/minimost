@@ -94,7 +94,7 @@ Images can be attached using the paperclip icon next to the message box but also
 - [ ] Password protected database
 - [ ] Password reset 
 - [x] Read protected databases 
-- [ ] Sort users by most recently messaged 
+- [x] Sort users by most recently messaged 
 - [ ] Autocomplete username for new DMs 
 - [x] Clickable URLs 
 - [x] Bold/Underline/Italic modifiers
