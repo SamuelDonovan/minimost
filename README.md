@@ -71,6 +71,7 @@ The biggest advantage is, we control the source and could make changes we want.
 - [x] Scrollable sidebar 
 - [ ] Bitbucket source previes for links
 - [ ] Deletable messages 
+- [x] Vim motions for scrolling 
 
 ## Known Bugs/Work Arounds
 

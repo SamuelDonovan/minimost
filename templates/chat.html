@@ -674,6 +674,22 @@ function wrapSelection(el, wrapper) {
 }
 
 function formattingShortcuts(e) {
+
+    // Vim Motions
+    const scrollContainer = document.getElementById('chat');
+    const scrollRate = 100;
+    if (e.key === "j") {
+         scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
+    }
+    if (e.key === "k") {
+         scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
+    }
+    if (e.key === "G") {
+         scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+    if (e.key === "g") {
+         scrollContainer.scrollTop = 0;
+    }
     const el = e.target;
 
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
@@ -681,6 +697,7 @@ function formattingShortcuts(e) {
     }
 
     const ctrl = e.ctrlKey || e.metaKey;
+
 
     // Bold
     if (ctrl && e.key === "b") {
