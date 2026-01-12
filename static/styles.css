@@ -26,7 +26,6 @@ body {
     flex-direction: column;
     border-right: 1px solid #ccc;
 }
-
 #sidebar-static {
     flex-shrink: 0;
     padding: 10px;
@@ -71,7 +70,6 @@ body {
     padding: 6px 10px;
     flex-wrap: wrap;
 }
-
 .preview-img {
     position: relative;
 }
@@ -81,7 +79,6 @@ body {
     border-radius: 6px;
     border: 1px solid #444;
 }
-
 .preview-img button {
     position: absolute;
     top: -6px;
@@ -169,9 +166,22 @@ body {
     font-weight: 600;
     margin-right: 4px;
 }
-
 .text {
     white-space: pre-wrap;
+}
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.unread-badge {
+    margin-left: auto;
+    background: #e33;
+    color: white;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
 }
 .modal {
     display: none; /* hidden by default */

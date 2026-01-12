@@ -68,7 +68,13 @@ def dms():
     rows = db.execute("""
         SELECT
             channel,
-            MAX(ts) AS last_ts
+            MAX(ts) AS last_ts,
+            COALESCE(SUM(
+                CASE
+                    WHEN read = 0 AND sender != ?
+                    THEN 1 ELSE 0
+                END
+            ), 0) AS unread
         FROM messages
         WHERE channel LIKE 'dm:%'
           AND (
@@ -78,7 +84,7 @@ def dms():
           )
         GROUP BY channel
         ORDER BY last_ts DESC
-    """, (user, user, user)).fetchall()
+    """, (user, user, user, user)).fetchall()
 
     db.close()
 
@@ -89,7 +95,8 @@ def dms():
 
         result.append({
             "channel": r["channel"],
-            "users": others
+            "users": others,
+            "unread": int(r["unread"])  # 🔑 ensure JS-safe
         })
 
     return jsonify(result)
@@ -164,8 +171,8 @@ def send(channel):
         db = get_db(r)
         # insert ONE message row (text only)
         db.execute("""
-            INSERT INTO messages (channel, sender, content, filename, ts)
-            VALUES (?, ?, ?, NULL, ?)
+            INSERT INTO messages (channel, sender, content, filename, ts, read)
+            VALUES (?, ?, ?, NULL, ?, 0)
         """, (channel, sender, text, ts))
 
 # insert image rows (no text)
@@ -249,6 +256,24 @@ def edit(msg_id):
         db.close()
 
     return "ok"
+
+@common.app.route("/mark_read/<channel>", methods=["POST"])
+@common.login_required
+def mark_read(channel):
+    user = session["user"]
+    db = get_db(user)
+
+    db.execute("""
+        UPDATE messages
+        SET read = 1
+        WHERE channel = ?
+          AND sender != ?
+    """, (channel, user))
+
+    db.commit()
+    db.close()
+    return "", 204
+
 
 @common.app.route("/users")
 @common.login_required

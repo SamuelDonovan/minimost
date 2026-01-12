@@ -33,7 +33,8 @@ def init_user_db(username: str):
         content TEXT,
         filename TEXT,
         ts REAL,
-        edited INTEGER DEFAULT 0
+        edited INTEGER DEFAULT 0,
+        read INTEGER DEFAULT 0
     )
     """)
 

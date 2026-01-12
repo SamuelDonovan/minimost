@@ -262,7 +262,7 @@ function refreshDMs() {
 
             dms.forEach(dm => {
                 const label = "@ " + dm.users.join(", ");
-                const el = sidebarEntry(label, dm.channel);
+                const el = sidebarEntry(label, dm.channel, dm.unread);
 
                 sb.insertBefore(el, insertAfter.nextSibling);
                 insertAfter = el;
@@ -286,20 +286,32 @@ function refreshPresence() {
                     .filter(u => u !== CURRENT_USER);
 
                 const isOnline = users.some(u => ONLINE_USERS.includes(u));
-                el.textContent = "@ " + users.join(", ") + (isOnline ? " ●" : " ○");
-                el.style.color = isOnline ? "#6cf" : "#888";
+
+                const presence = el.querySelector(".presence");
+                if (presence) {
+                    presence.textContent = isOnline ? " ●" : " ○";
+                    presence.style.color = isOnline ? "#6cf" : "#888";
+                }
             });
         });
 }
 
-function sidebarEntry(label, channelName) {
+function sidebarEntry(label, channelName, unread = 0) {
     const sb = document.getElementById("sidebar-dynamic");
     const d = document.createElement("div");
 
     d.className = "sidebar-item";
     d.dataset.channel = channelName;
 
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "label";
+    labelSpan.textContent = label;
+
+    d.appendChild(labelSpan);
+
     if (channelName.startsWith("dm:")) {
+        d.classList.add("sidebar-dm");
+
         const users = channelName
             .split(":")
             .slice(1)
@@ -307,18 +319,25 @@ function sidebarEntry(label, channelName) {
 
         const isOnline = users.some(u => ONLINE_USERS.includes(u));
 
-        d.textContent = label + (isOnline ? " ●" : " ○");
-        d.style.color = isOnline ? "#6cf" : "#888";
+        const presence = document.createElement("span");
+        presence.className = "presence";
+        presence.textContent = isOnline ? " ●" : " ○";
+        presence.style.color = isOnline ? "#6cf" : "#888";
 
-        d.classList.add("sidebar-dm"); // 🔑 tag DM nodes
-    } else {
-        d.textContent = label;
+        d.appendChild(presence);
+
+        if (unread > 0) {
+            const badge = document.createElement("span");
+            badge.className = "unread-badge";
+            badge.textContent = unread;
+            d.appendChild(badge);
+        }
     }
 
     d.onclick = () => switchChannel(channelName);
 
     sb.appendChild(d);
-    return d; // 🔑 allow controlled insertion
+    return d;
 }
 
 // Switch Channel
@@ -345,7 +364,9 @@ function switchChannel(c) {
     document.getElementById("chat").innerHTML = "";
     document.getElementById("chan").innerText = c;
     forceScrollToBottom = true;
+    fetch(`/mark_read/${channel}`, { method: "POST" });
     fetchMessages();
+    refreshDMs();
     loadSidebar();
 }
 
