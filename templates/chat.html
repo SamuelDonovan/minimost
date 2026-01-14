@@ -108,6 +108,7 @@
             <li><b>Enter</b> – Send message</li>
             <li><b>Shift + Enter</b> – New line</li>
             <li><b>/</b> – Search messages</li>
+            <li><b>o</b> – Start new DM</li>
             <li><b>Ctrl + b</b> – Bold text</li>
             <li><b>Ctrl + u</b> – Underline text</li>
             <li><b>Ctrl + i</b> – Italicize text</li>
@@ -790,7 +791,7 @@ function wrapSelection(el, wrapper) {
 function userInput(e) {
     // Vim Motions
     const scrollContainer = document.getElementById('chat');
-    const scrollRate = 100;
+    const scrollRate = 200;
     if (e.key === "j") {
          scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
     }
@@ -803,11 +804,19 @@ function userInput(e) {
     else if (e.key === "g" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollTop = 0;
     }
+    else if (e.key === "o" && !e.target.matches("input, textarea")) {
+         e.preventDefault();
+         dmModal.style.display = "block";
+         document.getElementById("dm-users").focus();
+    }
     else if (e.key === "/" && !e.target.matches("input, textarea")) {
          e.preventDefault();
          startSearch();
     }
     else if ((e.key === "Escape") || (e.key == "q")) {
+        // Close new DM if open
+        dmModal.style.display = "none";
+
         // Close search if open
         searchModal.style.display = "none";
 
