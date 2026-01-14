@@ -414,7 +414,6 @@ function switchChannel(c) {
     fetch(`/mark_read/${channel}`, { method: "POST" });
     fetchMessages();
     refreshDMs();
-    loadSidebar();
 }
 
 // Fetch Messages
