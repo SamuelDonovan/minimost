@@ -69,7 +69,7 @@ All text modifiers use markdown syntax[^1]. The modifier can be started and ende
 
 Images can be attached using the paperclip icon next to the message box but also with Ctrl+v when the image is in your clipboard and by dragging an image over the messagebox.
 
-### Vim motions (some to be implemented)
+### Vim motions
 
 * j to scroll down (down arrowkey also works).
 * k to scroll up (up arrowkey also works).
@@ -77,6 +77,9 @@ Images can be attached using the paperclip icon next to the message box but also
 * g(g) to scroll to top of channel.
 * / or f to search messages.
 * o to start a new DM.
+
+### Help Menu
+* ? To open help menu.
 
 ## Features
 
