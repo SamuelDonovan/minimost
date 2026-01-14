@@ -107,6 +107,7 @@
         <ul>
             <li><b>Enter</b> – Send message</li>
             <li><b>Shift + Enter</b> – New line</li>
+            <li><b>/</b> – Search messages</li>
             <li><b>Ctrl + b</b> – Bold text</li>
             <li><b>Ctrl + u</b> – Underline text</li>
             <li><b>Ctrl + i</b> – Italicize text</li>
@@ -793,16 +794,24 @@ function userInput(e) {
     if (e.key === "j") {
          scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
     }
-    else if (e.key === "k") {
+    else if (e.key === "k" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
     }
-    else if (e.key === "G") {
+    else if (e.key === "G" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
-    else if (e.key === "g") {
+    else if (e.key === "g" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollTop = 0;
     }
+    else if (e.key === "/" && !e.target.matches("input, textarea")) {
+         e.preventDefault();
+         startSearch();
+    }
     else if ((e.key === "Escape") || (e.key == "q")) {
+        // Close search if open
+        searchModal.style.display = "none";
+
+        // Close help if open
         closeHelp();
     }
 
