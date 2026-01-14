@@ -107,7 +107,7 @@ Images can be attached using the paperclip icon next to the message box but also
 - [x] Vim motions
 - [ ] Quote reply messages
 - [ ] Collapsable sidebar
-- [ ] Show shortcuts with ?
+- [x] Show shortcuts with ?
 
 ## Known Bugs/Work Arounds
 

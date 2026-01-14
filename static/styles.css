@@ -54,6 +54,55 @@ body {
 #sidebar-dynamic div.active {
     background: #007acc;
 }
+/* Help button (adjust to match your UI) */
+#help-btn {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+/* Overlay */
+#help-overlay {
+    position: fixed;
+    inset: 0;
+    background: #1e1e1e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+/* Hidden state */
+.hidden {
+    display: none !important;
+}
+
+/* Modal */
+#help-modal {
+    background: #1e1e1e;
+    padding: 20px 24px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 420px;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+/* Close button */
+#help-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+}
 #main {
     flex: 1;
     display: flex;

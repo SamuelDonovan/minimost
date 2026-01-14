@@ -92,12 +92,66 @@
     </div>
 </div>
 
+<!-- Help Button -->
+<button id="help-btn" aria-label="Help">?</button>
+
+<!-- Help Overlay -->
+<div id="help-overlay" class="hidden">
+    <div id="help-modal" role="dialog" aria-modal="true">
+        <button id="help-close" aria-label="Close help">&times;</button>
+
+        <h2>Help</h2>
+        <p>
+            Welcome to the MiniMost!
+        </p>
+        <ul>
+            <li><b>Enter</b> – Send message</li>
+            <li><b>Shift + Enter</b> – New line</li>
+            <li><b>Ctrl + b</b> – Bold text</li>
+            <li><b>Ctrl + u</b> – Underline text</li>
+            <li><b>Ctrl + i</b> – Italicize text</li>
+            <li><b>Ctrl + s</b> – Strikethrough text</li>
+            <li><b>j / k</b> – Scroll down/up</li>
+            <li><b>G / g(g)</b> – Scroll to bottom / top</li>
+            <li><b>Images</b> – Paste, drag, or attach images iwthe paperclip button</li>
+            <li><b>?</b> – Open this help</li>
+        </ul>
+    </div>
+</div>
+
 <!-- keyboard handling -->
 <script>
 const fileInput = document.getElementById("fileInput");
 const preview = document.getElementById("image-preview");
 const msgBox = document.getElementById("msg");
 const dropzone = document.getElementById("input");
+
+// Help Button
+const helpBtn     = document.getElementById("help-btn");
+const overlay     = document.getElementById("help-overlay");
+const modal       = document.getElementById("help-modal");
+const closeBtn    = document.getElementById("help-close");
+
+function openHelp() {
+    overlay.classList.remove("hidden");
+}
+
+function closeHelp() {
+    overlay.classList.add("hidden");
+}
+
+// Open via button
+helpBtn.addEventListener("click", openHelp);
+
+// Close via X
+closeBtn.addEventListener("click", closeHelp);
+
+// Close by clicking outside modal
+overlay.addEventListener("click", (e) => {
+    if (!modal.contains(e.target)) {
+        closeHelp();
+    }
+});
 
 msgBox.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -749,11 +803,15 @@ function userInput(e) {
     else if (e.key === "g") {
          scrollContainer.scrollTop = 0;
     }
-    else if (e.key === "/") {
-         scrollContainer.scrollTop = 0;
+    else if ((e.key === "Escape") || (e.key == "q")) {
+        closeHelp();
     }
 
-
+    // Avoid triggering while typing in inputs
+    if (e.key === "?" && !e.target.matches("input, textarea")) {
+        e.preventDefault();
+        openHelp();
+    }
 
     //Formatting Shortcuts
     const el = e.target;
