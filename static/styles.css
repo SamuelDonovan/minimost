@@ -254,6 +254,13 @@ body {
     max-height: 70%;
     overflow-y: auto;
 }
+.modal-content input,
+.modal-content select {
+    width: 90%;    
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 5px 10px;
+}
 
 #msg-search-results div {
     padding: 6px;
