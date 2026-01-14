@@ -67,7 +67,7 @@
 </div>
 
 <!-- DM Modal -->
-<div id="dm-modal" class="modal hidden">
+<div id="dm-modal" class="modal">
     <div class="modal-content">
         <h3>Start Direct Message</h3>
 
@@ -557,7 +557,7 @@ const dmModal = document.getElementById("dm-modal");
 
 document.getElementById("new-dm-btn").onclick = () => {
     dmModal.style.display = "block";
-    dm-users.focus();
+    document.getElementById("dm-users").focus();
 };
 
 document.getElementById("dm-cancel").onclick = () => {
