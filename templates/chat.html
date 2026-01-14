@@ -107,7 +107,7 @@
         <ul>
             <li><b>Enter</b> – Send message</li>
             <li><b>Shift + Enter</b> – New line</li>
-            <li><b>/</b> – Search messages</li>
+            <li><b>/ or f</b> – Search messages</li>
             <li><b>o</b> – Start new DM</li>
             <li><b>Ctrl + b</b> – Bold text</li>
             <li><b>Ctrl + u</b> – Underline text</li>
@@ -809,7 +809,7 @@ function userInput(e) {
          dmModal.style.display = "block";
          document.getElementById("dm-users").focus();
     }
-    else if (e.key === "/" && !e.target.matches("input, textarea")) {
+    else if ((e.key === "/" || (e.key === "f")) && !e.target.matches("input, textarea")) {
          e.preventDefault();
          startSearch();
     }
