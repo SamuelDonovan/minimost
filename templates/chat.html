@@ -99,7 +99,7 @@ const preview = document.getElementById("image-preview");
 const msgBox = document.getElementById("msg");
 const dropzone = document.getElementById("input");
 
-document.getElementById("msg").addEventListener("keydown", e => {
+msgBox.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         send();
@@ -111,13 +111,6 @@ document.addEventListener("load", e => {
         e.target.classList.add("loaded");
     }
 }, true);
-
-msgBox.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
-    }
-});
 
 msgBox.addEventListener("paste", e => {
     const items = e.clipboardData?.items || [];
