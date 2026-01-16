@@ -492,7 +492,7 @@ function fetchMessages() {
                         if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
                             html += `
                                 <a href="/files/${f}" target="_blank">
-                                    <img src="/files/${f}" class="chat-image" loading="lazy">
+                                    <img src="/files/${f}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='static/retention.png';">
                                 </a>
                             `;
                         }

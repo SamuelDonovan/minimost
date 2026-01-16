@@ -111,6 +111,8 @@ Images can be attached using the paperclip icon next to the message box but also
 - [ ] Quote reply messages
 - [ ] Collapsable sidebar
 - [x] Show shortcuts with ?
+- [x] Show onerror image for retention policy 
+- [ ] Add image retention policy
 
 ## Known Bugs/Work Arounds
 
