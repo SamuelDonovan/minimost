@@ -58,6 +58,33 @@ CHANNELS = ["general", "off-topic", "dev"]
 def channels():
     return jsonify(CHANNELS)
 
+@common.app.route("/unread_count")
+@common.login_required
+def unread_count():
+    user = session["user"]
+    db = get_db(user)
+
+    row = db.execute("""
+        SELECT
+            COALESCE(SUM(
+                CASE
+                    WHEN read = 0 AND sender != ?
+                    THEN 1 ELSE 0
+                END
+            ), 0) AS unread
+        FROM messages
+        WHERE channel LIKE 'dm:%'
+          AND (
+                channel LIKE 'dm:' || ? || ':%'
+             OR channel LIKE 'dm:%:' || ?
+             OR channel LIKE 'dm:%:' || ? || ':%'
+          )
+    """, (user, user, user, user)).fetchone()
+
+    count = row["unread"]
+    return {"count": count}
+
+
 # DM list for sidebar
 @common.app.route("/dms")
 @common.login_required

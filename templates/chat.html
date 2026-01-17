@@ -347,6 +347,39 @@ function refreshPresence() {
         });
 }
 
+let baseTitle = document.title;
+let lastUnreadCount = 0;
+
+function updateTitleBadge(count) {
+    if (count > 0) {
+        document.title = `(${count}) ${baseTitle}`;
+    } else {
+        document.title = baseTitle;
+    }
+}
+
+function updateAppBadge(count) {
+    if (!("setAppBadge" in navigator)) return;
+
+    if (count > 0) {
+        navigator.setAppBadge(count).catch(() => {});
+    } else {
+        navigator.clearAppBadge().catch(() => {});
+    }
+}
+
+function refreshTotalUnreadCount() {
+    fetch("/unread_count")
+        .then(r => r.json())
+        .then(data => {
+            if (data.count !== lastUnreadCount) {
+                lastUnreadCount = data.count;
+                updateTitleBadge(data.count);
+                updateAppBadge(data.count);
+            }
+        });
+}
+
 function sidebarEntry(label, channelName, unread = 0) {
     const sb = document.getElementById("sidebar-dynamic");
     const d = document.createElement("div");
@@ -791,6 +824,14 @@ function wrapSelection(el, wrapper) {
 }
 
 function userInput(e) {
+
+    if (e.key === "i") {
+        e.preventDefault();
+        console.log("i");
+        const input = document.getElementById("input");
+        input.focus();
+    }
+
     // Vim Motions
     const scrollContainer = document.getElementById('chat');
     const scrollRate = 200;
@@ -922,6 +963,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(fetchMessages, 500);
     setInterval(refreshPresence, 1000);
     setInterval(refreshDMs, 1000);
+    setInterval(refreshTotalUnreadCount, 5000);
 
 });
 
