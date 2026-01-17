@@ -261,7 +261,26 @@ body {
     box-sizing: border-box;
     padding: 5px 10px;
 }
+.autocomplete-suggestions {
+    position: absolute;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    max-height: 150px;
+    overflow-y: auto;
+    width: calc(100% - 40px); /* adjust to fit input padding */
+    z-index: 1001; /* above modal content */
+    display: none;
+    color: #ddd;
+}
 
+.autocomplete-suggestion {
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+.autocomplete-suggestion:hover {
+    background: #444;
+}
 #msg-search-results div {
     padding: 6px;
     border-bottom: 1px solid #333;

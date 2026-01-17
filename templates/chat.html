@@ -75,6 +75,7 @@
             id="dm-users"
             placeholder="Enter usernames (comma separated)"
         />
+        <div id="dm-suggestions" class="autocomplete-suggestions"></div>
 
         <div class="modal-actions">
             <button id="dm-start">Start</button>
@@ -590,11 +591,75 @@ function send() {
 
 // Direct Messages
 const dmModal = document.getElementById("dm-modal");
+const dmUsersInput = document.getElementById("dm-users");
+const dmSuggestions = document.getElementById("dm-suggestions");
+dmUsersInput.addEventListener("input", updateSuggestions);
+let allUsers = [];
+let usersLoaded = false;
 
-document.getElementById("new-dm-btn").onclick = () => {
+async function openDmModal() {
     dmModal.style.display = "block";
-    document.getElementById("dm-users").focus();
+    dmUsersInput.focus();
+
+    // Fetch users once (or remove this guard if you want to refresh every time)
+    if (!usersLoaded) {
+        try {
+            const resp = await fetch("/users");
+            if (resp.ok) {
+                allUsers = await resp.json();
+                usersLoaded = true;
+            } else {
+                console.error("Failed to fetch users");
+            }
+        } catch (err) {
+            console.error("Error fetching users:", err);
+        }
+    }
+}
+
+// Fetch users when the DM modal is opened
+document.getElementById("new-dm-btn").onclick = async () => {
+    openDmModal();
 };
+
+function updateSuggestions() {
+    const raw = dmUsersInput.value;
+    const parts = raw.split(",").map(p => p.trim());
+    const lastPart = parts[parts.length - 1].toLowerCase();
+
+    if (!lastPart) {
+        dmSuggestions.style.display = "none";
+        return;
+    }
+
+    // Filter fetched users
+    const filtered = allUsers.filter(u => 
+        u.toLowerCase().startsWith(lastPart) &&
+        !parts.includes(u)
+    );
+
+    if (!filtered.length) {
+        dmSuggestions.style.display = "none";
+        return;
+    }
+
+    dmSuggestions.innerHTML = "";
+    filtered.forEach(u => {
+        const div = document.createElement("div");
+        div.className = "autocomplete-suggestion";
+        div.textContent = u;
+        div.onclick = () => {
+            parts[parts.length - 1] = u;
+            dmUsersInput.value = parts.join(", ") + ", ";
+            dmSuggestions.style.display = "none";
+            dmUsersInput.focus();
+        };
+        dmSuggestions.appendChild(div);
+    });
+
+    dmSuggestions.style.display = "block";
+}
+
 
 document.getElementById("dm-cancel").onclick = () => {
     dmModal.style.display = "none";
@@ -824,14 +889,6 @@ function wrapSelection(el, wrapper) {
 }
 
 function userInput(e) {
-
-    if (e.key === "i") {
-        e.preventDefault();
-        console.log("i");
-        const input = document.getElementById("input");
-        input.focus();
-    }
-
     // Vim Motions
     const scrollContainer = document.getElementById('chat');
     const scrollRate = 200;
@@ -855,8 +912,7 @@ function userInput(e) {
     }
     else if (e.key === "o" && !e.target.matches("input, textarea")) {
          e.preventDefault();
-         dmModal.style.display = "block";
-         document.getElementById("dm-users").focus();
+         openDmModal();
     }
     else if ((e.key === "/" || (e.key === "f")) && !e.target.matches("input, textarea")) {
          e.preventDefault();

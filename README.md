@@ -98,11 +98,11 @@ Images can be attached using the paperclip icon next to the message box but also
 - [ ] Password reset 
 - [x] Read protected databases 
 - [x] Sort users by most recently messaged 
-- [ ] Autocomplete username for new DMs 
+- [x] Autocomplete username for new DMs 
 - [x] Clickable URLs 
 - [x] Bold/Underline/Italic modifiers
 - [ ] Typing indicators
-- [ ] New message indicators
+- [x] New message indicators
 - [x] Date/time stamps on messages  
 - [x] Scrollable sidebar 
 - [ ] Bitbucket source previews for links
