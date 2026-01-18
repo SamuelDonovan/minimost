@@ -108,6 +108,8 @@
         <ul>
             <li><b>Enter</b> – Send message</li>
             <li><b>Shift + Enter</b> – New line</li>
+            <li><b>i</b> – Focus message input</li>
+            <li><b>o</b> – Start new DM</li>
             <li><b>/ or f</b> – Search messages</li>
             <li><b>o</b> – Start new DM</li>
             <li><b>Ctrl + b</b> – Bold text</li>
@@ -118,7 +120,7 @@
             <li><b>d / u</b> – 2x scroll down/up</li>
             <li><b>G / g(g)</b> – Scroll to bottom / top</li>
             <li><b>Images</b> – Paste, drag, or attach images iwthe paperclip button</li>
-            <li><b>Esc</b> – Close menus</li>
+            <li><b>Esc</b> – Close menus/unfocus message input</li>
             <li><b>?</b> – Open this help</li>
         </ul>
     </div>
@@ -133,16 +135,16 @@ const dropzone = document.getElementById("input");
 
 // Help Button
 const helpBtn     = document.getElementById("help-btn");
-const overlay     = document.getElementById("help-overlay");
-const modal       = document.getElementById("help-modal");
+const helpOverlay     = document.getElementById("help-overlay");
+const helpModal       = document.getElementById("help-modal");
 const closeBtn    = document.getElementById("help-close");
 
 function openHelp() {
-    overlay.classList.remove("hidden");
+    helpOverlay.classList.remove("hidden");
 }
 
 function closeHelp() {
-    overlay.classList.add("hidden");
+    helpOverlay.classList.add("hidden");
 }
 
 // Open via button
@@ -152,8 +154,8 @@ helpBtn.addEventListener("click", openHelp);
 closeBtn.addEventListener("click", closeHelp);
 
 // Close by clicking outside modal
-overlay.addEventListener("click", (e) => {
-    if (!modal.contains(e.target)) {
+helpOverlay.addEventListener("click", (e) => {
+    if (!helpModal.contains(e.target)) {
         closeHelp();
     }
 });
@@ -1112,9 +1114,7 @@ function closeAllModalsAndFocusChat() {
         searchModal.style.display = "none";
     }
 
-    //if (helpModal && helpModal.style.display === "block") {
-    //    helpModal.style.display = "none";
-    //}
+    closeHelp();
 
     // Reset DM input state
     if (dmUsersInput) {
