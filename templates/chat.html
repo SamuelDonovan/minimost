@@ -593,9 +593,82 @@ function send() {
 const dmModal = document.getElementById("dm-modal");
 const dmUsersInput = document.getElementById("dm-users");
 const dmSuggestions = document.getElementById("dm-suggestions");
+
 dmUsersInput.addEventListener("input", updateSuggestions);
+
+document.addEventListener("click", (e) => {
+    if (!dmUsersInput.contains(e.target) && !dmSuggestions.contains(e.target)) {
+        dmSuggestions.style.display = "none";
+        suggestionIndex = -1;
+    }
+});
+
+dmUsersInput.addEventListener("keydown", (e) => {
+    const items = dmSuggestions.children;
+    const suggestionsVisible = dmSuggestions.style.display === "block";
+    const typingUser = isTypingUsername();
+
+    // TAB → autocomplete
+    if (e.key === "Tab" && suggestionsVisible && items.length) {
+        e.preventDefault();
+        selectSuggestion(
+            suggestionIndex >= 0 ? suggestionIndex : 0
+        );
+        return;
+    }
+
+    // ENTER behavior
+    if (e.key === "Enter") {
+        e.preventDefault();
+
+        // If typing a username and suggestions exist → autocomplete
+        if (typingUser && suggestionsVisible && items.length) {
+            selectSuggestion(
+                suggestionIndex >= 0 ? suggestionIndex : 0
+            );
+            return;
+        }
+
+        // Otherwise → start DM
+        document.getElementById("dm-start").click();
+        return;
+    }
+
+    // Navigation only if suggestions are visible
+    if (!suggestionsVisible) return;
+
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
+        suggestionIndex =
+            (suggestionIndex + 1) % items.length;
+        updateActiveSuggestion();
+    }
+
+    else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        suggestionIndex =
+            (suggestionIndex - 1 + items.length) % items.length;
+        updateActiveSuggestion();
+    }
+
+    else if (e.key === "Escape") {
+        dmSuggestions.style.display = "none";
+        suggestionIndex = -1;
+    }
+});
+
+function updateActiveSuggestion() {
+    const items = dmSuggestions.children;
+
+    Array.from(items).forEach((el, i) => {
+        el.classList.toggle("active", i === selectedSuggestionIndex);
+    });
+}
+
 let allUsers = [];
 let usersLoaded = false;
+let suggestionIndex = -1;
+let currentSuggestions = [];
 
 async function openDmModal() {
     dmModal.style.display = "block";
@@ -617,56 +690,96 @@ async function openDmModal() {
     }
 }
 
+function resetDmModal() {
+    dmUsersInput.value = "";
+    dmSuggestions.style.display = "none";
+    selectedSuggestionIndex = -1;
+}
+
 // Fetch users when the DM modal is opened
 document.getElementById("new-dm-btn").onclick = async () => {
     openDmModal();
 };
 
 function updateSuggestions() {
+    if (!usersLoaded) return;
+
     const raw = dmUsersInput.value;
     const parts = raw.split(",").map(p => p.trim());
     const lastPart = parts[parts.length - 1].toLowerCase();
+
+    suggestionIndex = -1;
 
     if (!lastPart) {
         dmSuggestions.style.display = "none";
         return;
     }
 
-    // Filter fetched users
-    const filtered = allUsers.filter(u => 
+    currentSuggestions = allUsers.filter(u =>
         u.toLowerCase().startsWith(lastPart) &&
         !parts.includes(u)
     );
 
-    if (!filtered.length) {
+    if (!currentSuggestions.length) {
         dmSuggestions.style.display = "none";
         return;
     }
 
     dmSuggestions.innerHTML = "";
-    filtered.forEach(u => {
+
+    currentSuggestions.forEach((u, idx) => {
         const div = document.createElement("div");
         div.className = "autocomplete-suggestion";
         div.textContent = u;
-        div.onclick = () => {
-            parts[parts.length - 1] = u;
-            dmUsersInput.value = parts.join(", ") + ", ";
-            dmSuggestions.style.display = "none";
-            dmUsersInput.focus();
-        };
+
+        div.onclick = () => selectSuggestion(idx);
+
         dmSuggestions.appendChild(div);
     });
 
     dmSuggestions.style.display = "block";
 }
 
+function focusMessageInput() {
+    // ✅ Scroll chat to bottom
+    const chatContainer = document.getElementById("chat");
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    setTimeout(() => {
+        const msgInput = document.getElementById("msg");
+        if (msgInput) {
+            msgInput.focus();
+            // Place cursor at the end of any existing text
+            msgInput.setSelectionRange(msgInput.value.length, msgInput.value.length);
+        }
+    }, 10); // Slight delay ensures DOM updates (e.g., fetchMessages) are complete
+}
+
+function isTypingUsername() {
+    const parts = dmUsersInput.value.split(",");
+    const last = parts[parts.length - 1];
+    return last.trim().length > 0;
+}
+
+function selectSuggestion(idx) {
+    const raw = dmUsersInput.value;
+    const parts = raw.split(",").map(p => p.trim());
+
+    parts[parts.length - 1] = currentSuggestions[idx];
+    dmUsersInput.value = parts.join(", ") + ", ";
+
+    dmSuggestions.style.display = "none";
+    suggestionIndex = -1;
+    dmUsersInput.focus();
+}
 
 document.getElementById("dm-cancel").onclick = () => {
     dmModal.style.display = "none";
 };
 
 document.getElementById("dm-start").onclick = () => {
-    const raw = document.getElementById("dm-users").value.trim();
+    const raw = dmUsersInput.value.trim();
     if (!raw) return;
 
     const users = raw
@@ -676,20 +789,20 @@ document.getElementById("dm-start").onclick = () => {
 
     if (!users.length) return;
 
-    // Always include yourself
     if (!users.includes(CURRENT_USER)) {
         users.push(CURRENT_USER);
     }
 
-    users.sort(); // IMPORTANT: consistent channel naming
+    users.sort();
 
     const dmChannel = "dm:" + users.join(":");
 
-    dmModal.classList.add("hidden");
-    document.getElementById("dm-users").value = "";
+    resetDmModal();
+    dmModal.style.display = "none";
 
     switchChannel(dmChannel);
-    dmModal.style.display = "none";
+
+    focusMessageInput();
 };
 
 // Edit Messages
@@ -892,13 +1005,13 @@ function userInput(e) {
     // Vim Motions
     const scrollContainer = document.getElementById('chat');
     const scrollRate = 200;
-    if (e.key === "j") {
+    if (e.key === "j" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
     }
     else if (e.key === "k" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
     }
-    else if (e.key === "d") {
+    else if (e.key === "d" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollBy({ top: 2*scrollRate, behavior: 'smooth' });
     }
     else if (e.key === "u" && !e.target.matches("input, textarea")) {
@@ -910,6 +1023,10 @@ function userInput(e) {
     else if (e.key === "g" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollTop = 0;
     }
+    else if (e.key === "i" && !e.target.matches("input, textarea")) {
+         e.preventDefault();
+         focusMessageInput();
+    }
     else if (e.key === "o" && !e.target.matches("input, textarea")) {
          e.preventDefault();
          openDmModal();
@@ -919,18 +1036,11 @@ function userInput(e) {
          startSearch();
     }
     else if ((e.key === "Escape") || (e.key == "q")) {
-        // Close new DM if open
-        dmModal.style.display = "none";
-
-        // Close search if open
-        searchModal.style.display = "none";
-
-        // Close help if open
-        closeHelp();
+        closeAllModalsAndFocusChat();
     }
 
     // Avoid triggering while typing in inputs
-    if (e.key === "?" && !e.target.matches("input, textarea")) {
+    else if (e.key === "?" && !e.target.matches("input, textarea")) {
         e.preventDefault();
         openHelp();
     }
@@ -976,6 +1086,42 @@ function debounce(func, wait = 200) {
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(this, args), wait);
     };
+}
+
+function focusChatContainer() {
+    const chatContainer = document.getElementById("chat");
+    if (!chatContainer) return;
+
+    chatContainer.focus(); // focus the div
+}
+
+function closeAllModalsAndFocusChat() {
+    // Close DM modal
+    if (dmModal.style.display === "block") {
+        dmModal.style.display = "none";
+    }
+
+    // Hide DM suggestions
+    if (dmSuggestions.style.display === "block") {
+        dmSuggestions.style.display = "none";
+        selectedSuggestionIndex = -1;
+    }
+
+    // Close other modals if you have them
+    if (searchModal && searchModal.style.display === "block") {
+        searchModal.style.display = "none";
+    }
+
+    //if (helpModal && helpModal.style.display === "block") {
+    //    helpModal.style.display = "none";
+    //}
+
+    // Reset DM input state
+    if (dmUsersInput) {
+        dmUsersInput.value = "";
+    }
+
+    focusChatContainer();
 }
 
 // Live search

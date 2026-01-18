@@ -113,6 +113,9 @@ body {
     overflow-y: auto;
     padding: 10px;
 }
+#chat:focus {
+    outline: none;
+}
 #image-preview {
     display: flex;
     gap: 8px;
@@ -272,12 +275,13 @@ body {
     display: none;
     color: #ddd;
 }
-
 .autocomplete-suggestion {
     padding: 5px 10px;
     cursor: pointer;
 }
-
+.autocomplete-suggestion.active {
+    background: #555;
+}
 .autocomplete-suggestion:hover {
     background: #444;
 }
