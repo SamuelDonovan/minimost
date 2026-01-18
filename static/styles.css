@@ -294,7 +294,10 @@ body {
 #msg-search-results div:hover {
     background: #2d2d2d;
 }
-
+#msg-search-results .active {
+    background-color: #555;
+    color: #fff;
+}
 button, input, textarea{
     background: #2d2d2d;
     color: #ddd;
