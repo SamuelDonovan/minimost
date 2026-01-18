@@ -23,9 +23,6 @@ ONLINE_WINDOW = 30  # seconds
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-def now():
-    return time()
-
 def get_db(username: str):
     db = sqlite3.connect(common.user_db_path(username))
     db.row_factory = sqlite3.Row
@@ -38,7 +35,7 @@ def all_users():
     return [r[0] for r in rows]
 
 def is_online(user: str) -> bool:
-    return (now() - USER_STATUS.get(user, 0)) < ONLINE_WINDOW
+    return (time() - USER_STATUS.get(user, 0)) < ONLINE_WINDOW
 
 # Channel Helpers
 def normalize_dm(users: list[str]) -> str:
@@ -154,7 +151,7 @@ def messages(channel):
     """, (channel, after)).fetchall()
     db.close()
 
-    USER_STATUS[user] = now()
+    USER_STATUS[user] = time()
     return jsonify([dict(r) for r in rows])
 
 
@@ -186,7 +183,7 @@ def send(channel):
     if not text and not filenames:
         return "empty", 400
 
-    ts = now()
+    ts = time()
     recipients = channel_users(channel)
     if sender not in recipients:
         recipients.append(sender)
