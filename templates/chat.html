@@ -119,6 +119,7 @@
             <li><b>j / k</b> – Scroll down/up</li>
             <li><b>d / u</b> – 2x scroll down/up</li>
             <li><b>G / g(g)</b> – Scroll to bottom / top</li>
+            <li><b>Ctrl j / Ctrl k</b> – Scroll down/up through chats</li>
             <li><b>Images</b> – Paste, drag, or attach images iwthe paperclip button</li>
             <li><b>Esc</b> – Close menus/unfocus message input</li>
             <li><b>?</b> – Open this help</li>
@@ -1013,16 +1014,60 @@ function wrapSelection(el, wrapper) {
 }
 
 function userInput(e) {
-    // Vim Motions
+    // Vim motions
+
+    // Ctrl + j/k for channel cycling
+    if ((e.ctrlKey || e.metaKey) && !e.target.matches("input, textarea")) {
+        const items = Array.from(document.querySelectorAll("#sidebar-dynamic [data-channel]"));
+        if (!items.length) return;
+
+        let currentIndex = items.findIndex((el) => el.dataset.channel === channel);
+        if (currentIndex === -1) currentIndex = 0;
+
+        if (e.key === "j") {
+            const nextIndex = (currentIndex + 1) % items.length;
+            switchChannel(items[nextIndex].dataset.channel);
+            e.preventDefault();
+        } else if (e.key === "k") {
+            const prevIndex = (currentIndex - 1 + items.length) % items.length;
+            switchChannel(items[prevIndex].dataset.channel);
+            e.preventDefault();
+        }
+
+        // Bold
+        else if (e.key === "b") {
+            e.preventDefault();
+            wrapSelection(el, "**");
+        }
+        // Italic
+        else if (e.key === "i") {
+            e.preventDefault();
+            wrapSelection(el, "*");
+        }
+
+        // Underline
+        else if (e.key === "u") {
+            e.preventDefault();
+            wrapSelection(el, "__");
+        }
+
+        // Strikethrough
+        else if (e.key === "s") {
+            e.preventDefault();
+            wrapSelection(el, "~~");
+        }
+        return; // stop further processing
+    }
+
+    // Vim-style scroll motions
     const scrollContainer = document.getElementById('chat');
     const scrollRate = 200;
+
     if (e.key === "j" && !e.target.matches("input, textarea")) {
-         scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
-    }
-    else if (e.key === "k" && !e.target.matches("input, textarea")) {
-         scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
-    }
-    else if (e.key === "d" && !e.target.matches("input, textarea")) {
+        scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
+    } else if (e.key === "k" && !e.target.matches("input, textarea")) {
+        scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
+    } else if (e.key === "d" && !e.target.matches("input, textarea")) {
          scrollContainer.scrollBy({ top: 2*scrollRate, behavior: 'smooth' });
     }
     else if (e.key === "u" && !e.target.matches("input, textarea")) {
@@ -1061,32 +1106,6 @@ function userInput(e) {
 
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
         return;
-    }
-
-    const ctrl = e.ctrlKey || e.metaKey;
-
-
-    // Bold
-    if (ctrl && e.key === "b") {
-        e.preventDefault();
-        wrapSelection(el, "**");
-    }
-    // Italic
-    if (ctrl && e.key === "i") {
-        e.preventDefault();
-        wrapSelection(el, "*");
-    }
-
-    // Underline
-    if (ctrl && e.key === "u") {
-        e.preventDefault();
-        wrapSelection(el, "__");
-    }
-
-    // Strikethrough
-    if (ctrl && e.key === "s") {
-        e.preventDefault();
-        wrapSelection(el, "~~");
     }
 }
 

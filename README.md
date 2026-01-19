@@ -77,6 +77,8 @@ Images can be attached using the paperclip icon next to the message box but also
 * g(g) to scroll to top of channel.
 * / or f to search messages.
 * o to start a new DM.
+* Ctrl + j to scroll down through chats.
+* Ctrl + k to scroll up through chats.
 
 ### Help Menu
 * ? To open help menu.
