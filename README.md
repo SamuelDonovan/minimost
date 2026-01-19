@@ -4,12 +4,12 @@ Mom: We have Mattermost at home.
 
 <details>
   <summary>Mattermost at home:</summary>
-  <img src="./imgs/skype.png" alt="Skype Logo">
+  <img src="./static/skype.png" alt="Skype Logo">
 </details>
 
 ---
 
-![Smurf Fine](./imgs/smurf.png)
+![Smurf Fine](./static/smurf.png)
 
 # MiniMost
 
