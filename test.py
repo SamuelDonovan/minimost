@@ -8,12 +8,14 @@ import uuid
 
 # From Flask 
 from flask import (
-    request, jsonify, render_template, send_from_directory, session, redirect
+    request, jsonify, render_template, send_from_directory, session, Blueprint
 )
 
 # Local Imports
 import common
 import auth 
+
+test_bp = Blueprint("test", __name__)
 
 # Shared helpers
 # presence
@@ -29,7 +31,7 @@ def get_db(username: str):
     return db
 
 def all_users():
-    db = sqlite3.connect(common.AUTH_DB)
+    db = sqlite3.connect(auth.AUTH_DB)
     rows = db.execute("SELECT username FROM users").fetchall()
     db.close()
     return [r[0] for r in rows]
@@ -50,13 +52,13 @@ def channel_users(channel: str) -> list[str]:
 # Channels endpoint
 CHANNELS = ["general", "off-topic", "dev"]
 
-@common.app.route("/channels")
-@common.login_required
+@test_bp.route("/channels")
+@auth.login_required
 def channels():
     return jsonify(CHANNELS)
 
-@common.app.route("/unread_count")
-@common.login_required
+@test_bp.route("/unread_count")
+@auth.login_required
 def unread_count():
     user = session["user"]
     db = get_db(user)
@@ -83,8 +85,8 @@ def unread_count():
 
 
 # DM list for sidebar
-@common.app.route("/dms")
-@common.login_required
+@test_bp.route("/dms")
+@auth.login_required
 def dms():
     user = session["user"]
     db = get_db(user)
@@ -126,14 +128,14 @@ def dms():
     return jsonify(result)
 
 # Presence endpoint
-@common.app.route("/online_users")
+@test_bp.route("/online_users")
 def online_users():
     now = time()
     return jsonify([u for u, ts in USER_STATUS.items() if now - ts < 60])
 
 # Fetch messages
-@common.app.route("/messages/<channel>")
-@common.login_required
+@test_bp.route("/messages/<channel>")
+@auth.login_required
 def messages(channel):
     user = session["user"]
     after = float(request.args.get("after", 0))
@@ -156,8 +158,8 @@ def messages(channel):
 
 
 # Send
-@common.app.route("/send/<channel>", methods=["POST"])
-@common.login_required
+@test_bp.route("/send/<channel>", methods=["POST"])
+@auth.login_required
 def send(channel):
     sender = session["user"]
     text = (request.form.get("text") or "").rstrip()
@@ -212,14 +214,14 @@ def send(channel):
     USER_STATUS[sender] = ts
     return "ok"
 
-@common.app.route("/files/<path:filename>")
-@common.login_required
+@test_bp.route("/files/<path:filename>")
+@auth.login_required
 def files(filename):
     return send_from_directory("uploads", filename)
 
 # Search messages
-@common.app.route("/search_messages")
-@common.login_required
+@test_bp.route("/search_messages")
+@auth.login_required
 def search_messages():
     user = session["user"]
     query = request.args.get("q", "").strip()
@@ -244,8 +246,8 @@ def search_messages():
     return jsonify(results)
 
 # Edit message
-@common.app.route("/edit/<int:msg_id>", methods=["POST"])
-@common.login_required
+@test_bp.route("/edit/<int:msg_id>", methods=["POST"])
+@auth.login_required
 def edit(msg_id):
     editor = session["user"]
     new_text = request.form.get("text", "").strip()
@@ -281,8 +283,8 @@ def edit(msg_id):
 
     return "ok"
 
-@common.app.route("/mark_read/<channel>", methods=["POST"])
-@common.login_required
+@test_bp.route("/mark_read/<channel>", methods=["POST"])
+@auth.login_required
 def mark_read(channel):
     user = session["user"]
     db = get_db(user)
@@ -299,19 +301,16 @@ def mark_read(channel):
     return "", 204
 
 
-@common.app.route("/users")
-@common.login_required
+@test_bp.route("/users")
+@auth.login_required
 def users():
     """Return all usernames except the current user"""
     me = session["user"]
     users = [u for u in all_users() if u != me]
     return jsonify(users)
 
-@common.app.route("/")
-@common.login_required
+@test_bp.route("/")
+@auth.login_required
 def index():
     return render_template("chat.html")
-
-if __name__ == "__main__":
-    common.app.run(host="0.0.0.0", port=6767, debug=True)
 

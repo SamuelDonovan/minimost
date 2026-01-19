@@ -1,24 +1,37 @@
 # From the python standard library
+from functools import wraps
 import sqlite3
 from hashlib import sha256
 import time
 
 # From Flask 
-from flask import session, redirect, url_for, request, render_template
+from flask import session, redirect, url_for, request, render_template, Blueprint
 
 # Local Imports
 import common
 
+AUTH_DB = "auth.db"
+
+auth_bp = Blueprint("auth", __name__)
+
 def hash_password(password: str) -> str:
     return sha256(password.encode("utf-8")).hexdigest()
 
-@common.app.route("/login", methods=["GET", "POST"])
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if "user" not in session:
+            return redirect("/login")
+        return fn(*args, **kwargs)
+    return wrapper
+
+@auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
 
-        db = sqlite3.connect(common.AUTH_DB)
+        db = sqlite3.connect(AUTH_DB)
         row = db.execute(
             "SELECT password_hash FROM users WHERE username = ?",
             (username,)
@@ -27,7 +40,7 @@ def login():
 
         if not row or row[0] != hash_password(password):
             # Delay to prevent users from brute forcing others passwords
-            time.sleep(1)
+            time.sleep(3)
             return render_template("login.html", error="Invalid credentials")
 
         session["user"] = username
@@ -36,13 +49,13 @@ def login():
 
     return render_template("login.html")
 
-@common.app.route("/logout")
-@common.login_required
+@auth_bp.route("/logout")
+@login_required
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
-@common.app.route("/signup", methods=["GET", "POST"])
+@auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
         username = request.form["username"].strip()
@@ -58,7 +71,7 @@ def signup():
                 error="Passwords do not match"
             )
 
-        db = sqlite3.connect(common.AUTH_DB)
+        db = sqlite3.connect(AUTH_DB)
         try:
             db.execute(
                 "INSERT INTO users VALUES (?, ?)",
@@ -80,7 +93,7 @@ def signup():
     return render_template("signup.html")
 
 def init_auth_db():
-    db = sqlite3.connect(common.AUTH_DB)
+    db = sqlite3.connect(AUTH_DB)
     db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
