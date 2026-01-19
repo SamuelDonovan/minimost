@@ -38,5 +38,5 @@ def delete_files_older_than(directory: str, days: int, dry_run: bool = False):
                 print(f"Deleted: {path}")
 
 if __name__ == "__main__":
-    delete_files_older_than(directory = "uploads", days=2)
+    delete_files_older_than(directory = "uploads", days=30)
 
