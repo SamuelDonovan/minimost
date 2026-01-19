@@ -162,7 +162,7 @@ If not, manually download the flask wheel and its dependencies and install with:
 
 After installing the dependencies, clone and repo and run the following:
 
-`python3 test.py`[^2]
+`python3 minmost.py`[^2]
 
 [^2]: If using Windows use `py` rather than `python3`
 

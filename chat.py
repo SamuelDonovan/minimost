@@ -1,9 +1,7 @@
 # From the python standard library
 from time import time
-import socket 
 import sqlite3
 import os
-import re
 import uuid 
 
 # From Flask 
@@ -15,7 +13,7 @@ from flask import (
 import common
 import auth 
 
-test_bp = Blueprint("test", __name__)
+chat_bp = Blueprint("chat", __name__)
 
 # Shared helpers
 # presence
@@ -52,12 +50,12 @@ def channel_users(channel: str) -> list[str]:
 # Channels endpoint
 CHANNELS = ["general", "off-topic", "dev"]
 
-@test_bp.route("/channels")
+@chat_bp.route("/channels")
 @auth.login_required
 def channels():
     return jsonify(CHANNELS)
 
-@test_bp.route("/unread_count")
+@chat_bp.route("/unread_count")
 @auth.login_required
 def unread_count():
     user = session["user"]
@@ -85,7 +83,7 @@ def unread_count():
 
 
 # DM list for sidebar
-@test_bp.route("/dms")
+@chat_bp.route("/dms")
 @auth.login_required
 def dms():
     user = session["user"]
@@ -128,13 +126,13 @@ def dms():
     return jsonify(result)
 
 # Presence endpoint
-@test_bp.route("/online_users")
+@chat_bp.route("/online_users")
 def online_users():
     now = time()
     return jsonify([u for u, ts in USER_STATUS.items() if now - ts < 60])
 
 # Fetch messages
-@test_bp.route("/messages/<channel>")
+@chat_bp.route("/messages/<channel>")
 @auth.login_required
 def messages(channel):
     user = session["user"]
@@ -158,7 +156,7 @@ def messages(channel):
 
 
 # Send
-@test_bp.route("/send/<channel>", methods=["POST"])
+@chat_bp.route("/send/<channel>", methods=["POST"])
 @auth.login_required
 def send(channel):
     sender = session["user"]
@@ -214,13 +212,13 @@ def send(channel):
     USER_STATUS[sender] = ts
     return "ok"
 
-@test_bp.route("/files/<path:filename>")
+@chat_bp.route("/files/<path:filename>")
 @auth.login_required
 def files(filename):
     return send_from_directory("uploads", filename)
 
 # Search messages
-@test_bp.route("/search_messages")
+@chat_bp.route("/search_messages")
 @auth.login_required
 def search_messages():
     user = session["user"]
@@ -246,7 +244,7 @@ def search_messages():
     return jsonify(results)
 
 # Edit message
-@test_bp.route("/edit/<int:msg_id>", methods=["POST"])
+@chat_bp.route("/edit/<int:msg_id>", methods=["POST"])
 @auth.login_required
 def edit(msg_id):
     editor = session["user"]
@@ -283,7 +281,7 @@ def edit(msg_id):
 
     return "ok"
 
-@test_bp.route("/mark_read/<channel>", methods=["POST"])
+@chat_bp.route("/mark_read/<channel>", methods=["POST"])
 @auth.login_required
 def mark_read(channel):
     user = session["user"]
@@ -301,7 +299,7 @@ def mark_read(channel):
     return "", 204
 
 
-@test_bp.route("/users")
+@chat_bp.route("/users")
 @auth.login_required
 def users():
     """Return all usernames except the current user"""
@@ -309,7 +307,7 @@ def users():
     users = [u for u in all_users() if u != me]
     return jsonify(users)
 
-@test_bp.route("/")
+@chat_bp.route("/")
 @auth.login_required
 def index():
     return render_template("chat.html")
