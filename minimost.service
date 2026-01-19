@@ -1,0 +1,24 @@
+#To set up:
+#
+#mkdir -p ~/.config/systemd/user
+#nano ~/.config/systemd/user/minimost.service
+#
+#systemctl --user daemon-reexec
+#systemctl --user enable minimost 
+#systemctl --user start minimost 
+
+[Unit]
+Description=Minimost Chat App
+After=network.target
+
+[Service]
+WorkingDirectory=/home/sam/minimost
+ExecStart=/home/sam/venv/bin/gunicorn \
+          -c /home/sam/minimost/gunicorn.conf.py \
+          app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+
