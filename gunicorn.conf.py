@@ -5,7 +5,7 @@ from pathlib import Path
 # --------------------------------------------------------------------
 # Server socket
 # --------------------------------------------------------------------
-bind = "0.0.0.0:64002"
+bind = "0.0.0.0:6767"
 # If behind nginx, use a unix socket instead:
 # bind = "unix:/run/gunicorn.sock"
 
