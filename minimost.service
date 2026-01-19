@@ -1,11 +1,15 @@
-#To set up:
+# To set up:
 #
-#mkdir -p ~/.config/systemd/user
-#nano ~/.config/systemd/user/minimost.service
+# mkdir -p ~/.config/systemd/user
+# cp minimost.service ~/.config/systemd/user/minimost.service
 #
-#systemctl --user daemon-reexec
-#systemctl --user enable minimost 
-#systemctl --user start minimost 
+# systemctl --user daemon-reexec
+# systemctl --user enable minimost 
+# systemctl --user start minimost 
+#
+# Have an admin run:
+# loginctl enable-linger YOUR_USERNAME
+
 
 [Unit]
 Description=Minimost Chat App
@@ -22,3 +26,5 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 
+[Journal]
+SystemMaxUse=20M
