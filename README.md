@@ -114,7 +114,7 @@ Images can be attached using the paperclip icon next to the message box but also
 - [ ] Collapsable sidebar
 - [x] Show shortcuts with ?
 - [x] Show onerror image for retention policy 
-- [ ] Add image retention policy
+- [x] Add image retention policy
 - [x] Add unread indicator in broswer tab
 
 ## Known Bugs/Work Arounds
