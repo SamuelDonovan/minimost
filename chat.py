@@ -11,15 +11,12 @@ from flask import (
 
 # Local Imports
 import common
+import presence 
 import auth 
 
 chat_bp = Blueprint("chat", __name__)
 
 # Shared helpers
-# presence
-USER_STATUS = {}  # username -> last active timestamp
-ONLINE_WINDOW = 30  # seconds
-
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -33,9 +30,6 @@ def all_users():
     rows = db.execute("SELECT username FROM users").fetchall()
     db.close()
     return [r[0] for r in rows]
-
-def is_online(user: str) -> bool:
-    return (time() - USER_STATUS.get(user, 0)) < ONLINE_WINDOW
 
 # Channel Helpers
 def normalize_dm(users: list[str]) -> str:
@@ -128,8 +122,18 @@ def dms():
 # Presence endpoint
 @chat_bp.route("/online_users")
 def online_users():
-    now = time()
-    return jsonify([u for u, ts in USER_STATUS.items() if now - ts < 60])
+    cutoff = int(time()) - presence.PRESENCE_TIMEOUT
+    db = sqlite3.connect(presence.PRESENCE_DB)
+    db.row_factory = sqlite3.Row
+
+    rows = db.execute("""
+        SELECT user
+        FROM presence
+        WHERE last_seen >= ?
+    """, (cutoff,)).fetchall()
+
+    db.close()
+    return jsonify([row["user"] for row in rows])
 
 # Fetch messages
 @chat_bp.route("/messages/<channel>")
@@ -151,7 +155,7 @@ def messages(channel):
     """, (channel, after)).fetchall()
     db.close()
 
-    USER_STATUS[user] = time()
+    presence.touch_presence(user)
     return jsonify([dict(r) for r in rows])
 
 
@@ -209,7 +213,7 @@ def send(channel):
         db.commit()
         db.close()
 
-    USER_STATUS[sender] = ts
+    presence.touch_presence(sender)
     return "ok"
 
 @chat_bp.route("/files/<path:filename>")

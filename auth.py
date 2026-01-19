@@ -91,16 +91,3 @@ def signup():
         return redirect("/")
 
     return render_template("signup.html")
-
-def init_auth_db():
-    db = sqlite3.connect(AUTH_DB)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            password_hash TEXT NOT NULL
-        )
-    """)
-    db.commit()
-    db.close()
-
-init_auth_db()

@@ -2,10 +2,13 @@
 from pathlib import Path
 import sqlite3
 
+DB_DIR = Path("users")
+
 def user_db_path(username: str) -> Path:
     return DB_DIR / f"{username}.db"
 
 def init_user_db(username: str):
+    DB_DIR.mkdir(exist_ok=True)
     path = user_db_path(username)
     db = sqlite3.connect(path)
     cur = db.cursor()
@@ -43,7 +46,3 @@ def init_user_db(username: str):
 
     db.commit()
     db.close()
-
-
-DB_DIR = Path("users")
-DB_DIR.mkdir(exist_ok=True)
