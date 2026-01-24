@@ -54,6 +54,9 @@ body {
 #sidebar-dynamic div.active {
     background: #007acc;
 }
+.sidebar-item span {
+    pointer-events: none;
+}
 /* Help button (adjust to match your UI) */
 #help-btn {
     position: fixed;
@@ -112,7 +115,6 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: 10px;
-    scroll-behavior: smooth;
 }
 #chat:focus {
     outline: none;

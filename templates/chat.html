@@ -423,7 +423,10 @@ function sidebarEntry(label, channelName, unread = 0) {
         }
     }
 
-    d.onclick = () => switchChannel(channelName);
+    d.addEventListener("pointerup", (e) => {
+        e.preventDefault();
+        switchChannel(channelName);
+    });
 
     sb.appendChild(d);
     return d;
