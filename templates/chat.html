@@ -1016,98 +1016,97 @@ function wrapSelection(el, wrapper) {
 }
 
 function userInput(e) {
-    // Vim motions
+    const isInput = e.target.matches("input, textarea");
 
-    // Ctrl + j/k for channel cycling
-    if ((e.ctrlKey || e.metaKey) && !e.target.matches("input, textarea")) {
-        const items = Array.from(document.querySelectorAll("#sidebar-dynamic [data-channel]"));
-        if (!items.length) return;
-
-        let currentIndex = items.findIndex((el) => el.dataset.channel === channel);
-        if (currentIndex === -1) currentIndex = 0;
-
-        if (e.key === "j") {
-            const nextIndex = (currentIndex + 1) % items.length;
-            switchChannel(items[nextIndex].dataset.channel);
-            e.preventDefault();
-        } else if (e.key === "k") {
-            const prevIndex = (currentIndex - 1 + items.length) % items.length;
-            switchChannel(items[prevIndex].dataset.channel);
-            e.preventDefault();
-        }
-
-        // Bold
-        else if (e.key === "b") {
-            e.preventDefault();
-            wrapSelection(el, "**");
-        }
-        // Italic
-        else if (e.key === "i") {
-            e.preventDefault();
-            wrapSelection(el, "*");
-        }
-
-        // Underline
-        else if (e.key === "u") {
-            e.preventDefault();
-            wrapSelection(el, "__");
-        }
-
-        // Strikethrough
-        else if (e.key === "s") {
-            e.preventDefault();
-            wrapSelection(el, "~~");
-        }
-        return; // stop further processing
-    }
-
-    // Vim-style scroll motions
-    const scrollContainer = document.getElementById('chat');
-    const scrollRate = 200;
-
-    if (e.key === "j" && !e.target.matches("input, textarea")) {
-        scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
-    } else if (e.key === "k" && !e.target.matches("input, textarea")) {
-        scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
-    } else if (e.key === "d" && !e.target.matches("input, textarea")) {
-         scrollContainer.scrollBy({ top: 2*scrollRate, behavior: 'smooth' });
-    }
-    else if (e.key === "u" && !e.target.matches("input, textarea")) {
-         scrollContainer.scrollBy({ top: -2*scrollRate, behavior: 'smooth' });
-    }
-    else if (e.key === "G" && !e.target.matches("input, textarea")) {
-         scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }
-    else if (e.key === "g" && !e.target.matches("input, textarea")) {
-         scrollContainer.scrollTop = 0;
-    }
-    else if (e.key === "i" && !e.target.matches("input, textarea")) {
-         e.preventDefault();
-         focusMessageInput();
-    }
-    else if (e.key === "o" && !e.target.matches("input, textarea")) {
-         e.preventDefault();
-         openDmModal();
-    }
-    else if ((e.key === "/" || (e.key === "f")) && !e.target.matches("input, textarea")) {
-         e.preventDefault();
-         startSearch();
-    }
-    else if ((e.key === "Escape") || (e.key == "q")) {
+    if (e.key === "Escape") {
         closeAllModalsAndFocusChat();
     }
-
     // Avoid triggering while typing in inputs
     else if (e.key === "?" && !e.target.matches("input, textarea")) {
         e.preventDefault();
         openHelp();
     }
 
-    //Formatting Shortcuts
-    const el = e.target;
+    /* ================================
+       Ctrl-based shortcuts
+    ================================= */
+    if (e.ctrlKey || e.metaKey) {
 
-    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
-        return;
+        // ---- Channel cycling (NOT in input) ----
+        if (!isInput) {
+            const items = Array.from(
+                document.querySelectorAll("#sidebar-dynamic [data-channel]")
+            );
+            if (!items.length) return;
+
+            let currentIndex = items.findIndex(
+                (el) => el.dataset.channel === channel
+            );
+            if (currentIndex === -1) currentIndex = 0;
+
+            if (e.key === "j") {
+                switchChannel(items[(currentIndex + 1) % items.length].dataset.channel);
+                e.preventDefault();
+            } else if (e.key === "k") {
+                switchChannel(items[(currentIndex - 1 + items.length) % items.length].dataset.channel);
+                e.preventDefault();
+            }
+            return;
+        }
+
+        // ---- Text formatting (ONLY in input) ----
+        if (isInput) {
+            if (e.key === "b") {
+                e.preventDefault();
+                wrapSelection(e.target, "**");
+            } else if (e.key === "i") {
+                e.preventDefault();
+                wrapSelection(e.target, "*");
+            } else if (e.key === "u") {
+                e.preventDefault();
+                wrapSelection(e.target, "__");
+            } else if (e.key === "s") {
+                e.preventDefault();
+                wrapSelection(e.target, "~~");
+            }
+            return;
+        }
+    }
+
+    /* ================================
+       Vim-style scrolling (NOT in input)
+    ================================= */
+    if (!isInput) {
+        const scrollContainer = document.getElementById("chat");
+        const scrollRate = 200;
+        if (e.key === "j") {
+            scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
+        } else if (e.key === "k") {
+            scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
+        } else if (e.key === "d") {
+             scrollContainer.scrollBy({ top: 2*scrollRate, behavior: 'smooth' });
+        }
+        else if (e.key === "u") {
+             scrollContainer.scrollBy({ top: -2*scrollRate, behavior: 'smooth' });
+        }
+        else if (e.key === "G") {
+             scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }
+        else if (e.key === "g") {
+             scrollContainer.scrollTop = 0;
+        }
+        else if (e.key === "i") {
+             e.preventDefault();
+             focusMessageInput();
+        }
+        else if (e.key === "o") {
+             e.preventDefault();
+             openDmModal();
+        }
+        else if ((e.key === "/") || (e.key === "f")) {
+             e.preventDefault();
+             startSearch();
+        }
     }
 }
 
