@@ -460,7 +460,7 @@ function switchChannel(c) {
 }
 
 // Fetch Messages
-function isNearBottom(el, threshold = 50) {
+function isNearBottom(el, threshold = 120) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
 }
 
@@ -468,9 +468,14 @@ function fetchMessages() {
     fetch(`/messages/${channel}?after=${lastTs}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-            if (!data || data.lenght === 0) return;
+            if (!data || data.length === 0) return;
 
             const chat = document.getElementById("chat");
+
+            // Capture scroll state BEFORE DOM mutation
+            const shouldAutoScroll =
+                forceScrollToBottom || isNearBottom(chat);
+
             let appended = false;
 
             data.forEach(m => {
@@ -479,7 +484,6 @@ function fetchMessages() {
 
                 // Date divider
                 const dividerId = `date-${dateKey}`;
-
                 if (!document.getElementById(dividerId)) {
                     const divider = document.createElement("div");
                     divider.className = "date-divider";
@@ -491,8 +495,8 @@ function fetchMessages() {
                         day: "numeric"
                     });
                     chat.appendChild(divider);
+                    appended = true;
                 }
-
 
                 const existing = document.getElementById(`msg-${m.id}`);
 
@@ -532,14 +536,19 @@ function fetchMessages() {
                         if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
                             html += `
                                 <a href="/files/${f}" target="_blank">
-                                    <img src="/files/${f}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='static/retention.png';">
+                                    <img
+                                        src="/files/${f}"
+                                        class="chat-image"
+                                        loading="lazy"
+                                        onerror="this.onerror=null; this.src='static/retention.png';"
+                                    >
                                 </a>
                             `;
                         }
                     }
                 }
 
-                // 🔑 UPDATE OR INSERT
+                // Update or insert message
                 if (existing) {
                     existing.innerHTML = html;
                 } else {
@@ -548,21 +557,32 @@ function fetchMessages() {
                     d.id = `msg-${m.id}`;
                     d.innerHTML = html;
                     chat.appendChild(d);
-                    let appended = true;
+                    appended = true;
                 }
 
                 lastTs = Math.max(lastTs, m.ts);
-                refreshDMs();
             });
 
-            // Scrolling
-            const shouldAutoScroll = isNearBottom(chat);
+            refreshDMs();
 
-            if ((forceScrollToBottom || appended && shouldAutoScroll)) {
-                chat.scrollTop = chat.scrollHeight;
-                forceScrollToBottom = false;   // reset
+            // Scroll AFTER DOM update
+            if ((forceScrollToBottom || appended) && shouldAutoScroll) {
+                requestAnimationFrame(() => {
+                    chat.scrollTop = chat.scrollHeight;
+                });
+                forceScrollToBottom = false;
             }
-        });
+
+            // Keep scroll pinned when images load
+            chat.querySelectorAll("img.chat-image").forEach(img => {
+                img.onload = () => {
+                    if (isNearBottom(chat)) {
+                        chat.scrollTop = chat.scrollHeight;
+                    }
+                };
+            });
+        })
+        .catch(err => console.error("fetchMessages error:", err));
 }
 
 // Send messages
