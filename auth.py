@@ -53,7 +53,7 @@ def login():
 @login_required
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    return redirect("login")
 
 @auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
