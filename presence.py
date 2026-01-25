@@ -2,44 +2,36 @@
 import time
 import sqlite3
 
-# Local import
-import common
+# From Flask 
+from flask import session, request, Blueprint
 
-PRESENCE_TIMEOUT = 60 # seconds
+presence_bp = Blueprint("presence", __name__)
+
 PRESENCE_DB = "presence.db"
 
-def touch_presence(user):
+@presence_bp.route("/presence", methods=["POST"])
+def update_presence():
+    user = session.get("user")
+    if not user:
+        return "", 204
+
+    data = request.get_json(silent=True) or {}
+    state = data.get("state")
+    
+    if not state:
+        return "", 204
+
     now = int(time.time())
     db = sqlite3.connect(PRESENCE_DB)
 
     db.execute("""
-        INSERT INTO presence (user, last_seen)
-        VALUES (?, ?)
+        INSERT INTO presence (user, last_seen, state)
+        VALUES (?, ?, ?)
         ON CONFLICT(user)
-        DO UPDATE SET last_seen = excluded.last_seen
-    """, (user, now))
+        DO UPDATE SET
+            last_seen = excluded.last_seen,
+            state = excluded.state
+    """, (user, now, state))
 
     db.commit()
-
-def is_online(user):
-    cutoff = int(time.time()) - PRESENCE_TIMEOUT
-    db = sqlite3.connect(PRESENCE_DB)
-
-    row = db.execute("""
-        SELECT 1 FROM presence
-        WHERE user = ?
-          AND last_seen >= ?
-    """, (user, cutoff)).fetchone()
-
-    return row is not None
-
-def get_online_users():
-    cutoff = int(time.time()) - PRESENCE_TIMEOUT
-    db = sqlite3.connect(PRESENCE_DB)
-
-    rows = db.execute("""
-        SELECT user FROM presence
-        WHERE last_seen >= ?
-    """, (cutoff,)).fetchall()
-
-    return {row["user"] for row in rows}
+    return "", 204

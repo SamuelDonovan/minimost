@@ -122,18 +122,24 @@ def dms():
 # Presence endpoint
 @chat_bp.route("/online_users")
 def online_users():
-    cutoff = int(time()) - presence.PRESENCE_TIMEOUT
+    presence_timeout = 3600 
+    cutoff = int(time()) - presence_timeout 
     db = sqlite3.connect(presence.PRESENCE_DB)
     db.row_factory = sqlite3.Row
 
     rows = db.execute("""
-        SELECT user
+        SELECT user, state
         FROM presence
         WHERE last_seen >= ?
     """, (cutoff,)).fetchall()
 
     db.close()
-    return jsonify([row["user"] for row in rows])
+
+    # Normalize usernames and states
+    return jsonify({
+        row["user"].lower(): row["state"].lower()
+        for row in rows
+    })
 
 # Fetch messages
 @chat_bp.route("/messages/<channel>")
@@ -155,7 +161,6 @@ def messages(channel):
     """, (channel, after)).fetchall()
     db.close()
 
-    presence.touch_presence(user)
     return jsonify([dict(r) for r in rows])
 
 
@@ -213,7 +218,6 @@ def send(channel):
         db.commit()
         db.close()
 
-    presence.touch_presence(sender)
     return "ok"
 
 @chat_bp.route("/files/<path:filename>")

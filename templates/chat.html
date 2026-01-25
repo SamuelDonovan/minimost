@@ -123,7 +123,8 @@
             <li><b>Images</b> – Paste, drag, or attach images iwthe paperclip button</li>
             <li><b>Esc</b> – Close menus/unfocus message input</li>
             <li><b>?</b> – Open this help</li>
-            <li><b>Note</b> – Images are deleted after 30 days</li>
+            <li><b>Images</b> – Images are deleted after 30 days</li>
+            <li><b>Presence</b> – Blue (active), yellow (idle), solid gray (away), hollow gray (offline)</li>
         </ul>
     </div>
 </div>
@@ -221,7 +222,6 @@ let unread = new Set();
 const seen = new Set();
 let lastRenderedDate = null;
 let forceScrollToBottom = false;
-let ONLINE_USERS = [];
 
 let pendingFiles = [];
 
@@ -286,8 +286,7 @@ function loadSidebar() {
         dmTitle.innerText = "Direct Messages";
         sb.appendChild(dmTitle);
 
-        ONLINE_USERS = online;
-
+        refreshPresence();
         dms.forEach(dm => {
             const label = "@ " + dm.users.join(", ");
             sidebarEntry(label, dm.channel);
@@ -304,36 +303,95 @@ function refreshDMs() {
         .then(dms => {
             const sb = document.getElementById("sidebar-dynamic");
 
-            // Locate "Direct Messages" header
             const dmHeader = Array.from(sb.children)
                 .find(e => e.tagName === "B" && e.innerText === "Direct Messages");
-
             if (!dmHeader) return;
 
-            // Remove existing DM entries
-            sb.querySelectorAll(".sidebar-dm").forEach(e => e.remove());
+            const seen = new Set();
 
-            // Insert in sorted order immediately after header
             let insertAfter = dmHeader;
 
             dms.forEach(dm => {
                 const label = "@ " + dm.users.join(", ");
                 const el = sidebarEntry(label, dm.channel, dm.unread);
 
+                seen.add(dm.channel);
+
                 sb.insertBefore(el, insertAfter.nextSibling);
                 insertAfter = el;
+            });
+
+            // Remove stale DMs only
+            sb.querySelectorAll(".sidebar-dm").forEach(el => {
+                if (!seen.has(el.dataset.channel)) {
+                    el.remove();
+                }
             });
 
             updateSidebarActive();
         });
 }
 
+// Presence
+let currentPresence = "offline";
+
+function sendPresence(state) {
+    if (state === currentPresence) return;
+    currentPresence = state;
+    fetch("/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state })
+    });
+}
+
+document.addEventListener("visibilitychange", () => {
+    sendPresence(
+        document.visibilityState === "visible"
+            ? "active"
+            : "hidden"
+    );
+});
+
+let lastActivity = Date.now();
+let idleSent = false;
+
+["mousemove", "keydown", "mousedown", "touchstart"].forEach(evt =>
+    document.addEventListener(evt, () => {
+        lastActivity = Date.now();
+
+        sendPresence("active");
+        if (idleSent) {
+            sendPresence("active");
+            idleSent = false;
+        }
+    })
+);
+
+function setPresence(presenceEl, state) {
+    switch (state) {
+        case "active":
+            presenceEl.textContent = " ●";
+            presenceEl.style.color = "#6cf";
+            break;
+        case "idle":
+            presenceEl.textContent = " ●";
+            presenceEl.style.color = "#fc6";
+            break;
+        case "hidden":
+            presenceEl.textContent = " ●";
+            presenceEl.style.color = "#888";
+            break;
+        default: // offline
+            presenceEl.textContent = " ○";
+            presenceEl.style.color = "#444";
+    }
+}
+
 function refreshPresence() {
     fetch("/online_users")
         .then(r => r.json())
-        .then(online => {
-            ONLINE_USERS = online;
-
+        .then(presenceMap => {
             document.querySelectorAll(".sidebar-dm").forEach(el => {
                 const channel = el.dataset.channel;
                 const users = channel
@@ -341,13 +399,27 @@ function refreshPresence() {
                     .slice(1)
                     .filter(u => u !== CURRENT_USER);
 
-                const isOnline = users.some(u => ONLINE_USERS.includes(u));
+                // Determine highest-priority presence
+                let state = "offline";
 
-                const presence = el.querySelector(".presence");
-                if (presence) {
-                    presence.textContent = isOnline ? " ●" : " ○";
-                    presence.style.color = isOnline ? "#6cf" : "#888";
+                for (const u of users) {
+                    const s = presenceMap[u];
+                    if (s === "active") {
+                        state = "active";
+                        break;
+                    }
+                    if (s === "idle" && state !== "active") {
+                        state = "idle";
+                    }
+                    if (s === "hidden" && state === "offline") {
+                        state = "hidden";
+                    }
                 }
+
+                const presenceEl = el.querySelector(".presence");
+                if (!presenceEl) return;
+
+                setPresence(presenceEl, state);
             });
         });
 }
@@ -387,31 +459,37 @@ function refreshTotalUnreadCount() {
 
 function sidebarEntry(label, channelName, unread = 0) {
     const sb = document.getElementById("sidebar-dynamic");
-    const d = document.createElement("div");
 
-    d.className = "sidebar-item";
-    d.dataset.channel = channelName;
+    let d = sb.querySelector(`[data-channel="${channelName}"]`);
+    if (!d) {
+        d = document.createElement("div");
+        d.className = "sidebar-item";
+        d.dataset.channel = channelName;
+        sb.appendChild(d);
+    }
+
+    // 🔑 Capture existing presence BEFORE clearing
+    const existingPresence = d.querySelector(".presence");
+
+    // Now safe to rebuild
+    d.innerHTML = "";
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "label";
     labelSpan.textContent = label;
-
     d.appendChild(labelSpan);
 
     if (channelName.startsWith("dm:")) {
         d.classList.add("sidebar-dm");
 
-        const users = channelName
-            .split(":")
-            .slice(1)
-            .filter(u => u !== CURRENT_USER);
-
-        const isOnline = users.some(u => ONLINE_USERS.includes(u));
-
-        const presence = document.createElement("span");
-        presence.className = "presence";
-        presence.textContent = isOnline ? " ●" : " ○";
-        presence.style.color = isOnline ? "#6cf" : "#888";
+        // 🔑 Reuse or create presence
+        let presence = existingPresence;
+        if (!presence) {
+            presence = document.createElement("span");
+            presence.className = "presence";
+            presence.textContent = " ○";
+            presence.style.color = "#444";
+        }
 
         d.appendChild(presence);
 
@@ -423,12 +501,11 @@ function sidebarEntry(label, channelName, unread = 0) {
         }
     }
 
-    d.addEventListener("pointerup", (e) => {
+    d.onpointerup = (e) => {
         e.preventDefault();
         switchChannel(channelName);
-    });
+    };
 
-    sb.appendChild(d);
     return d;
 }
 
@@ -1265,6 +1342,16 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(refreshPresence, 1000);
     setInterval(refreshDMs, 1000);
     setInterval(refreshTotalUnreadCount, 5000);
+    setInterval(() => {
+        if (
+            document.visibilityState === "visible" &&
+            Date.now() - lastActivity > 300_000 &&
+            !idleSent
+        ) {
+            sendPresence("idle");
+            idleSent = true;
+        }
+    }, 5000);
 
 });
 

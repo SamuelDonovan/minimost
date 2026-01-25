@@ -22,7 +22,8 @@ def init_presence_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS presence (
         user TEXT PRIMARY KEY,
-        last_seen INTEGER NOT NULL
+        last_seen INTEGER NOT NULL,
+        state TEXT NOT NULL
     )
     """)
 
