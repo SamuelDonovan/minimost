@@ -9,6 +9,7 @@ from flask import session, redirect, url_for, request, render_template, Blueprin
 
 # Local Imports
 import common
+import presence 
 
 AUTH_DB = "auth.db"
 
@@ -52,6 +53,8 @@ def login():
 @auth_bp.route("/logout")
 @login_required
 def logout():
+    user = session.get("user")
+    presence.update_presence(user, "offline")
     session.clear()
     return redirect("login")
 
