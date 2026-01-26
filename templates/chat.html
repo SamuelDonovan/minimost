@@ -222,8 +222,8 @@ let unread = new Set();
 const seen = new Set();
 let lastRenderedDate = null;
 let forceScrollToBottom = false;
-
 let pendingFiles = [];
+let fetchController = null;
 
 // Preview Renderer
 function addFiles(files) {
@@ -525,15 +525,26 @@ function updateSidebarActive() {
 }
 
 function switchChannel(c) {
-    if (channel == c) return;
+    if (channel === c) return;
+
+    // 🚫 Cancel any in-flight fetch
+    if (fetchController) {
+        fetchController.abort();
+        fetchController = null;
+    }
+
     channel = c;
     lastTs = 0;
     lastRenderedDate = null;
     seen.clear();
+
     document.getElementById("chat").innerHTML = "";
     document.getElementById("chan").innerText = c;
+
     forceScrollToBottom = true;
+
     fetch(`/mark_read/${channel}`, { method: "POST" });
+
     fetchMessages();
     refreshDMs();
     refreshTotalUnreadCount();
@@ -545,24 +556,32 @@ function isNearBottom(el, threshold = 120) {
 }
 
 function fetchMessages() {
-    fetch(`/messages/${channel}?after=${lastTs}`)
+    fetchController = new AbortController();
+    const signal = fetchController.signal;
+
+    // 🔒 Capture channel at request time
+    const requestedChannel = channel;
+
+    fetch(`/messages/${requestedChannel}?after=${lastTs}`, { signal })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
+            // ❌ Ignore if aborted or channel changed
+            if (signal.aborted || requestedChannel !== channel) return;
             if (!data || data.length === 0) return;
 
             const chat = document.getElementById("chat");
-
-            // Capture scroll state BEFORE DOM mutation
             const shouldAutoScroll =
                 forceScrollToBottom || isNearBottom(chat);
 
             let appended = false;
 
             data.forEach(m => {
+                // ⛔ Extra safety (paranoia is good here)
+                if (requestedChannel !== channel) return;
+
                 const msgDate = new Date(m.ts * 1000);
                 const dateKey = msgDate.toDateString();
 
-                // ---- Date divider ----
                 const dividerId = `date-${dateKey}`;
                 if (!document.getElementById(dividerId)) {
                     const divider = document.createElement("div");
@@ -588,53 +607,28 @@ function fetchMessages() {
 
                 const color = userColor(m.sender);
 
-                // ---- Build inner HTML ----
-                let html = `
-                    <span class="time">[${time}]</span>
-                    <span class="user" style="color:${color}">${m.sender}</span>`;
+                let html = `<span class="time">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
 
                 if (m.edited) {
                     html += `<span class="edited">(edited)</span>`;
                 }
 
                 if (m.sender === CURRENT_USER) {
-                    html += `<button class="edit-btn" onclick="startEdit(${m.id})">Edit</button> `;
+                    html += `<button class="edit-btn" onclick="startEdit(${m.id})">Edit</button>`;
                 }
 
-                html += `: `;
+                html += ` : `;
 
-                if (m.content && m.content.trim()) {
+                if (m.content?.trim()) {
                     html += `<span class="text" id="msg-text-${m.id}">${formatText(m.content)}</span>`;
                 }
 
-                if (m.filename) {
-                    const files = m.filename.split(",");
-                    for (const f of files) {
-                        if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
-                            html += `
-                                <a href="/files/${f}" target="_blank">
-                                    <img
-                                        src="/files/${f}"
-                                        class="chat-image"
-                                        loading="lazy"
-                                        onerror="this.onerror=null; this.src='static/retention.png';"
-                                    >
-                                </a>
-                            `;
-                        }
-                    }
-                }
-
-                // ---- Update or insert ----
                 if (existing) {
                     const textSpan = existing.querySelector(".text");
-
-                    // 🚫 Do NOT re-render messages currently being edited
                     if (textSpan?.dataset.editing === "true") {
                         lastTs = Math.max(lastTs, m.ts);
                         return;
                     }
-
                     existing.innerHTML = html;
                 } else {
                     const d = document.createElement("div");
@@ -650,24 +644,18 @@ function fetchMessages() {
 
             refreshDMs();
 
-            // ---- Scroll AFTER DOM update ----
             if ((forceScrollToBottom || appended) && shouldAutoScroll) {
                 requestAnimationFrame(() => {
                     chat.scrollTop = chat.scrollHeight;
                 });
                 forceScrollToBottom = false;
             }
-
-            // ---- Keep scroll pinned when images load ----
-            chat.querySelectorAll("img.chat-image").forEach(img => {
-                img.onload = () => {
-                    if (isNearBottom(chat)) {
-                        chat.scrollTop = chat.scrollHeight;
-                    }
-                };
-            });
         })
-        .catch(err => console.error("fetchMessages error:", err));
+        .catch(err => {
+            if (err.name !== "AbortError") {
+                console.error("fetchMessages error:", err);
+            }
+        });
 }
 
 // Send messages
