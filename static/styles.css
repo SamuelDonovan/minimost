@@ -235,21 +235,29 @@ body {
     font-style: italic;
     margin-left: 4px;
 }
-
-.edit-btn {
-    background: none;
-    border: none;
-    padding: 4px;
-    cursor: pointer;
-    opacity: 0.6;
-}
-
 .edit-btn:hover {
     opacity: 1;
 }
-
-.edit-icon {
+.reply-btn:hover {
+    opacity: 1;
+}
+.delete-btn:hover {
+    opacity: 1;
+}
+.edit-btn, .reply-btn, .delete-btn {
     display: block;
+}
+.edit-btn, .reply-btn, .delete-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px; /* make sure the button has some area */
+    height: 24px;
+    background: none;
+    cursor: pointer;
+    border: none;
+    padding: 4px;
+    opacity: 0.6;
 }
 .user {
     font-weight: 600;

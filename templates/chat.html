@@ -623,7 +623,7 @@ function fetchMessages() {
                 }
 
                 if (m.sender === CURRENT_USER) {
-                    html += `<button class="edit-btn" onclick="startEdit(${m.id})">
+                    html += `<button class="edit-btn" title="Edit" onclick="startEdit(${m.id})">
                     <svg
                         class="edit-icon"
                         xmlns="http://www.w3.org/2000/svg"
