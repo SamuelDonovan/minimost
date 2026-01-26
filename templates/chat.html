@@ -579,6 +579,15 @@ function fetchMessages() {
                 // ⛔ Extra safety (paranoia is good here)
                 if (requestedChannel !== channel) return;
 
+                const hasText = m.content && m.content.trim();
+                const hasImage = m.filename && m.filename.trim();
+
+                // 🚫 Skip only truly empty messages
+                if (!hasText && !hasImage) {
+                    lastTs = Math.max(lastTs, m.ts);
+                    return;
+                }
+
                 const msgDate = new Date(m.ts * 1000);
                 const dateKey = msgDate.toDateString();
 

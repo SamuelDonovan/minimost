@@ -119,7 +119,7 @@ Images can be attached using the paperclip icon next to the message box but also
 
 ## Known Bugs/Work Arounds
 
-- [ ] Two messages sent for image without text
+- [ ] 
 
 ## Real FAQ
 
