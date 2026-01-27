@@ -3,6 +3,7 @@ from time import time
 import sqlite3
 import os
 import uuid 
+from typing import List
 
 # From Flask 
 from flask import (
@@ -32,11 +33,11 @@ def all_users():
     return [r[0] for r in rows]
 
 # Channel Helpers
-def normalize_dm(users: list[str]) -> str:
+def normalize_dm(users: List[str]) -> str:
     users = sorted(set(users))
     return "dm:" + ":".join(users)
 
-def channel_users(channel: str) -> list[str]:
+def channel_users(channel: str) -> List[str]:
     if channel.startswith("dm:"):
         return channel.split(":")[1:]
     return all_users()

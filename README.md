@@ -21,6 +21,7 @@ The two hardest problems in computer science are:
 
 1. Communication
 2. Convincing others its communication
+3. DOM async race conditions 
 
 ## FAQ
 
