@@ -20,7 +20,13 @@
 
 <div id="sidebar">
     <div id="sidebar-static">
-        <button id="new-dm-btn">+ New DM</button>
+        <button id="new-dm-btn" class="icon-btn" title="Start a new direct message">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+  <path d="M0 1a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3.5L0 16V1z"/>
+  <path d="M2 2h10v8H2V2z"/>
+            </svg>
+            <span class="icon-text">New DM</span>
+        </button>
         <hr>
     </div>
 
@@ -34,8 +40,12 @@
             <a href="/logout">(logout)</a>
         </div>
 
-        <button id="msg-search-btn">Search</button>
-
+        <button id="msg-search-btn" class="icon-btn" title="Search messages">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242 1.106a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
+            </svg>
+            <span class="icon-text">Search</span>
+        </button>
         <div>
             Channel: <span id="chan"></span>
         </div>

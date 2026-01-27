@@ -245,13 +245,13 @@ body {
     cursor: pointer;
 }
 
-.edit-btn:hover {
-    opacity: 1;
-}
 .reply-btn:hover {
     opacity: 1;
 }
 .delete-btn:hover {
+    opacity: 1;
+}
+.edit-btn:hover {
     opacity: 1;
 }
 .edit-btn, .reply-btn, .delete-btn {
@@ -287,6 +287,38 @@ body {
 }
 .edited-icon:hover {
     opacity: 1;
+}
+.icon-btn {
+    display: inline-flex;
+    align-items: center; /* aligns items vertically center */
+    justify-content: center;
+    gap: 4px; /* space between SVG and text */
+    height: 24px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.6;
+    padding: 0 4px; /* horizontal padding */
+    vertical-align: middle;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.icon-btn:hover {
+    opacity: 1;
+    transform: scale(1.05);
+}
+
+.icon-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    display: block; /* ensures proper alignment */
+}
+
+.icon-btn .icon-text {
+    line-height: 1;  /* important to align with SVG */
+    font-size: 14px; /* adjust as needed */
+    color: inherit;
 }
 .user {
     font-weight: 600;
@@ -358,6 +390,14 @@ body {
 }
 .autocomplete-suggestion:hover {
     background: #444;
+}
+#msg-search-btn {
+    cursor: pointer;           /* make cursor a pointer */
+    opacity: 0.6;
+}
+
+#msg-search-btn:hover {
+    opacity: 1;
 }
 #msg-search-results div {
     padding: 6px;
