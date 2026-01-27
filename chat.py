@@ -150,7 +150,15 @@ def messages(channel):
 
     db = get_db(user)
     rows = db.execute("""
-        SELECT id, channel, sender, content, filename, ts, edited
+        SELECT
+            id,
+            channel,
+            sender,
+            content,
+            filename,
+            ts,
+            edited,
+            edited_ts
         FROM messages
         WHERE channel = ?
           AND (
@@ -280,9 +288,14 @@ def edit(msg_id):
     # 3. Update the message in each recipient DB using timestamp
     for r in recipients:
         db = get_db(r)
+        edited_time = time()
         db.execute(
-            "UPDATE messages SET content = ?, edited = 1 WHERE channel = ? AND sender = ? AND ts = ?",
-            (new_text, channel, editor, ts)
+            """
+            UPDATE messages
+            SET content = ?, edited = 1, edited_ts = ?
+            WHERE channel = ? AND sender = ? AND ts = ?
+            """,
+            (new_text, edited_time, channel, editor, ts)
         )
         db.commit()
         db.close()

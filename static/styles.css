@@ -229,12 +229,6 @@ body {
     cursor: pointer;
 }
 
-.edited {
-    font-size: 0.8em;
-    color: #888;
-    font-style: italic;
-    margin-left: 4px;
-}
 .edit-btn:hover {
     opacity: 1;
 }
@@ -258,6 +252,17 @@ body {
     border: none;
     padding: 4px;
     opacity: 0.6;
+}
+.edited-icon {
+    width: 16px;
+    height: 16px;
+    opacity: 0.6;
+    background: none;
+    cursor: pointer;
+    pointer-events: auto;
+}
+.edited-icon:hover {
+    opacity: 1;
 }
 .user {
     font-weight: 600;

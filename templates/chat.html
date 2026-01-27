@@ -619,7 +619,24 @@ function fetchMessages() {
                 let html = `<span class="time">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
 
                 if (m.edited) {
-                    html += `<span class="edited">(edited)</span>`;
+                    const editedDate = new Date(m.edited_ts * 1000); // JS uses milliseconds
+                    const formatted = editedDate.toLocaleString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true 
+                    });
+                    html += `
+                        <span class="edited">
+                            <svg class="edited-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <title>Last edited at ${formatted}</title>
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 8v4l3 3"/>
+                            </svg>
+                        </span>
+                    `;
                 }
 
                 if (m.sender === CURRENT_USER) {
