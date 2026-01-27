@@ -57,6 +57,22 @@ body {
 .sidebar-item span {
     pointer-events: none;
 }
+.presence {
+    font-size: 1.6em;   /* Chrome size */
+    line-height: 1;
+    margin-left: 0px;
+    vertical-align: middle;
+    display: inline-block;
+    align-items: center;
+    padding: 0;
+    margin-top: -50px;
+    margin-bottom: -50px;
+}
+@-moz-document url-prefix() {
+    .presence {
+        font-size: 1.0em;   /* Firefox size */
+    }
+}
 /* Help button (adjust to match your UI) */
 #help-btn {
     position: fixed;
@@ -250,8 +266,11 @@ body {
     background: none;
     cursor: pointer;
     border: none;
-    padding: 4px;
     opacity: 0.6;
+    padding: 0;
+    vertical-align: middle;
+    margin-top: -50px;
+    margin-bottom: -50px;
 }
 .edited-icon {
     width: 16px;
@@ -260,6 +279,11 @@ body {
     background: none;
     cursor: pointer;
     pointer-events: auto;
+    padding: 0;
+    align-items: center;
+    vertical-align: middle;
+    margin-top: -50px;
+    margin-bottom: -50px;
 }
 .edited-icon:hover {
     opacity: 1;
