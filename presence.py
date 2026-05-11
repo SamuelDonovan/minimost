@@ -26,14 +26,11 @@ def update_presence(user, state):
     now = int(time.time())
     db = sqlite3.connect(PRESENCE_DB)
 
-    db.execute("""
-        INSERT INTO presence (user, last_seen, state)
-        VALUES (?, ?, ?)
-        ON CONFLICT(user)
-        DO UPDATE SET
-            last_seen = excluded.last_seen,
-            state = excluded.state
-    """, (user, now, state))
+    db.execute(
+        "INSERT OR REPLACE INTO presence (user, last_seen, state) VALUES (?, ?, ?)",
+        (user, now, state)
+    )
 
     db.commit()
+    db.close()
     return "", 204

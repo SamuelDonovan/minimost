@@ -5,7 +5,7 @@ from hashlib import sha256
 import time
 
 # From Flask 
-from flask import session, redirect, url_for, request, render_template, Blueprint
+from flask import session, redirect, request, render_template, Blueprint
 
 # Local Imports
 import common
@@ -56,7 +56,7 @@ def logout():
     user = session.get("user")
     presence.update_presence(user, "offline")
     session.clear()
-    return redirect("login")
+    return redirect("/login")
 
 @auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():

@@ -367,11 +367,18 @@ function sendPresence(state) {
 }
 
 document.addEventListener("visibilitychange", () => {
-    sendPresence(
-        document.visibilityState === "visible"
-            ? "active"
-            : "hidden"
-    );
+    if (document.visibilityState === "visible") {
+        sendPresence("active");
+    } else if (currentPresence !== "hidden") {
+        // sendBeacon is more reliable than fetch when the tab is being hidden —
+        // browsers (especially on Windows) may cancel in-flight fetch requests
+        // the moment the tab becomes invisible.
+        currentPresence = "hidden";
+        navigator.sendBeacon(
+            "/presence",
+            new Blob([JSON.stringify({ state: "hidden" })], { type: "application/json" })
+        );
+    }
 });
 
 let lastActivity = Date.now();
@@ -779,7 +786,7 @@ function fetchMessages() {
                     appended = true;
                 }
 
-                lastTs = Math.max(lastTs, m.ts);
+                lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0);
             });
 
             refreshDMs();
@@ -1472,6 +1479,22 @@ document.addEventListener("DOMContentLoaded", () => {
     initFavicon();
     loadSidebar();
     switchChannel(channel);
+    // Announce presence immediately on load rather than waiting for the first input event.
+    sendPresence(document.visibilityState === "visible" ? "active" : "hidden");
+
+    // Heartbeat: refresh last_seen even when the presence state hasn't changed.
+    // Without this, a user who stays "active" for >1 hour would appear offline
+    // because sendPresence deduplicates and never re-sends the same state.
+    setInterval(() => {
+        if (currentPresence !== "offline") {
+            fetch("/presence", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ state: currentPresence })
+            });
+        }
+    }, 30_000);
+
     setInterval(fetchMessages, 500);
     setInterval(refreshPresence, 1000);
     setInterval(refreshDMs, 1000);

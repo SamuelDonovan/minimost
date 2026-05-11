@@ -164,10 +164,10 @@ def messages(channel):
         WHERE channel = ?
           AND (
                 ts > ?
-                OR edited = 1
+                OR (edited = 1 AND edited_ts > ?)
               )
         ORDER BY ts
-    """, (channel, after)).fetchall()
+    """, (channel, after, after)).fetchall()
     db.close()
 
     return jsonify([dict(r) for r in rows])
@@ -211,17 +211,16 @@ def send(channel):
 
     for r in recipients:
         db = get_db(r)
-        # insert ONE message row (text only)
-        db.execute("""
-            INSERT INTO messages (channel, sender, content, filename, ts, read)
-            VALUES (?, ?, ?, NULL, ?, 0)
-        """, (channel, sender, text, ts))
+        if text:
+            db.execute("""
+                INSERT INTO messages (channel, sender, content, filename, ts, read)
+                VALUES (?, ?, ?, NULL, ?, 0)
+            """, (channel, sender, text, ts))
 
-# insert image rows (no text)
         for filename in filenames:
             db.execute("""
-                INSERT INTO messages (channel, sender, content, filename, ts)
-                VALUES (?, ?, '', ?, ?)
+                INSERT INTO messages (channel, sender, content, filename, ts, read)
+                VALUES (?, ?, '', ?, ?, 0)
             """, (channel, sender, filename, ts))
 
         db.commit()
@@ -294,7 +293,7 @@ def edit(msg_id):
             """
             UPDATE messages
             SET content = ?, edited = 1, edited_ts = ?
-            WHERE channel = ? AND sender = ? AND ts = ?
+            WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL
             """,
             (new_text, edited_time, channel, editor, ts)
         )

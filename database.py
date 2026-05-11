@@ -26,6 +26,8 @@ def init_presence_db():
         state TEXT NOT NULL
     )
     """)
+    db.commit()
+    db.close()
 
 init_auth_db()
 init_presence_db()
