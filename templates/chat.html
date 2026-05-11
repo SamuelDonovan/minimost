@@ -466,6 +466,60 @@ function updateAppBadge(count) {
     }
 }
 
+// Favicon flash for unread notifications
+let normalFavicon = null;
+let notifFavicon = null;
+let faviconFlashInterval = null;
+let faviconState = false;
+
+async function initFavicon() {
+    const link = document.querySelector("link[rel='icon'][type='image/png']");
+    if (!link) return;
+    normalFavicon = link.href;
+    notifFavicon = await buildNotifFavicon(normalFavicon);
+}
+
+function buildNotifFavicon(src) {
+    return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+            const sz = 32;
+            const canvas = document.createElement("canvas");
+            canvas.width = sz;
+            canvas.height = sz;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, sz, sz);
+            const r = 7;
+            ctx.beginPath();
+            ctx.arc(sz - r, r, r, 0, 2 * Math.PI);
+            ctx.fillStyle = "#e74c3c";
+            ctx.fill();
+            resolve(canvas.toDataURL());
+        };
+        img.onerror = () => resolve(null);
+        img.src = src;
+    });
+}
+
+function setFaviconHref(href) {
+    document.querySelectorAll("link[rel='icon']").forEach(el => { el.href = href; });
+}
+
+function startFaviconFlash() {
+    if (faviconFlashInterval || !notifFavicon) return;
+    faviconFlashInterval = setInterval(() => {
+        faviconState = !faviconState;
+        setFaviconHref(faviconState ? notifFavicon : normalFavicon);
+    }, 1000);
+}
+
+function stopFaviconFlash() {
+    clearInterval(faviconFlashInterval);
+    faviconFlashInterval = null;
+    faviconState = false;
+    if (normalFavicon) setFaviconHref(normalFavicon);
+}
+
 function refreshTotalUnreadCount() {
     fetch("/unread_count")
         .then(r => r.json())
@@ -474,6 +528,11 @@ function refreshTotalUnreadCount() {
                 lastUnreadCount = data.count;
                 updateTitleBadge(data.count);
                 updateAppBadge(data.count);
+                if (data.count > 0) {
+                    startFaviconFlash();
+                } else {
+                    stopFaviconFlash();
+                }
             }
         });
 }
@@ -1410,6 +1469,7 @@ searchInput.addEventListener("keydown", (e) => {
 
 // Starup
 document.addEventListener("DOMContentLoaded", () => {
+    initFavicon();
     loadSidebar();
     switchChannel(channel);
     setInterval(fetchMessages, 500);
