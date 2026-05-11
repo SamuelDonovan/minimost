@@ -30,6 +30,7 @@ def init_user_db(username: str):
 
         read INTEGER DEFAULT 0,
         deleted INTEGER DEFAULT 0,
+        deleted_ts REAL,
 
         reply_to_id INTEGER,
 

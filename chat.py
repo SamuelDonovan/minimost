@@ -24,6 +24,11 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def get_db(username: str):
     db = sqlite3.connect(common.user_db_path(username))
     db.row_factory = sqlite3.Row
+    try:
+        db.execute("ALTER TABLE messages ADD COLUMN deleted_ts REAL")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
     return db
 
 def all_users():
@@ -159,15 +164,17 @@ def messages(channel):
             filename,
             ts,
             edited,
-            edited_ts
+            edited_ts,
+            deleted,
+            deleted_ts
         FROM messages
         WHERE channel = ?
           AND (
-                ts > ?
-                OR (edited = 1 AND edited_ts > ?)
+                (deleted = 0 AND (ts > ? OR (edited = 1 AND edited_ts > ?)))
+                OR (deleted = 1 AND deleted_ts > ?)
               )
         ORDER BY ts
-    """, (channel, after, after)).fetchall()
+    """, (channel, after, after, after)).fetchall()
     db.close()
 
     return jsonify([dict(r) for r in rows])
@@ -250,6 +257,7 @@ def search_messages():
         SELECT id, channel, sender, content, ts
         FROM messages
         WHERE content LIKE ?
+          AND deleted = 0
         ORDER BY ts DESC
         LIMIT 50
         """,
@@ -296,6 +304,45 @@ def edit(msg_id):
             WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL
             """,
             (new_text, edited_time, channel, editor, ts)
+        )
+        db.commit()
+        db.close()
+
+    return "ok"
+
+# Delete message (soft delete)
+@chat_bp.route("/delete/<int:msg_id>", methods=["POST"])
+@auth.login_required
+def delete_message(msg_id):
+    deleter = session["user"]
+
+    db = get_db(deleter)
+    row = db.execute(
+        "SELECT channel, sender, ts FROM messages WHERE id = ?",
+        (msg_id,)
+    ).fetchone()
+    db.close()
+
+    if not row or row["sender"] != deleter:
+        return "forbidden", 403
+
+    channel = row["channel"]
+    ts = row["ts"]
+    deleted_time = time()
+
+    recipients = channel_users(channel)
+    if deleter not in recipients:
+        recipients.append(deleter)
+
+    for r in recipients:
+        db = get_db(r)
+        db.execute(
+            """
+            UPDATE messages
+            SET deleted = 1, deleted_ts = ?
+            WHERE channel = ? AND sender = ? AND ts = ?
+            """,
+            (deleted_time, channel, deleter, ts)
         )
         db.commit()
         db.close()
