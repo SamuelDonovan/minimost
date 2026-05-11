@@ -5,9 +5,9 @@
   "start_url": "/login.html",
   "icons": [
     {
-      "src": "/web-app-manifest-192x192.png",
+      "src": "/static/web-app-manifest-192x192.png",
       "sizes": "192x192",
-      "type": "/staic/image/png",
+      "type": "image/png",
       "purpose": "maskable"
     },
     {

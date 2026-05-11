@@ -455,6 +455,24 @@ function refreshPresence() {
 let baseTitle = document.title;
 let lastUnreadCount = 0;
 
+function initDesktopNotifications() {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "default") {
+        Notification.requestPermission();
+    }
+}
+
+function sendDesktopNotification(count) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if (!document.hidden) return;
+    new Notification("MiniMost", {
+        body: `You have ${count} unread message${count === 1 ? "" : "s"}`,
+        icon: "/static/web-app-manifest-192x192.png",
+        tag: "minimost-unread",
+        renotify: true,
+    });
+}
+
 function updateTitleBadge(count) {
     if (count > 0) {
         document.title = `(${count}) ${baseTitle}`;
@@ -537,6 +555,7 @@ function refreshTotalUnreadCount() {
                 updateAppBadge(data.count);
                 if (data.count > 0) {
                     startFaviconFlash();
+                    sendDesktopNotification(data.count);
                 } else {
                     stopFaviconFlash();
                 }
@@ -1515,6 +1534,7 @@ searchInput.addEventListener("keydown", (e) => {
 // Starup
 document.addEventListener("DOMContentLoaded", () => {
     initFavicon();
+    initDesktopNotifications();
     loadSidebar();
     switchChannel(channel);
     // Announce presence immediately on load rather than waiting for the first input event.
