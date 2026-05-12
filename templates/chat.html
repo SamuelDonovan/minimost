@@ -822,13 +822,23 @@ function fetchMessages() {
                     minute: "2-digit"
                 });
 
+                const fullTime = msgDate.toLocaleString(undefined, {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    second: "2-digit"
+                });
+
                 const color = userColor(m.sender);
 
                 let html = "";
                 if (m.reply_to_id) {
                     html += `<div class="quoted-msg" id="quoted-${m.id}" onclick="scrollToMsg(${m.reply_to_id})"><em>Loading…</em></div>`;
                 }
-                html += `<span class="time">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
+                html += `<span class="time" title="${fullTime}">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
 
                 if (m.edited) {
                     const editedDate = new Date(m.edited_ts * 1000); // JS uses milliseconds
