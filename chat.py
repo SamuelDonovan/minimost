@@ -166,7 +166,8 @@ def messages(channel):
             edited,
             edited_ts,
             deleted,
-            deleted_ts
+            deleted_ts,
+            reply_to_id
         FROM messages
         WHERE channel = ?
           AND (
@@ -186,6 +187,8 @@ def messages(channel):
 def send(channel):
     sender = session["user"]
     text = (request.form.get("text") or "").rstrip()
+    reply_to_id_raw = request.form.get("reply_to_id")
+    reply_to_id = int(reply_to_id_raw) if reply_to_id_raw else None
 
     files = request.files.getlist("files")
     filenames = []
@@ -220,20 +223,34 @@ def send(channel):
         db = get_db(r)
         if text:
             db.execute("""
-                INSERT INTO messages (channel, sender, content, filename, ts, read)
-                VALUES (?, ?, ?, NULL, ?, 0)
-            """, (channel, sender, text, ts))
+                INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)
+                VALUES (?, ?, ?, NULL, ?, 0, ?)
+            """, (channel, sender, text, ts, reply_to_id))
 
         for filename in filenames:
             db.execute("""
-                INSERT INTO messages (channel, sender, content, filename, ts, read)
-                VALUES (?, ?, '', ?, ?, 0)
-            """, (channel, sender, filename, ts))
+                INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)
+                VALUES (?, ?, '', ?, ?, 0, ?)
+            """, (channel, sender, filename, ts, reply_to_id))
 
         db.commit()
         db.close()
 
     return "ok"
+
+@chat_bp.route("/message/<int:msg_id>")
+@auth.login_required
+def get_message(msg_id):
+    user = session["user"]
+    db = get_db(user)
+    row = db.execute(
+        "SELECT id, sender, content, filename, deleted FROM messages WHERE id = ?",
+        (msg_id,)
+    ).fetchone()
+    db.close()
+    if not row:
+        return "not found", 404
+    return jsonify(dict(row))
 
 @chat_bp.route("/files/<path:filename>")
 @auth.login_required

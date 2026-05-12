@@ -421,3 +421,56 @@ button, input, textarea{
     padding: 10px;
 }
 a { color: #9cdcfe; }
+.reply-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-left: 3px solid #007acc;
+    background: #252526;
+    padding: 4px 8px;
+    margin-bottom: 6px;
+    font-size: 0.85em;
+    color: #aaa;
+    border-radius: 0 4px 4px 0;
+    gap: 8px;
+}
+.reply-preview span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.reply-cancel-btn {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 1.1em;
+    cursor: pointer;
+    padding: 0 2px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.reply-cancel-btn:hover {
+    color: #ddd;
+}
+.quoted-msg {
+    display: block;
+    border-left: 3px solid #007acc;
+    background: #252526;
+    padding: 3px 8px;
+    margin-bottom: 2px;
+    font-size: 0.85em;
+    color: #aaa;
+    border-radius: 0 4px 4px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 600px;
+    cursor: pointer;
+}
+.quoted-msg:hover {
+    background: #2d2d2d;
+}
+.quoted-sender {
+    font-weight: 600;
+    margin-right: 4px;
+}

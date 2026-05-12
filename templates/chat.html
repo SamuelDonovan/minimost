@@ -54,6 +54,10 @@
     <div id="chat"></div>
 
     <div id="input" class="dropzone">
+        <div id="reply-banner" class="reply-preview hidden">
+            <span>Replying to <strong id="reply-banner-sender"></strong>: <span id="reply-banner-preview"></span></span>
+            <button class="reply-cancel-btn" onclick="cancelReply()" title="Cancel reply">&times;</button>
+        </div>
         <div id="image-preview"></div>
         <textarea
             id="msg"
@@ -639,6 +643,8 @@ function switchChannel(c) {
         fetchController = null;
     }
 
+    cancelReply();
+
     channel = c;
     lastTs = 0;
     lastRenderedDate = null;
@@ -728,7 +734,11 @@ function fetchMessages() {
 
                 const color = userColor(m.sender);
 
-                let html = `<span class="time">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
+                let html = "";
+                if (m.reply_to_id) {
+                    html += `<div class="quoted-msg" id="quoted-${m.id}" onclick="scrollToMsg(${m.reply_to_id})"><em>Loading…</em></div>`;
+                }
+                html += `<span class="time">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
 
                 if (m.edited) {
                     const editedDate = new Date(m.edited_ts * 1000); // JS uses milliseconds
@@ -790,6 +800,23 @@ function fetchMessages() {
                     </button>`;
                 }
 
+                html += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        >
+                        <polyline points="9 17 4 12 9 7"/>
+                        <path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
+                    </svg>
+                </button>`;
+
                 html += ` : `;
 
                 if (m.content?.trim()) {
@@ -830,6 +857,10 @@ function fetchMessages() {
                     appended = true;
                 }
 
+                if (m.reply_to_id) {
+                    loadQuotedMsg(m.id, m.reply_to_id);
+                }
+
                 lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0);
             });
 
@@ -858,6 +889,10 @@ function send() {
     const form = new FormData();
     form.append("text", text);
 
+    if (currentReplyId !== null) {
+        form.append("reply_to_id", currentReplyId);
+    }
+
     pendingFiles.forEach(f => {
         form.append("files", f);
     });
@@ -872,6 +907,7 @@ function send() {
             msgBox.value = "";
             pendingFiles = [];
             preview.innerHTML = "";
+            cancelReply();
             fetchMessages();
             loadSidebar();
         }
@@ -1186,6 +1222,94 @@ function deleteMsg(msgId) {
             alert("Could not delete message");
             console.error(err);
         });
+}
+
+// Reply
+const quotedMsgCache = {};
+let currentReplyId = null;
+
+function renderQuotedBlock(containerId, msg) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const color = userColor(msg.sender);
+    let content;
+    if (msg.deleted) {
+        content = "<em>[deleted message]</em>";
+    } else if (msg.content?.trim()) {
+        const t = msg.content.length > 100 ? msg.content.substring(0, 100) + "…" : msg.content;
+        content = escapeHtml(t);
+    } else {
+        content = "<em>[attachment]</em>";
+    }
+    el.innerHTML = `<span class="quoted-sender" style="color:${color}">${escapeHtml(msg.sender)}</span>: ${content}`;
+}
+
+function loadQuotedMsg(msgId, replyToId) {
+    const containerId = `quoted-${msgId}`;
+    if (quotedMsgCache[replyToId]) {
+        renderQuotedBlock(containerId, quotedMsgCache[replyToId]);
+        return;
+    }
+    fetch(`/message/${replyToId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (!data) return;
+            quotedMsgCache[replyToId] = data;
+            renderQuotedBlock(containerId, data);
+        })
+        .catch(() => {
+            const el = document.getElementById(containerId);
+            if (el) el.innerHTML = "<em>[unavailable]</em>";
+        });
+}
+
+function startReply(msgId) {
+    currentReplyId = msgId;
+    if (quotedMsgCache[msgId]) {
+        showReplyBanner(quotedMsgCache[msgId]);
+    } else {
+        fetch(`/message/${msgId}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data) return;
+                quotedMsgCache[msgId] = data;
+                showReplyBanner(data);
+            });
+    }
+    msgBox.focus();
+}
+
+function showReplyBanner(msg) {
+    const banner = document.getElementById("reply-banner");
+    const senderEl = document.getElementById("reply-banner-sender");
+    const previewEl = document.getElementById("reply-banner-preview");
+    const color = userColor(msg.sender);
+    senderEl.textContent = msg.sender;
+    senderEl.style.color = color;
+    let preview;
+    if (msg.deleted) {
+        preview = "[deleted message]";
+    } else if (msg.content?.trim()) {
+        preview = msg.content.length > 80 ? msg.content.substring(0, 80) + "…" : msg.content;
+    } else {
+        preview = "[attachment]";
+    }
+    previewEl.textContent = preview;
+    banner.classList.remove("hidden");
+}
+
+function cancelReply() {
+    currentReplyId = null;
+    document.getElementById("reply-banner").classList.add("hidden");
+}
+
+function scrollToMsg(msgId) {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.style.transition = "background 0.2s";
+    el.style.background = "#2a3a4a";
+    setTimeout(() => { el.style.background = ""; }, 1200);
 }
 
 // Prevent HTML injection when re-inserting text
