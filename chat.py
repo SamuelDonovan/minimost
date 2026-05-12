@@ -141,9 +141,8 @@ def online_users():
 
     db.close()
 
-    # Normalize usernames and states
     return jsonify({
-        row["user"].lower(): row["state"].lower()
+        row["user"]: row["state"].lower()
         for row in rows
     })
 
