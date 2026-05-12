@@ -371,6 +371,11 @@ def mark_read(channel):
     user = session["user"]
     db = get_db(user)
 
+    unread_rows = db.execute("""
+        SELECT ts FROM messages
+        WHERE channel = ? AND sender != ? AND read = 0
+    """, (channel, user)).fetchall()
+
     db.execute("""
         UPDATE messages
         SET read = 1
@@ -380,7 +385,33 @@ def mark_read(channel):
 
     db.commit()
     db.close()
+
+    if unread_rows:
+        pdb = sqlite3.connect(presence.PRESENCE_DB)
+        pdb.executemany(
+            "INSERT OR IGNORE INTO read_receipts (channel, msg_ts, reader) VALUES (?, ?, ?)",
+            [(channel, row[0], user) for row in unread_rows]
+        )
+        pdb.commit()
+        pdb.close()
+
     return "", 204
+
+
+@chat_bp.route("/read_receipts/<channel>")
+@auth.login_required
+def read_receipts(channel):
+    pdb = sqlite3.connect(presence.PRESENCE_DB)
+    rows = pdb.execute(
+        "SELECT msg_ts, reader FROM read_receipts WHERE channel = ?",
+        (channel,)
+    ).fetchall()
+    pdb.close()
+
+    result = {}
+    for msg_ts, reader in rows:
+        result.setdefault(str(msg_ts), []).append(reader)
+    return jsonify(result)
 
 
 @chat_bp.route("/users")

@@ -424,6 +424,34 @@ button, input, textarea{
     color: #888;
     font-style: italic;
 }
+.read-receipt {
+    font-size: 0.75em;
+    color: #555;
+    margin-left: 4px;
+    position: relative;
+    cursor: default;
+    user-select: none;
+}
+.read-receipt.seen {
+    color: #6cf;
+}
+.receipt-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 1.4em;
+    right: 0;
+    background: #2d2d2d;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 8px;
+    white-space: nowrap;
+    font-size: 1.1em;
+    color: #ddd;
+    z-index: 10;
+}
+.read-receipt:hover .receipt-tooltip {
+    display: block;
+}
 #input {
     padding: 10px;
 }

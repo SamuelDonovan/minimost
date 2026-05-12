@@ -195,6 +195,26 @@ function fetchTyping() {
         });
 }
 
+function fetchReadReceipts() {
+    fetch(`/read_receipts/${channel}`)
+        .then(r => r.ok ? r.json() : {})
+        .then(data => {
+            readReceiptsMap = data;
+            updateReadReceiptUI();
+        });
+}
+
+function updateReadReceiptUI() {
+    document.querySelectorAll(".read-receipt").forEach(el => {
+        const readers = readReceiptsMap[el.dataset.ts];
+        if (!readers || readers.length === 0) return;
+        const names = readers.filter(r => r !== CURRENT_USER).join(", ");
+        if (!names) return;
+        el.innerHTML = `✓<span class="receipt-tooltip">Read by: ${names}</span>`;
+        el.classList.add("seen");
+    });
+}
+
 // Help Button
 const helpBtn     = document.getElementById("help-btn");
 const helpOverlay     = document.getElementById("help-overlay");
@@ -283,6 +303,7 @@ let lastRenderedDate = null;
 let forceScrollToBottom = false;
 let pendingFiles = [];
 let fetchController = null;
+let readReceiptsMap = {};
 
 // Preview Renderer
 function addFiles(files) {
@@ -686,6 +707,7 @@ function switchChannel(c) {
 
     document.getElementById("chat").innerHTML = "";
     document.getElementById("typing-indicator").textContent = "";
+    readReceiptsMap = {};
     document.getElementById("chan").innerText = c;
 
     forceScrollToBottom = true;
@@ -876,6 +898,10 @@ function fetchMessages() {
                     }
                 }
 
+                if (m.sender === CURRENT_USER) {
+                    html += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
+                }
+
                 if (existing) {
                     const textSpan = existing.querySelector(".text");
                     if (textSpan?.dataset.editing === "true") {
@@ -899,6 +925,7 @@ function fetchMessages() {
                 lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0);
             });
 
+            updateReadReceiptUI();
             refreshDMs();
 
             if ((forceScrollToBottom || appended) && shouldAutoScroll) {
@@ -1716,6 +1743,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(refreshPresence, 1000);
     setInterval(fetchTyping, 1000);
     setInterval(refreshDMs, 1000);
+    setInterval(fetchReadReceipts, 3000);
     setInterval(refreshTotalUnreadCount, 5000);
     setInterval(() => {
         if (

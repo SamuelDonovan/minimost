@@ -9,7 +9,7 @@ presence_bp = Blueprint("presence", __name__)
 
 PRESENCE_DB = "presence.db"
 
-def _init_typing_table():
+def _init_tables():
     db = sqlite3.connect(PRESENCE_DB)
     db.execute("""
         CREATE TABLE IF NOT EXISTS typing (
@@ -19,10 +19,18 @@ def _init_typing_table():
             PRIMARY KEY (user, channel)
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS read_receipts (
+            channel TEXT NOT NULL,
+            msg_ts  REAL NOT NULL,
+            reader  TEXT NOT NULL,
+            PRIMARY KEY (channel, msg_ts, reader)
+        )
+    """)
     db.commit()
     db.close()
 
-_init_typing_table()
+_init_tables()
 
 @presence_bp.route("/typing/<channel>", methods=["POST"])
 def typing_start(channel):
