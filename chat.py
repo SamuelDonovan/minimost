@@ -55,6 +55,25 @@ CHANNELS = ["general", "software", "firmware", "systems", "off-topic"]
 def channels():
     return jsonify(CHANNELS)
 
+@chat_bp.route("/channel_unreads")
+@auth.login_required
+def channel_unreads():
+    user = session["user"]
+    db = get_db(user)
+    placeholders = ",".join("?" * len(CHANNELS))
+    rows = db.execute(f"""
+        SELECT channel, COUNT(*) as count
+        FROM messages
+        WHERE channel IN ({placeholders})
+          AND sender != ? AND read = 0 AND deleted = 0
+        GROUP BY channel
+    """, (*CHANNELS, user)).fetchall()
+    db.close()
+    result = {ch: 0 for ch in CHANNELS}
+    for row in rows:
+        result[row["channel"]] = row["count"]
+    return jsonify(result)
+
 @chat_bp.route("/unread_count")
 @auth.login_required
 def unread_count():

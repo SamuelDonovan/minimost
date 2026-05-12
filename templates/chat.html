@@ -304,6 +304,7 @@ let forceScrollToBottom = false;
 let pendingFiles = [];
 let fetchController = null;
 let readReceiptsMap = {};
+let hasUnreadChannels = false;
 
 // Preview Renderer
 function addFiles(files) {
@@ -367,6 +368,7 @@ function loadSidebar() {
         sb.appendChild(dmTitle);
 
         refreshPresence();
+        refreshChannels();
         dms.forEach(dm => {
             const label = "@ " + dm.users.join(", ");
             sidebarEntry(label, dm.channel);
@@ -375,6 +377,36 @@ function loadSidebar() {
         // 🔑 ensure highlight is correct after rebuild
         updateSidebarActive();
     });
+}
+
+function refreshChannels() {
+    fetch("/channel_unreads")
+        .then(r => r.json())
+        .then(counts => {
+            hasUnreadChannels = Object.values(counts).some(c => c > 0);
+
+            for (const [ch, count] of Object.entries(counts)) {
+                const el = document.querySelector(`[data-channel="${ch}"]`);
+                if (!el) continue;
+                let badge = el.querySelector(".unread-badge");
+                if (count > 0) {
+                    if (!badge) {
+                        badge = document.createElement("span");
+                        badge.className = "unread-badge";
+                        el.appendChild(badge);
+                    }
+                    badge.textContent = count;
+                } else if (badge) {
+                    badge.remove();
+                }
+            }
+
+            if (hasUnreadChannels) {
+                startFaviconFlash();
+            } else if (lastUnreadCount === 0) {
+                stopFaviconFlash();
+            }
+        });
 }
 
 function refreshDMs() {
@@ -612,7 +644,7 @@ function refreshTotalUnreadCount() {
                 lastUnreadCount = data.count;
                 updateTitleBadge(data.count);
                 updateAppBadge(data.count);
-                if (data.count > 0) {
+                if (data.count > 0 || hasUnreadChannels) {
                     startFaviconFlash();
                     sendDesktopNotification(data.count);
                 } else {
@@ -657,13 +689,13 @@ function sidebarEntry(label, channelName, unread = 0) {
         }
 
         d.appendChild(presence);
+    }
 
-        if (unread > 0) {
-            const badge = document.createElement("span");
-            badge.className = "unread-badge";
-            badge.textContent = unread;
-            d.appendChild(badge);
-        }
+    if (unread > 0) {
+        const badge = document.createElement("span");
+        badge.className = "unread-badge";
+        badge.textContent = unread;
+        d.appendChild(badge);
     }
 
     d.onpointerup = (e) => {
@@ -708,6 +740,7 @@ function switchChannel(c) {
     document.getElementById("chat").innerHTML = "";
     document.getElementById("typing-indicator").textContent = "";
     readReceiptsMap = {};
+    document.querySelector(`[data-channel="${c}"]`)?.querySelector(".unread-badge")?.remove();
     document.getElementById("chan").innerText = c;
 
     forceScrollToBottom = true;
@@ -1743,6 +1776,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(refreshPresence, 1000);
     setInterval(fetchTyping, 1000);
     setInterval(refreshDMs, 1000);
+    setInterval(refreshChannels, 1000);
     setInterval(fetchReadReceipts, 3000);
     setInterval(refreshTotalUnreadCount, 5000);
     setInterval(() => {
