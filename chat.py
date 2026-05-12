@@ -22,7 +22,7 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 def get_db(username: str):
-    db = sqlite3.connect(common.user_db_path(username))
+    db = sqlite3.connect(str(common.user_db_path(username)))
     db.row_factory = sqlite3.Row
     try:
         db.execute("ALTER TABLE messages ADD COLUMN deleted_ts REAL")
@@ -48,7 +48,7 @@ def channel_users(channel: str) -> List[str]:
     return all_users()
 
 # Channels endpoint
-CHANNELS = ["general", "off-topic", "dev"]
+CHANNELS = ["general", "software", "firmware", "systems", "off-topic"]
 
 @chat_bp.route("/channels")
 @auth.login_required

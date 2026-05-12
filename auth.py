@@ -27,6 +27,7 @@ def login_required(fn):
     return wrapper
 
 @auth_bp.route("/login", methods=["GET", "POST"])
+@auth_bp.route("/login.html", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form["username"].strip()
