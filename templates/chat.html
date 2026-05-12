@@ -53,6 +53,8 @@
 
     <div id="chat"></div>
 
+    <div id="typing-indicator"></div>
+
     <div id="input" class="dropzone">
         <div id="reply-banner" class="reply-preview hidden">
             <span>Replying to <strong id="reply-banner-sender"></strong>: <span id="reply-banner-preview"></span></span>
@@ -160,6 +162,38 @@ const fileInput = document.getElementById("fileInput");
 const preview = document.getElementById("image-preview");
 const msgBox = document.getElementById("msg");
 const dropzone = document.getElementById("input");
+
+// Typing indicator — throttled send
+let lastTypingSend = 0;
+msgBox.addEventListener("input", () => {
+    const now = Date.now();
+    if (now - lastTypingSend >= 2000) {
+        lastTypingSend = now;
+        fetch(`/typing/${channel}`, { method: "POST" });
+    }
+});
+
+function fetchTyping() {
+    fetch(`/typing/${channel}`)
+        .then(r => r.ok ? r.json() : [])
+        .then(users => {
+            const el = document.getElementById("typing-indicator");
+            if (!users || users.length === 0) {
+                el.textContent = "";
+                return;
+            }
+            let msg;
+            if (users.length === 1) {
+                msg = `${users[0]} is typing...`;
+            } else if (users.length === 2) {
+                msg = `${users[0]}, ${users[1]} are typing...`;
+            } else {
+                const extra = users.length - 2;
+                msg = `${users[0]}, ${users[1]}, and ${extra} other${extra > 1 ? "s" : ""} are typing...`;
+            }
+            el.textContent = msg;
+        });
+}
 
 // Help Button
 const helpBtn     = document.getElementById("help-btn");
@@ -651,6 +685,7 @@ function switchChannel(c) {
     seen.clear();
 
     document.getElementById("chat").innerHTML = "";
+    document.getElementById("typing-indicator").textContent = "";
     document.getElementById("chan").innerText = c;
 
     forceScrollToBottom = true;
@@ -1679,6 +1714,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setInterval(fetchMessages, 500);
     setInterval(refreshPresence, 1000);
+    setInterval(fetchTyping, 1000);
     setInterval(refreshDMs, 1000);
     setInterval(refreshTotalUnreadCount, 5000);
     setInterval(() => {

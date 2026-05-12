@@ -104,7 +104,7 @@ Images can be attached using the paperclip icon next to the message box but also
 - [x] Autocomplete username for new DMs 
 - [x] Clickable URLs 
 - [x] Bold/Underline/Italic modifiers
-- [ ] Typing indicators
+- [x] Typing indicators
 - [x] New message indicators
 - [x] Date/time stamps on messages  
 - [x] Scrollable sidebar 
