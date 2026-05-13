@@ -46,6 +46,13 @@
             </svg>
             <span class="icon-text">Search</span>
         </button>
+        <button id="notif-mute-btn" class="icon-btn" onclick="toggleNotifMute()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4.002 4.002 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4.002 4.002 0 0 0-3.203-3.92L8 1.917zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5.002 5.002 0 0 1 13 6c0 .88.32 4.2 1.22 6z"/>
+                <line id="notif-slash" x1="1" y1="15" x2="15" y2="1" stroke="currentColor" stroke-width="2" style="display:none"/>
+            </svg>
+            <span class="icon-text">Sound</span>
+        </button>
         <div>
             Channel: <span id="chan"></span>
         </div>
@@ -306,6 +313,10 @@ let fetchController = null;
 let readReceiptsMap = {};
 let hasUnreadChannels = false;
 
+const notifSound = new Audio('/static/notification.mp3');
+notifSound.preload = 'auto';
+let notifMuted = localStorage.getItem('notifMuted') === 'true';
+
 // Preview Renderer
 function addFiles(files) {
     for (const file of files) {
@@ -553,6 +564,20 @@ function initDesktopNotifications() {
     }
 }
 
+function updateNotifMuteBtn() {
+    const slash = document.getElementById('notif-slash');
+    const btn = document.getElementById('notif-mute-btn');
+    if (!slash || !btn) return;
+    slash.style.display = notifMuted ? '' : 'none';
+    btn.title = notifMuted ? 'Unmute notification sounds' : 'Mute notification sounds';
+}
+
+function toggleNotifMute() {
+    notifMuted = !notifMuted;
+    localStorage.setItem('notifMuted', notifMuted);
+    updateNotifMuteBtn();
+}
+
 function sendDesktopNotification(count) {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     if (!document.hidden) return;
@@ -776,6 +801,7 @@ function fetchMessages() {
                 forceScrollToBottom || isNearBottom(chat);
 
             let appended = false;
+            let playNewMsgSound = false;
 
             data.forEach(m => {
                 // ⛔ Extra safety (paranoia is good here)
@@ -959,6 +985,7 @@ function fetchMessages() {
                     d.innerHTML = html;
                     chat.appendChild(d);
                     appended = true;
+                    if (m.sender !== CURRENT_USER) playNewMsgSound = true;
                 }
 
                 if (m.reply_to_id) {
@@ -967,6 +994,11 @@ function fetchMessages() {
 
                 lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0);
             });
+
+            if (playNewMsgSound && document.hidden && !notifMuted) {
+                notifSound.currentTime = 0;
+                notifSound.play().catch(() => {});
+            }
 
             updateReadReceiptUI();
             refreshDMs();
@@ -1764,6 +1796,7 @@ searchInput.addEventListener("keydown", (e) => {
 document.addEventListener("DOMContentLoaded", () => {
     initFavicon();
     initDesktopNotifications();
+    updateNotifMuteBtn();
     loadSidebar();
     switchChannel(channel);
     // Announce presence immediately on load rather than waiting for the first input event.
