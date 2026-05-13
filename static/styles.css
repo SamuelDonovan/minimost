@@ -7,15 +7,44 @@ body {
     height: 100vh;
 }
 #topbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: space-between;
     background: #2d2d2d;
     padding: 6px 10px;
     border-bottom: 1px solid #444;
+    gap: 8px;
 }
-#topbar input, #topbar button {
-    margin-left: 4px;
+#topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #ddd;
+    font-size: 14px;
+}
+#topbar-user svg {
+    opacity: 0.5;
+    flex-shrink: 0;
+}
+#topbar-username {
+    font-weight: 600;
+}
+#topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+#topbar-channel {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    font-size: 14px;
+    font-weight: 600;
+    color: #ddd;
+}
+.chan-hash {
+    color: #888;
+    margin-right: 1px;
 }
 #sidebar {
     min-width: 220px;
@@ -24,7 +53,7 @@ body {
     display: flex;
     background: #252526;
     flex-direction: column;
-    border-right: 1px solid #ccc;
+    border-right: 1px solid #444;
 }
 #sidebar-static {
     flex-shrink: 0;
@@ -391,14 +420,6 @@ body {
 .autocomplete-suggestion:hover {
     background: #444;
 }
-#msg-search-btn {
-    cursor: pointer;           /* make cursor a pointer */
-    opacity: 0.6;
-}
-
-#msg-search-btn:hover {
-    opacity: 1;
-}
 #msg-search-results div {
     padding: 6px;
     border-bottom: 1px solid #333;
@@ -454,6 +475,9 @@ button, input, textarea{
 }
 #input {
     padding: 10px;
+}
+#msg {
+    width: 80%;
 }
 a { color: #9cdcfe; }
 .reply-preview {
