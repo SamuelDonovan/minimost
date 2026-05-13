@@ -107,6 +107,12 @@ button[type="submit"]:disabled {
     color: #777;
     margin: 10px 0 0 0;
 }
+.auth-body {
+    font-size: 14px;
+    color: #bbb;
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+}
 
 #password-message {
     font-size: 13px;

@@ -10,7 +10,20 @@ def init_auth_db():
     db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
-            password_hash TEXT NOT NULL
+            password_hash TEXT NOT NULL,
+            email TEXT
+        )
+    """)
+    # Migrate: add email column for existing installations
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS reset_tokens (
+            token TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            expires_at REAL NOT NULL
         )
     """)
     db.commit()

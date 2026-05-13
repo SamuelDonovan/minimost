@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Check your email – MiniMost</title>
+    <link rel="stylesheet" href="../static/auth.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
+</head>
+<body>
+    <div class="auth-brand">MiniMost</div>
+    <div class="auth-card">
+        <h2>Check your email</h2>
+        <p class="auth-body">If an account with that username exists and has an email address on file, we've sent a reset link. It will expire in 1 hour.</p>
+        <p class="auth-footer"><a href="/login">Back to login</a></p>
+    </div>
+</body>
+</html>

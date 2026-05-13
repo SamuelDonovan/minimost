@@ -50,4 +50,9 @@ chdir = "/home/sam/minimost"
 # --------------------------------------------------------------------
 # Environment variables (optional)
 # --------------------------------------------------------------------
-
+# Set SMTP_USER and SMTP_PASS outside this file (e.g. in the systemd service)
+raw_env = [
+    "SMTP_HOST=smtp.gmail.com",
+    "SMTP_PORT=587",
+    "SMTP_FROM=minimost@gmail.com",
+]

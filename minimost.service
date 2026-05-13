@@ -22,6 +22,9 @@ ExecStart=/home/sam/venv/bin/gunicorn \
           app:app
 Restart=always
 RestartSec=5
+Environment="SMTP_HOST=smtp.gmail.com"
+Environment="SMTP_PORT=587"
+Environment="SMTP_FROM=minimost@gmail.com"
 
 [Install]
 WantedBy=default.target
