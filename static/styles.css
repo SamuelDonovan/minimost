@@ -533,3 +533,138 @@ a { color: #9cdcfe; }
     font-weight: 600;
     margin-right: 4px;
 }
+
+/* ── Call button in sidebar ──────────────────────── */
+.call-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #888;
+    padding: 2px 4px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: color 0.15s;
+}
+.sidebar-item:hover .call-btn {
+    display: inline-flex;
+}
+.call-btn:hover {
+    color: #4caf50;
+}
+.call-btn svg {
+    width: 13px;
+    height: 13px;
+    pointer-events: none;
+}
+
+/* ── Incoming call overlay ───────────────────────── */
+#incoming-call {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2000;
+    background: #2d2d2d;
+    border: 1px solid #555;
+    border-radius: 14px;
+    padding: 32px 36px;
+    text-align: center;
+    min-width: 260px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+}
+#incoming-call-subtitle {
+    color: #888;
+    font-size: 0.85em;
+    margin: 0 0 6px 0;
+}
+#incoming-caller-name {
+    font-size: 1.3em;
+    font-weight: 700;
+    margin: 0 0 24px 0;
+    color: #ddd;
+}
+.call-actions {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+}
+.call-answer-btn,
+.call-decline-btn {
+    border: none;
+    border-radius: 50%;
+    width: 56px;
+    height: 56px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter 0.15s;
+}
+.call-answer-btn  { background: #2e7d32; }
+.call-decline-btn { background: #c62828; }
+.call-answer-btn:hover  { filter: brightness(1.2); }
+.call-decline-btn:hover { filter: brightness(1.2); }
+.call-answer-btn svg,
+.call-decline-btn svg { width: 22px; height: 22px; fill: #fff; pointer-events: none; }
+
+/* ── Active call card ────────────────────────────── */
+#active-call {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1500;
+    background: #2d2d2d;
+    border: 1px solid #555;
+    border-radius: 10px;
+    padding: 14px 16px;
+    min-width: 210px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+#active-call-name {
+    font-weight: 600;
+    font-size: 0.95em;
+    margin-bottom: 2px;
+    color: #ddd;
+}
+#active-call-timer {
+    font-size: 0.82em;
+    color: #888;
+    margin-bottom: 12px;
+}
+.active-call-controls {
+    display: flex;
+    gap: 8px;
+}
+.call-mute-btn,
+.call-end-btn {
+    flex: 1;
+    border-radius: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: filter 0.15s;
+}
+.call-mute-btn {
+    background: #3a3a3a;
+    color: #ddd;
+    border: 1px solid #555;
+}
+.call-mute-btn:hover  { filter: brightness(1.3); }
+.call-mute-btn.muted  { background: #5a2a2a; color: #f88; border-color: #f88; }
+.call-end-btn {
+    background: #c62828;
+    color: #fff;
+    border: none;
+}
+.call-end-btn:hover { filter: brightness(1.2); }
+.call-mute-btn svg,
+.call-end-btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }

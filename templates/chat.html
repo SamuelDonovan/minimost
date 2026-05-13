@@ -136,6 +136,48 @@
     </div>
 </div>
 
+<!-- Remote audio (hidden) -->
+<audio id="remote-audio" autoplay></audio>
+
+<!-- Incoming Call Overlay -->
+<div id="incoming-call">
+    <p id="incoming-call-subtitle">Incoming voice call</p>
+    <div id="incoming-caller-name"></div>
+    <div class="call-actions">
+        <button class="call-answer-btn" title="Answer" onclick="answerCall()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                <path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328z"/>
+            </svg>
+        </button>
+        <button class="call-decline-btn" title="Decline" onclick="declineCall()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854z"/>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<!-- Active Call Card -->
+<div id="active-call">
+    <div id="active-call-name"></div>
+    <div id="active-call-timer">Calling…</div>
+    <div class="active-call-controls">
+        <button id="call-mute-btn" class="call-mute-btn" onclick="toggleMute()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
+                <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
+            </svg>
+            <span class="mute-label">Mute</span>
+        </button>
+        <button class="call-end-btn" onclick="endCall()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854z"/>
+            </svg>
+            End
+        </button>
+    </div>
+</div>
+
 <!-- Help Button -->
 <button id="help-btn" class="icon-btn" title="Help menu" aria-label="Help">?</button>
 
@@ -722,6 +764,20 @@ function sidebarEntry(label, channelName, unread = 0) {
         }
 
         d.appendChild(presence);
+
+        // Call button (1-on-1 DMs only)
+        const dmPeers = channelName.split(":").slice(1).filter(u => u !== CURRENT_USER);
+        if (dmPeers.length === 1) {
+            const callBtn = document.createElement("button");
+            callBtn.className = "call-btn";
+            callBtn.title = `Call ${dmPeers[0]}`;
+            callBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328z"/></svg>`;
+            callBtn.addEventListener("pointerup", e => {
+                e.stopPropagation();
+                startCall(dmPeers[0]);
+            });
+            d.appendChild(callBtn);
+        }
     }
 
     if (unread > 0) {
@@ -1800,6 +1856,257 @@ searchInput.addEventListener("keydown", (e) => {
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WebRTC Voice Calls
+// ─────────────────────────────────────────────────────────────────────────────
+
+const peerConfig = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "turn:10.0.0.230:3478", username: "minimost", credential: "changeme" }
+    ]
+};
+
+let peerConn             = null;
+let localStream          = null;
+let callPeer             = null;   // username of the other party
+let incomingOffer        = null;   // stored SDP offer while showing incoming UI
+let pendingCandidates    = [];     // ICE candidates queued before remote desc set
+let callTimerInterval    = null;
+let callStartTime        = null;
+let isMuted              = false;
+
+function startCall(targetUser) {
+    if (callPeer) return;
+    callPeer = targetUser;
+
+    sendSignal(targetUser, "ring", "");
+    showActiveCall(targetUser);
+
+    setupPeerConnection(targetUser);
+
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        .then(stream => {
+            localStream = stream;
+            stream.getTracks().forEach(t => peerConn.addTrack(t, stream));
+            return peerConn.createOffer();
+        })
+        .then(offer => peerConn.setLocalDescription(offer).then(() => offer))
+        .then(offer => sendSignal(targetUser, "offer", JSON.stringify(offer)))
+        .catch(err => { console.error("[call] startCall failed:", err); endCall(); });
+}
+
+function setupPeerConnection(peerUser) {
+    peerConn = new RTCPeerConnection(peerConfig);
+
+    peerConn.onicecandidate = e => {
+        if (e.candidate?.candidate) {
+            console.log("[call] sending ICE candidate:", e.candidate.type, e.candidate.address);
+            sendSignal(peerUser, "ice", JSON.stringify(e.candidate));
+        } else {
+            console.log("[call] ICE gathering complete");
+        }
+    };
+
+    peerConn.oniceconnectionstatechange = () => {
+        console.log("[call] ICE connection state:", peerConn.iceConnectionState);
+    };
+
+    peerConn.onsignalingstatechange = () => {
+        console.log("[call] signaling state:", peerConn.signalingState);
+    };
+
+    peerConn.onconnectionstatechange = () => {
+        const s = peerConn.connectionState;
+        console.log("[call] connection state:", s);
+        if (s === "connected") {
+            startCallTimer();
+        } else if (s === "disconnected" || s === "failed" || s === "closed") {
+            cleanupCall();
+        }
+    };
+
+    peerConn.ontrack = e => {
+        console.log("[call] got remote track:", e.track.kind);
+        const audio = document.getElementById("remote-audio");
+        if (e.streams && e.streams[0]) {
+            audio.srcObject = e.streams[0];
+        } else {
+            if (!audio.srcObject) audio.srcObject = new MediaStream();
+            audio.srcObject.addTrack(e.track);
+        }
+        audio.play().catch(err => console.warn("[call] audio play error:", err));
+    };
+}
+
+function answerCall() {
+    const offer = incomingOffer;  // capture before any async code can clear it
+    incomingOffer = null;
+
+    hideIncomingCall();
+    showActiveCall(callPeer);
+
+    setupPeerConnection(callPeer);
+
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        .then(stream => {
+            localStream = stream;
+            stream.getTracks().forEach(t => peerConn.addTrack(t, stream));
+            return peerConn.setRemoteDescription(new RTCSessionDescription(offer));
+        })
+        .then(() => {
+            flushPendingCandidates();
+            return peerConn.createAnswer();
+        })
+        .then(answer => peerConn.setLocalDescription(answer).then(() => answer))
+        .then(answer => sendSignal(callPeer, "answer", JSON.stringify(answer)))
+        .catch(err => { console.error("[call] answerCall failed:", err); endCall(); });
+}
+
+function declineCall() {
+    if (callPeer) sendSignal(callPeer, "decline", "");
+    hideIncomingCall();
+    callPeer     = null;
+    incomingOffer = null;
+    pendingCandidates = [];
+}
+
+function endCall() {
+    if (callPeer) sendSignal(callPeer, "hangup", "");
+    cleanupCall();
+}
+
+function cleanupCall() {
+    if (peerConn)    { peerConn.close(); peerConn = null; }
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    document.getElementById("remote-audio").srcObject = null;
+    callPeer          = null;
+    incomingOffer     = null;
+    pendingCandidates = [];
+    isMuted           = false;
+    stopCallTimer();
+    hideActiveCall();
+    hideIncomingCall();
+}
+
+function toggleMute() {
+    if (!localStream) return;
+    isMuted = !isMuted;
+    localStream.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
+    const btn = document.getElementById("call-mute-btn");
+    btn.classList.toggle("muted", isMuted);
+    btn.querySelector(".mute-label").textContent = isMuted ? "Unmute" : "Mute";
+}
+
+function flushPendingCandidates() {
+    pendingCandidates.forEach(c => peerConn.addIceCandidate(c).catch(() => {}));
+    pendingCandidates = [];
+}
+
+function startCallTimer() {
+    callStartTime = Date.now();
+    const el = document.getElementById("active-call-timer");
+    callTimerInterval = setInterval(() => {
+        const s = Math.floor((Date.now() - callStartTime) / 1000);
+        el.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    }, 1000);
+}
+
+function stopCallTimer() {
+    clearInterval(callTimerInterval);
+    callTimerInterval = null;
+    callStartTime     = null;
+}
+
+function showIncomingCall(fromUser) {
+    document.getElementById("incoming-caller-name").textContent = fromUser;
+    document.getElementById("incoming-call").style.display = "block";
+}
+
+function hideIncomingCall() {
+    document.getElementById("incoming-call").style.display = "none";
+}
+
+function showActiveCall(peerUser) {
+    document.getElementById("active-call-name").textContent = peerUser;
+    document.getElementById("active-call-timer").textContent = "Calling…";
+    document.getElementById("active-call").style.display = "block";
+    const btn = document.getElementById("call-mute-btn");
+    btn.classList.remove("muted");
+    btn.querySelector(".mute-label").textContent = "Mute";
+}
+
+function hideActiveCall() {
+    document.getElementById("active-call").style.display = "none";
+}
+
+function sendSignal(toUser, type, data) {
+    console.log("[call] sending signal:", type, "→", toUser);
+    fetch("/call/signal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to_user: toUser, type, data })
+    }).catch(() => {});
+}
+
+function pollSignals() {
+    fetch("/call/signals")
+        .then(r => r.json())
+        .then(signals => signals.forEach(handleSignal))
+        .catch(() => {});
+}
+
+function handleSignal({ from_user, type, data }) {
+    console.log("[call] received signal:", type, "←", from_user);
+    switch (type) {
+
+        case "ring":
+            if (!callPeer) {
+                callPeer = from_user;
+                showIncomingCall(from_user);
+            } else if (from_user !== callPeer) {
+                sendSignal(from_user, "decline", ""); // busy
+            }
+            break;
+
+        case "offer":
+            if (callPeer === from_user) {
+                incomingOffer = JSON.parse(data);
+            }
+            break;
+
+        case "answer":
+            if (peerConn && callPeer === from_user) {
+                peerConn.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)))
+                    .then(() => flushPendingCandidates())
+                    .catch(() => {});
+            }
+            break;
+
+        case "ice":
+            if (callPeer === from_user) {
+                const candidate = new RTCIceCandidate(JSON.parse(data));
+                if (peerConn && peerConn.remoteDescription) {
+                    peerConn.addIceCandidate(candidate).catch(() => {});
+                } else {
+                    pendingCandidates.push(candidate);
+                }
+            }
+            break;
+
+        case "hangup":
+            if (callPeer === from_user) cleanupCall();
+            break;
+
+        case "decline":
+            if (callPeer === from_user) {
+                document.getElementById("active-call-timer").textContent = "Call declined";
+                setTimeout(cleanupCall, 2000);
+            }
+            break;
+    }
+}
+
 // Starup
 document.addEventListener("DOMContentLoaded", () => {
     initFavicon();
@@ -1824,6 +2131,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 30_000);
 
     setInterval(fetchMessages, 500);
+    setInterval(pollSignals, 500);
     setInterval(refreshPresence, 1000);
     setInterval(fetchTyping, 1000);
     setInterval(refreshDMs, 1000);

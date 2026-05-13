@@ -26,6 +26,17 @@ def init_presence_db():
         state TEXT NOT NULL
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS call_signals (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_user TEXT    NOT NULL,
+        to_user   TEXT    NOT NULL,
+        type      TEXT    NOT NULL,
+        data      TEXT,
+        ts        REAL    NOT NULL,
+        consumed  INTEGER DEFAULT 0
+    )
+    """)
     db.commit()
     db.close()
 

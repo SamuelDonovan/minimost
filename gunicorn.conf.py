@@ -36,6 +36,12 @@ errorlog = "-"     # stderr
 proc_name = "gunicorn-flask-app"
 
 # --------------------------------------------------------------------
+# TLS (required for WebRTC / navigator.mediaDevices)
+# --------------------------------------------------------------------
+certfile = "/home/sam/minimost/cert.pem"
+keyfile  = "/home/sam/minimost/key.pem"
+
+# --------------------------------------------------------------------
 # Security / misc
 # --------------------------------------------------------------------
 preload_app = True
