@@ -1,6 +1,5 @@
 # gunicorn.conf.py
 import multiprocessing
-from pathlib import Path
 
 # --------------------------------------------------------------------
 # Server socket

@@ -17,6 +17,8 @@ import auth
 
 chat_bp = Blueprint("chat", __name__)
 
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
 # Shared helpers
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -219,7 +221,9 @@ def send(channel):
         if not f.filename:
             continue
 
-        ext = os.path.splitext(f.filename)[1] or ".png"
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            continue
         filename = f"{uuid.uuid4().hex}{ext}"
 
         f.save(os.path.join(UPLOAD_DIR, filename))
@@ -329,9 +333,9 @@ def edit(msg_id):
         recipients.append(editor)
 
     # 3. Update the message in each recipient DB using timestamp
+    edited_time = time()
     for r in recipients:
         db = get_db(r)
-        edited_time = time()
         db.execute(
             """
             UPDATE messages
