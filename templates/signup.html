@@ -1,77 +1,83 @@
 <!doctype html>
+<html lang="en">
 <head>
-    <title>Sign Up</title>
+    <meta charset="utf-8">
+    <title>Sign Up – MiniMost</title>
     <link rel="stylesheet" href="../static/auth.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
 </head>
+<body>
+    <div class="auth-brand">MiniMost</div>
+    <div class="auth-card">
+        <h2>Create account</h2>
 
-<h2>Create Account</h2>
+        {% if error %}
+        <div class="auth-error">{{ error }}</div>
+        {% endif %}
 
-{% if error %}
-<p style="color:red">{{ error }}</p>
-{% endif %}
+        <form method="post" onsubmit="return checkPasswords()">
+            <div class="auth-field">
+                <input name="username" placeholder="Username" required autocomplete="username">
+                <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    placeholder="Password"
+                    required
+                    autocomplete="new-password"
+                    oninput="checkPasswords()"
+                >
+                <input
+                    id="confirm_password"
+                    name="confirm_password"
+                    type="password"
+                    placeholder="Confirm password"
+                    required
+                    autocomplete="new-password"
+                    oninput="checkPasswords()"
+                >
+            </div>
 
-<form method="post" onsubmit="return checkPasswords">
-    <input name="username" placeholder="Username" required><br>
+            <p id="password-message"></p>
+            <p class="auth-hint">Use your name as your username — this is how others will see and search for you.</p>
 
-    <input
-        id="password"
-        name="password"
-        type="password"
-        placeholder="Password"
-        required
-        oninput="checkPasswords()"
-    ><br>
+            <button id="signup-btn" type="submit" disabled>Sign up</button>
+        </form>
 
-    <input
-        id="confirm_password"
-        name="confirm_password"
-        type="password"
-        placeholder="Confirm Password"
-        required
-        oninput="checkPasswords()"
-    ><br>
+        <p class="auth-footer">
+            Already have an account? <a href="/login">Log in</a>
+        </p>
+    </div>
 
-    <p id="password-message"></p>
+    <script>
+    function checkPasswords() {
+        const password = document.getElementById("password").value;
+        const confirm = document.getElementById("confirm_password").value;
+        const message = document.getElementById("password-message");
+        const button = document.getElementById("signup-btn");
 
-    <button id="signup-btn" type="submit" disabled>
-        Sign up
-    </button>
-</form>
+        if (!password && !confirm) {
+            message.textContent = "";
+            message.className = "";
+            button.disabled = true;
+            return false;
+        }
 
-<p>Use your name for your username. This is how others will see and search for you.</p>
-
-
-<p>
-    Already have an account?
-    <a href="/login">Login</a>
-</p>
-
-<script>
-function checkPasswords() {
-    const password = document.getElementById("password").value;
-    const confirm = document.getElementById("confirm_password").value;
-    const message = document.getElementById("password-message");
-    const button = document.getElementById("signup-btn");
-
-    // Nothing typed yet
-    if (!password && !confirm) {
-        message.textContent = "";
-        button.disabled = true;
-        return;
+        if (password === confirm) {
+            message.textContent = "✓ Passwords match";
+            message.className = "match";
+            button.disabled = false;
+            return true;
+        } else {
+            message.textContent = "✗ Passwords do not match";
+            message.className = "no-match";
+            button.disabled = true;
+            return false;
+        }
     }
-
-    if (password === confirm) {
-        message.textContent = "✓ Passwords match";
-        message.style.color = "green";
-        button.disabled = false;
-    } else {
-        message.textContent = "✗ Passwords do not match";
-        message.style.color = "red";
-        button.disabled = true;
-    }
-}
-</script>
+    </script>
+</body>
+</html>
