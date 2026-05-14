@@ -136,6 +136,12 @@
     </div>
 </div>
 
+<!-- Reaction Picker -->
+<div id="reaction-picker" style="display:none;">
+    <input type="text" id="reaction-search" placeholder="Search reactions…" autocomplete="off">
+    <div class="reaction-picker-grid" id="reaction-picker-grid"></div>
+</div>
+
 <!-- Help Button -->
 <button id="help-btn" class="icon-btn" title="Help menu" aria-label="Help">?</button>
 
@@ -951,6 +957,25 @@ function fetchMessages() {
                     </svg>
                 </button>`;
 
+                html += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        >
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                        <line x1="9" y1="9" x2="9.01" y2="9"/>
+                        <line x1="15" y1="9" x2="15.01" y2="9"/>
+                    </svg>
+                </button>`;
+
                 html += ` : `;
 
                 if (m.content?.trim()) {
@@ -979,6 +1004,8 @@ function fetchMessages() {
                     html += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
                 }
 
+                html += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
+
                 if (existing) {
                     const textSpan = existing.querySelector(".text");
                     if (textSpan?.dataset.editing === "true") {
@@ -1002,7 +1029,7 @@ function fetchMessages() {
                     loadQuotedMsg(m.id, m.reply_to_id);
                 }
 
-                lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0);
+                lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0, m.reactions_ts || 0);
             });
 
             if (playNewMsgSound && document.hidden && !notifMuted) {
@@ -1372,6 +1399,236 @@ function deleteMsg(msgId) {
             console.error(err);
         });
 }
+
+// Reactions
+const REACTIONS = [
+    // Most common
+    {name:"thumbsup",       label:"Thumbs Up"},
+    {name:"thumbsdown",     label:"Thumbs Down"},
+    {name:"heart",          label:"Heart"},
+    {name:"laugh",          label:"Laugh"},
+    {name:"fire",           label:"Fire"},
+    {name:"check",          label:"Check"},
+    {name:"eyes",           label:"Eyes"},
+    {name:"party",          label:"Party"},
+    {name:"sad",            label:"Sad"},
+    {name:"wow",            label:"Wow"},
+    // Gestures
+    {name:"clap",           label:"Clap"},
+    {name:"pray",           label:"Pray"},
+    {name:"wave",           label:"Wave"},
+    {name:"muscle",         label:"Muscle"},
+    {name:"peace",          label:"Peace"},
+    {name:"ok",             label:"OK"},
+    {name:"raised_hands",   label:"Raised Hands"},
+    {name:"cross_fingers",  label:"Cross Fingers"},
+    {name:"salute",         label:"Salute"},
+    {name:"point_up",       label:"Point Up"},
+    // Happy faces
+    {name:"rofl",           label:"ROFL"},
+    {name:"heart_eyes",     label:"Heart Eyes"},
+    {name:"wink",           label:"Wink"},
+    {name:"sunglasses",     label:"Sunglasses"},
+    {name:"innocent",       label:"Innocent"},
+    {name:"partying",       label:"Partying"},
+    {name:"sweat_smile",    label:"Sweat Smile"},
+    {name:"hugging",        label:"Hugging"},
+    {name:"star_struck",    label:"Star Struck"},
+    // Neutral / expressive
+    {name:"thinking",       label:"Thinking"},
+    {name:"neutral",        label:"Neutral"},
+    {name:"smirk",          label:"Smirk"},
+    {name:"monocle",        label:"Monocle"},
+    {name:"shushing",       label:"Shushing"},
+    {name:"tongue",         label:"Tongue"},
+    {name:"zipper",         label:"Zipper Mouth"},
+    {name:"raised_eyebrow", label:"Raised Eyebrow"},
+    // Sad / negative
+    {name:"crying",         label:"Crying"},
+    {name:"pleading",       label:"Pleading"},
+    {name:"angry",          label:"Angry"},
+    {name:"grimace",        label:"Grimace"},
+    {name:"sleeping",       label:"Sleeping"},
+    {name:"flushed",        label:"Flushed"},
+    {name:"mind_blown",     label:"Mind Blown"},
+    {name:"broken_heart",   label:"Broken Heart"},
+    {name:"yawn",           label:"Yawn"},
+    {name:"rage",           label:"Rage"},
+    {name:"nauseated",      label:"Nauseated"},
+    // Fun / silly
+    {name:"skull",          label:"Skull"},
+    {name:"ghost",          label:"Ghost"},
+    {name:"robot",          label:"Robot"},
+    {name:"alien",          label:"Alien"},
+    {name:"clown",          label:"Clown"},
+    {name:"devil",          label:"Devil"},
+    {name:"poop",           label:"Poop"},
+    {name:"zombie",         label:"Zombie"},
+    {name:"vampire",        label:"Vampire"},
+    // Objects & symbols
+    {name:"sparkle",        label:"Sparkle"},
+    {name:"tada",           label:"Tada"},
+    {name:"star",           label:"Star"},
+    {name:"crown",          label:"Crown"},
+    {name:"trophy",         label:"Trophy"},
+    {name:"medal",          label:"Medal"},
+    {name:"gem",            label:"Gem"},
+    {name:"money",          label:"Money"},
+    {name:"rocket",         label:"Rocket"},
+    {name:"zap",            label:"Zap"},
+    {name:"bulb",           label:"Bulb"},
+    {name:"rainbow",        label:"Rainbow"},
+    {name:"target",         label:"Target"},
+    {name:"brain",          label:"Brain"},
+    {name:"warning",        label:"Warning"},
+    {name:"no",             label:"No"},
+    {name:"lock",           label:"Lock"},
+    {name:"key",            label:"Key"},
+    {name:"magnify",        label:"Magnify"},
+    {name:"bell",           label:"Bell"},
+    {name:"hammer",         label:"Hammer"},
+    {name:"pin",            label:"Pin"},
+    {name:"chart",          label:"Chart"},
+    {name:"bug",            label:"Bug"},
+    {name:"magnet",         label:"Magnet"},
+    {name:"dart",           label:"Dart"},
+    {name:"die",            label:"Die"},
+    {name:"hourglass",      label:"Hourglass"},
+    {name:"crystal_ball",   label:"Crystal Ball"},
+    {name:"joystick",       label:"Joystick"},
+    {name:"compass",        label:"Compass"},
+    // Science / tech
+    {name:"atom",           label:"Atom"},
+    {name:"dna",            label:"DNA"},
+    {name:"test_tube",      label:"Test Tube"},
+    {name:"microscope",     label:"Microscope"},
+    {name:"telescope",      label:"Telescope"},
+    // Food & drinks
+    {name:"pizza",          label:"Pizza"},
+    {name:"coffee",         label:"Coffee"},
+    {name:"beer",           label:"Beer"},
+    // Gaming & entertainment
+    {name:"gaming",         label:"Gaming"},
+    {name:"music",          label:"Music"},
+    // Nature
+    {name:"snowflake",      label:"Snowflake"},
+    {name:"sun",            label:"Sun"},
+    {name:"moon",           label:"Moon"},
+    {name:"lightning",      label:"Lightning"},
+    {name:"cactus",         label:"Cactus"},
+    {name:"four_leaf",      label:"Four Leaf Clover"},
+    {name:"butterfly",      label:"Butterfly"},
+    // Animals
+    {name:"dragon",         label:"Dragon"},
+    {name:"shark",          label:"Shark"},
+    {name:"penguin",        label:"Penguin"},
+];
+
+(function buildPicker() {
+    const grid = document.getElementById("reaction-picker-grid");
+    REACTIONS.forEach(r => {
+        const btn = document.createElement("button");
+        btn.className = "reaction-picker-item";
+        btn.title = r.label;
+        btn.dataset.name = r.name;
+        btn.dataset.label = r.label.toLowerCase();
+        btn.onclick = function(e) { e.stopPropagation(); pickerReact(r.name); };
+        const img = document.createElement("img");
+        img.src = "../static/reactions/" + r.name + ".svg";
+        img.width = 26;
+        img.height = 26;
+        img.alt = r.label;
+        btn.appendChild(img);
+        grid.appendChild(btn);
+    });
+    const search = document.getElementById("reaction-search");
+    search.addEventListener("input", function() { filterReactions(this.value); });
+    search.addEventListener("click", function(e) { e.stopPropagation(); });
+    search.addEventListener("keydown", function(e) {
+        if (e.key === "Escape") closeReactionPicker();
+    });
+})();
+
+function filterReactions(query) {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll(".reaction-picker-item").forEach(function(item) {
+        const match = !q || item.dataset.name.includes(q) || item.dataset.label.includes(q);
+        item.style.display = match ? "" : "none";
+    });
+}
+
+let currentPickerMsgId = null;
+
+function openReactionPicker(msgId, event) {
+    event.stopPropagation();
+    currentPickerMsgId = msgId;
+    const picker = document.getElementById("reaction-picker");
+    picker.style.display = "block";
+    const btn = event.currentTarget;
+    const rect = btn.getBoundingClientRect();
+    const pw = picker.offsetWidth || 228;
+    let left = rect.left;
+    if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    picker.style.top = (rect.bottom + 4) + "px";
+    picker.style.left = left + "px";
+    const search = document.getElementById("reaction-search");
+    search.value = "";
+    filterReactions("");
+    requestAnimationFrame(function() { search.focus(); });
+}
+
+function closeReactionPicker() {
+    document.getElementById("reaction-picker").style.display = "none";
+    currentPickerMsgId = null;
+}
+
+function pickerReact(reactionName) {
+    if (currentPickerMsgId === null) return;
+    toggleReaction(currentPickerMsgId, reactionName);
+    closeReactionPicker();
+}
+
+function buildReactionsHtml(msgId, reactionsJson) {
+    let reactions;
+    try { reactions = JSON.parse(reactionsJson || "{}"); } catch(e) { reactions = {}; }
+    let html = "";
+    for (const name in reactions) {
+        const users = reactions[name];
+        if (!users || users.length === 0) continue;
+        const isActive = users.indexOf(CURRENT_USER) !== -1;
+        const tooltip = escapeHtml(users.join(", "));
+        html += `<span class="reaction-chip${isActive ? " active" : ""}" onclick="toggleReaction(${msgId}, '${name}')">`;
+        html += `<img src="../static/reactions/${name}.svg" width="18" height="18" alt="${name}">`;
+        html += `<span class="reaction-count">${users.length}</span>`;
+        html += `<span class="reaction-tooltip">${tooltip}</span>`;
+        html += `</span>`;
+    }
+    return html;
+}
+
+function toggleReaction(msgId, reactionName) {
+    fetch(`/react/${msgId}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: new URLSearchParams({reaction: reactionName})
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("React failed");
+        return res.json();
+    })
+    .then(reactions => {
+        const div = document.getElementById("reactions-" + msgId);
+        if (div) div.innerHTML = buildReactionsHtml(msgId, JSON.stringify(reactions));
+    })
+    .catch(err => console.error("Reaction error:", err));
+}
+
+document.addEventListener("click", function(e) {
+    const picker = document.getElementById("reaction-picker");
+    if (picker && picker.style.display !== "none" && !picker.contains(e.target)) {
+        closeReactionPicker();
+    }
+});
 
 // Reply
 const quotedMsgCache = {};

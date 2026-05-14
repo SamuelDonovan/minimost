@@ -2,7 +2,8 @@
 from time import time
 import sqlite3
 import os
-import uuid 
+import uuid
+import json
 from typing import List
 
 # From Flask 
@@ -27,11 +28,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def get_db(username: str):
     db = sqlite3.connect(str(common.user_db_path(username)))
     db.row_factory = sqlite3.Row
-    try:
-        db.execute("ALTER TABLE messages ADD COLUMN deleted_ts REAL")
-        db.commit()
-    except sqlite3.OperationalError:
-        pass
+    for col_def in ("deleted_ts REAL", "reactions TEXT", "reactions_ts REAL"):
+        try:
+            db.execute("ALTER TABLE messages ADD COLUMN " + col_def)
+            db.commit()
+        except sqlite3.OperationalError:
+            pass
     return db
 
 def all_users():
@@ -188,15 +190,17 @@ def messages(channel):
             edited_ts,
             deleted,
             deleted_ts,
-            reply_to_id
+            reply_to_id,
+            reactions,
+            reactions_ts
         FROM messages
         WHERE channel = ?
           AND (
-                (deleted = 0 AND (ts > ? OR (edited = 1 AND edited_ts > ?)))
+                (deleted = 0 AND (ts > ? OR (edited = 1 AND edited_ts > ?) OR reactions_ts > ?))
                 OR (deleted = 1 AND deleted_ts > ?)
               )
         ORDER BY ts
-    """, (channel, after, after, after)).fetchall()
+    """, (channel, after, after, after, after)).fetchall()
     db.close()
 
     return jsonify([dict(r) for r in rows])
@@ -388,6 +392,76 @@ def delete_message(msg_id):
         db.close()
 
     return "ok"
+
+def _load_valid_reactions():
+    try:
+        return {os.path.splitext(f)[0] for f in os.listdir("static/reactions") if f.endswith(".svg")}
+    except OSError:
+        return set()
+
+VALID_REACTIONS = _load_valid_reactions()
+
+@chat_bp.route("/react/<int:msg_id>", methods=["POST"])
+@auth.login_required
+def react(msg_id):
+    user = session["user"]
+    reaction = request.form.get("reaction", "").strip()
+
+    if reaction not in VALID_REACTIONS:
+        return "invalid reaction", 400
+
+    db = get_db(user)
+    row = db.execute(
+        "SELECT channel, sender, ts, reactions FROM messages WHERE id = ?",
+        (msg_id,)
+    ).fetchone()
+    db.close()
+
+    if not row:
+        return "not found", 404
+
+    channel = row["channel"]
+    sender = row["sender"]
+    ts = row["ts"]
+
+    try:
+        reactions = json.loads(row["reactions"] or "{}")
+    except Exception:
+        reactions = {}
+
+    users = reactions.get(reaction, [])
+    if user in users:
+        users.remove(user)
+    else:
+        users.append(user)
+
+    if users:
+        reactions[reaction] = users
+    else:
+        reactions.pop(reaction, None)
+
+    reactions_json = json.dumps(reactions)
+    reactions_ts = time()
+
+    recipients = channel_users(channel)
+    if user not in recipients:
+        recipients.append(user)
+
+    for r in recipients:
+        db = get_db(r)
+        db.execute(
+            """
+            UPDATE messages
+            SET reactions = ?, reactions_ts = ?
+            WHERE channel = ? AND sender = ? AND ts = ?
+            """,
+            (reactions_json, reactions_ts, channel, sender, ts)
+        )
+        db.commit()
+        db.close()
+
+    return jsonify(reactions)
+
 
 @chat_bp.route("/mark_read/<channel>", methods=["POST"])
 @auth.login_required
