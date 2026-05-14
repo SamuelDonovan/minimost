@@ -1896,6 +1896,9 @@ const _EXT_TO_LANG = {
     c: 'c', h: 'c', cpp: 'c', cc: 'c', cxx: 'c', hpp: 'c', hxx: 'c',
     sh: 'sh', bash: 'sh', zsh: 'sh',
     makefile: 'make', mk: 'make',
+    cmake: 'cmake',
+    vhd: 'vhdl', vhdl: 'vhdl',
+    v: 'verilog', sv: 'verilog', svh: 'verilog',
     java: 'java', go: 'go', rs: 'rust',
 };
 
@@ -1904,9 +1907,14 @@ const _HL_RULES = (() => {
     const NUM     = /\b0x[\da-fA-F]+[uUlL]*|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[fFlLuU]*\b/y;
     const CMT_SL  = /\/\/[^\n]*/y;
     const CMT_BLK = /\/\*.*?\*\//y;
-    const CMT_HSH = /#[^\n]*/y;
-    const MK_VAR  = /\$[@<^*%?|]|\$\([^)]*\)|\$\{[^}]*\}/y;
-    const kw = (...ws) => new RegExp(`\\b(?:${ws.join('|')})\\b`, 'y');
+    const CMT_HSH  = /#[^\n]*/y;
+    const CMT_DASH = /--[^\n]*/y;
+    const MK_VAR   = /\$[@<^*%?|]|\$\([^)]*\)|\$\{[^}]*\}/y;
+    const CM_VAR   = /\$(?:ENV|CACHE)?\{[^}]*\}/y;
+    const VL_NUM   = /\d+\s*'\s*[bBoOdDhH][0-9a-fA-FxXzZ_]*/y;
+    const VL_DIR   = /`\w+/y;
+    const kw  = (...ws) => new RegExp(`\\b(?:${ws.join('|')})\\b`, 'y');
+    const kwi = (...ws) => new RegExp(`\\b(?:${ws.join('|')})\\b`, 'yi');
 
     return {
         python: [
@@ -1954,6 +1962,86 @@ const _HL_RULES = (() => {
         make: [
             [CMT_HSH, 'cmt'],
             [MK_VAR,  'kw'],
+        ],
+        cmake: [
+            [STR,     'str'],
+            [CMT_HSH, 'cmt'],
+            [CM_VAR,  'kw'],
+            [kwi('if','else','elseif','endif',
+                 'foreach','endforeach','while','endwhile',
+                 'function','endfunction','macro','endmacro',
+                 'return','break','continue',
+                 'cmake_minimum_required','project',
+                 'add_executable','add_library','add_subdirectory',
+                 'target_link_libraries','target_include_directories',
+                 'target_compile_options','target_compile_definitions',
+                 'target_sources','target_precompile_headers',
+                 'set','unset','option','message',
+                 'include','find_package','find_library','find_path','find_program',
+                 'install','configure_file','file','list','string','math',
+                 'add_custom_command','add_custom_target','add_test','enable_testing',
+                 'include_directories','link_directories','link_libraries',
+                 'get_filename_component','get_target_property','set_target_properties',
+                 'add_definitions','add_compile_options',
+                 'ON','OFF','TRUE','FALSE','YES','NO','NOTFOUND'), 'kw'],
+            [NUM, 'num'],
+        ],
+        vhdl: [
+            [STR,      'str'],
+            [CMT_DASH, 'cmt'],
+            [kwi('abs','access','after','alias','all','and','architecture','array',
+                 'assert','attribute','begin','block','body','buffer','bus',
+                 'case','component','configuration','constant','disconnect',
+                 'downto','else','elsif','end','entity','exit',
+                 'file','for','function','generate','generic','group','guarded',
+                 'if','impure','in','inertial','inout','is','label','library',
+                 'linkage','literal','loop','map','mod','nand','new','next',
+                 'nor','not','null','of','on','open','or','others','out',
+                 'package','port','postponed','procedure','process','pure',
+                 'range','record','register','reject','rem','report','return',
+                 'rol','ror','select','severity','shared','signal',
+                 'sla','sll','sra','srl','subtype','then','to','transport',
+                 'type','unaffected','units','until','use','variable',
+                 'wait','when','while','with','xnor','xor',
+                 'std_logic','std_logic_vector','std_ulogic','std_ulogic_vector',
+                 'unsigned','signed','integer','natural','positive',
+                 'boolean','bit','bit_vector','character','string','real','time',
+                 'rising_edge','falling_edge','to_integer','to_unsigned','to_signed',
+                 'conv_integer','conv_std_logic_vector',
+                 'ieee','std_logic_1164','numeric_std','numeric_bit'), 'kw'],
+            [NUM, 'num'],
+        ],
+        verilog: [
+            [STR,     'str'],
+            [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [VL_DIR,  'kw'],
+            [kw('always','always_comb','always_ff','always_latch',
+                'assign','automatic','begin','buf',
+                'case','casex','casez','deassign','default','defparam',
+                'disable','edge','else','end','endcase','endfunction',
+                'endgenerate','endmodule','endprimitive','endspecify',
+                'endtable','endtask','event','for','force','forever',
+                'fork','function','generate','genvar','if','initial',
+                'inout','input','integer','join','localparam','logic',
+                'macromodule','module','nand','negedge','nor','not',
+                'or','output','parameter','posedge','primitive',
+                'real','realtime','reg','release','repeat','return',
+                'signed','specify','specparam','supply0','supply1',
+                'table','task','time','tri','tri0','tri1','triand',
+                'trior','trireg','unsigned','wait','wand','while',
+                'wire','wor','xnor','xor',
+                'bit','byte','chandle','class','clocking','const',
+                'constraint','covergroup','coverpoint','do','endclass',
+                'endclocking','endgroup','endinterface','endpackage',
+                'endprogram','enum','extends','final','foreach',
+                'iff','import','inside','interface','join_any','join_none',
+                'local','modport','new','null','package','priority',
+                'program','property','protected','pure','rand','randc',
+                'randcase','ref','sequence','shortint','shortreal',
+                'static','string','struct','super','this','typedef',
+                'union','unique','var','virtual','void','with'), 'kw'],
+            [VL_NUM, 'num'],
+            [NUM,    'num'],
         ],
         java: [
             [STR,     'str'],
@@ -2055,6 +2143,9 @@ function _previewCodeEl(data) {
     const firstNum = data.first_line_num || 1;
     const hlStart = data.highlight_start;
     const hlEnd = data.highlight_end || hlStart;
+    const cmakeLang = (data.filename || '').toLowerCase() === 'cmakelists.txt'
+        ? 'cmake'
+        : (data.language || '');
 
     codeLines.forEach((line, i) => {
         const lineNum = firstNum + i;
@@ -2069,7 +2160,7 @@ function _previewCodeEl(data) {
         row.appendChild(ln);
 
         const content = document.createElement("span");
-        content.innerHTML = _syntaxHighlight(line, data.language);
+        content.innerHTML = _syntaxHighlight(line, cmakeLang);
         row.appendChild(content);
 
         pre.appendChild(row);
