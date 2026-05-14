@@ -986,12 +986,14 @@ function fetchMessages() {
                         return;
                     }
                     existing.innerHTML = html;
+                    attachPreview(existing);
                 } else {
                     const d = document.createElement("div");
                     d.className = "msg";
                     d.id = msgId;
                     d.innerHTML = html;
                     chat.appendChild(d);
+                    attachPreview(d);
                     appended = true;
                     if (m.sender !== CURRENT_USER) playNewMsgSound = true;
                 }
@@ -1825,6 +1827,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setInterval(fetchMessages, 500);
     setInterval(refreshPresence, 1000);
+
     setInterval(fetchTyping, 1000);
     setInterval(refreshDMs, 1000);
     setInterval(refreshChannels, 1000);
@@ -1842,6 +1845,278 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 5000);
 
 });
+
+// ── Link previews ─────────────────────────────────────────────────────────────
+
+function _previewOgEl(data) {
+    const wrap = document.createElement("div");
+    wrap.className = "preview-og";
+
+    if (data.image) {
+        const img = document.createElement("img");
+        img.className = "preview-og-thumb";
+        img.src = data.image;
+        img.loading = "lazy";
+        img.addEventListener("error", () => img.remove());
+        wrap.appendChild(img);
+    }
+
+    const text = document.createElement("div");
+    text.className = "preview-og-text";
+
+    const domainEl = document.createElement("div");
+    domainEl.className = "preview-og-domain";
+    domainEl.textContent = data.domain;
+    text.appendChild(domainEl);
+
+    const titleEl = document.createElement("a");
+    titleEl.className = "preview-og-title";
+    titleEl.href = data.url;
+    titleEl.target = "_blank";
+    titleEl.rel = "noopener noreferrer";
+    titleEl.textContent = data.title;
+    text.appendChild(titleEl);
+
+    if (data.description) {
+        const descEl = document.createElement("div");
+        descEl.className = "preview-og-desc";
+        descEl.textContent = data.description;
+        text.appendChild(descEl);
+    }
+
+    wrap.appendChild(text);
+    return wrap;
+}
+
+// ── Syntax highlighter ───────────────────────────────────────────────────────
+
+const _EXT_TO_LANG = {
+    py: 'python', pyx: 'python', pyi: 'python',
+    js: 'js', mjs: 'js', cjs: 'js', ts: 'js', tsx: 'js', jsx: 'js',
+    c: 'c', h: 'c', cpp: 'c', cc: 'c', cxx: 'c', hpp: 'c', hxx: 'c',
+    sh: 'sh', bash: 'sh', zsh: 'sh',
+    makefile: 'make', mk: 'make',
+    java: 'java', go: 'go', rs: 'rust',
+};
+
+const _HL_RULES = (() => {
+    const STR     = /"[^"\\\n]*(?:\\.[^"\\\n]*)*"|'[^'\\\n]*(?:\\.[^'\\\n]*)*'/y;
+    const NUM     = /\b0x[\da-fA-F]+[uUlL]*|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[fFlLuU]*\b/y;
+    const CMT_SL  = /\/\/[^\n]*/y;
+    const CMT_BLK = /\/\*.*?\*\//y;
+    const CMT_HSH = /#[^\n]*/y;
+    const MK_VAR  = /\$[@<^*%?|]|\$\([^)]*\)|\$\{[^}]*\}/y;
+    const kw = (...ws) => new RegExp(`\\b(?:${ws.join('|')})\\b`, 'y');
+
+    return {
+        python: [
+            [STR,     'str'],
+            [CMT_HSH, 'cmt'],
+            [kw('False','None','True','and','as','assert','async','await',
+               'break','class','continue','def','del','elif','else','except',
+               'finally','for','from','global','if','import','in','is',
+               'lambda','nonlocal','not','or','pass','raise','return',
+               'try','while','with','yield'), 'kw'],
+            [NUM, 'num'],
+        ],
+        js: [
+            [STR,     'str'],
+            [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [kw('async','await','break','case','catch','class','const',
+               'continue','debugger','default','delete','do','else','export',
+               'extends','false','finally','for','function','if','import',
+               'in','instanceof','let','new','null','of','return','static',
+               'super','switch','this','throw','true','try','typeof',
+               'undefined','var','void','while','with','yield'), 'kw'],
+            [NUM, 'num'],
+        ],
+        c: [
+            [STR,     'str'],
+            [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [kw('auto','bool','break','case','char','class','const','continue',
+               'default','delete','do','double','else','enum','extern',
+               'false','float','for','goto','if','inline','int','long','new',
+               'namespace','nullptr','NULL','operator','private','protected',
+               'public','register','return','short','signed','sizeof','static',
+               'struct','switch','template','this','throw','true','try',
+               'typedef','typename','union','unsigned','virtual','void',
+               'volatile','while','override'), 'kw'],
+            [NUM, 'num'],
+        ],
+        sh: [
+            [STR,     'str'],
+            [CMT_HSH, 'cmt'],
+            [kw('if','then','else','elif','fi','for','while','do','done',
+               'case','esac','in','function','return','local','export',
+               'readonly','true','false'), 'kw'],
+            [NUM, 'num'],
+        ],
+        make: [
+            [CMT_HSH, 'cmt'],
+            [MK_VAR,  'kw'],
+        ],
+        java: [
+            [STR,     'str'],
+            [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [kw('abstract','assert','boolean','break','byte','case','catch',
+               'char','class','const','continue','default','do','double',
+               'else','enum','extends','final','finally','float','for',
+               'goto','if','implements','import','instanceof','int',
+               'interface','long','native','new','null','package','private',
+               'protected','public','return','short','static','strictfp',
+               'super','switch','synchronized','this','throw','throws',
+               'transient','true','try','var','void','volatile','while'), 'kw'],
+            [NUM, 'num'],
+        ],
+        go: [
+            [STR,     'str'],
+            [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [kw('break','case','chan','const','continue','default','defer',
+               'else','fallthrough','for','func','go','goto','if','import',
+               'interface','map','package','range','return','select','struct',
+               'switch','type','var','nil','true','false','iota','any',
+               'error','string','int','int8','int16','int32','int64',
+               'uint','uint8','uint16','uint32','uint64','uintptr',
+               'float32','float64','complex64','complex128','bool','byte','rune'), 'kw'],
+            [NUM, 'num'],
+        ],
+        rust: [
+            [STR,     'str'],
+            [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [kw('as','async','await','break','const','continue','crate','dyn',
+               'else','enum','extern','false','fn','for','if','impl','in',
+               'let','loop','match','mod','move','mut','pub','ref','return',
+               'self','Self','static','struct','super','trait','true','type',
+               'union','unsafe','use','where','while','i8','i16','i32','i64',
+               'i128','isize','u8','u16','u32','u64','u128','usize',
+               'f32','f64','bool','char','str','String','Option','Result',
+               'Some','None','Ok','Err','Vec','Box','Arc','Rc'), 'kw'],
+            [NUM, 'num'],
+        ],
+    };
+})();
+
+function _syntaxHighlight(text, ext) {
+    const _esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const lang = _EXT_TO_LANG[(ext || '').toLowerCase()];
+    const rules = lang ? _HL_RULES[lang] : null;
+    if (!rules) return _esc(text);
+
+    let out = '', plain = '', i = 0;
+    while (i < text.length) {
+        let hit = false;
+        for (const [re, cls] of rules) {
+            re.lastIndex = i;
+            const m = re.exec(text);
+            if (m) {
+                if (plain) { out += _esc(plain); plain = ''; }
+                out += `<span class="hl-${cls}">${_esc(m[0])}</span>`;
+                i += m[0].length;
+                hit = true;
+                break;
+            }
+        }
+        if (!hit) plain += text[i++];
+    }
+    return out + _esc(plain);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _previewCodeEl(data) {
+    const wrap = document.createElement("div");
+    wrap.className = "preview-code";
+
+    const header = document.createElement("div");
+    header.className = "preview-code-header";
+
+    const link = document.createElement("a");
+    link.href = data.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = data.filepath;
+    header.appendChild(link);
+
+    if (data.highlight_start) {
+        const rangeEl = document.createElement("span");
+        rangeEl.className = "preview-code-range";
+        const end = data.highlight_end || data.highlight_start;
+        rangeEl.textContent = data.highlight_start === end
+            ? ` · line ${data.highlight_start}`
+            : ` · lines ${data.highlight_start}–${end}`;
+        header.appendChild(rangeEl);
+    }
+    wrap.appendChild(header);
+
+    const pre = document.createElement("pre");
+    pre.className = "preview-code-body";
+
+    const codeLines = data.code.split("\n");
+    const firstNum = data.first_line_num || 1;
+    const hlStart = data.highlight_start;
+    const hlEnd = data.highlight_end || hlStart;
+
+    codeLines.forEach((line, i) => {
+        const lineNum = firstNum + i;
+        const isHl = hlStart && lineNum >= hlStart && lineNum <= hlEnd;
+
+        const row = document.createElement("span");
+        row.className = "code-row" + (isHl ? " hl" : "");
+
+        const ln = document.createElement("span");
+        ln.className = "ln";
+        ln.textContent = lineNum;
+        row.appendChild(ln);
+
+        const content = document.createElement("span");
+        content.innerHTML = _syntaxHighlight(line, data.language);
+        row.appendChild(content);
+
+        pre.appendChild(row);
+        // No \n text node — display:block on .code-row already creates line breaks
+    });
+
+    wrap.appendChild(pre);
+    return wrap;
+}
+
+async function attachPreview(msgEl) {
+    if (msgEl.querySelector(".link-preview")) return;
+
+    const textSpan = msgEl.querySelector(".text");
+    if (!textSpan) return;
+
+    const firstLink = textSpan.querySelector("a[href^='http']");
+    if (!firstLink) return;
+
+    const url = firstLink.href;
+
+    let data;
+    try {
+        const resp = await fetch(`/link_preview?url=${encodeURIComponent(url)}`);
+        data = await resp.json();
+    } catch (_) {
+        return;
+    }
+
+    if (!data || !data.type) return;
+
+    const previewEl = document.createElement("div");
+    previewEl.className = "link-preview";
+
+    if (data.type === "og") {
+        previewEl.appendChild(_previewOgEl(data));
+    } else if (data.type === "code") {
+        previewEl.appendChild(_previewCodeEl(data));
+    }
+
+    const receipt = msgEl.querySelector(".read-receipt");
+    if (receipt) {
+        msgEl.insertBefore(previewEl, receipt);
+    } else {
+        msgEl.appendChild(previewEl);
+    }
+}
 
 </script>
 </body>

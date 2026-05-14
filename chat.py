@@ -12,8 +12,9 @@ from flask import (
 
 # Local Imports
 import common
-import presence 
-import auth 
+import presence
+import auth
+import preview as preview_mod
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -444,6 +445,14 @@ def users():
     me = session["user"]
     users = [u for u in all_users() if u != me]
     return jsonify(users)
+
+@chat_bp.route("/link_preview")
+@auth.login_required
+def link_preview():
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({})
+    return jsonify(preview_mod.fetch_preview(url))
 
 @chat_bp.route("/")
 @auth.login_required

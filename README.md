@@ -108,7 +108,7 @@ Images can be attached using the paperclip icon next to the message box but also
 - [x] New message indicators
 - [x] Date/time stamps on messages  
 - [x] Scrollable sidebar 
-- [ ] Bitbucket source previews for links
+- [x] Bitbucket source previews for links
 - [x] Deletable messages 
 - [x] Vim motions
 - [x] Quote reply messages

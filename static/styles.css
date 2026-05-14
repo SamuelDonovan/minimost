@@ -533,3 +533,120 @@ a { color: #9cdcfe; }
     font-weight: 600;
     margin-right: 4px;
 }
+
+/* ── Link previews ─────────────────────────────────────────────────────── */
+.link-preview {
+    margin-top: 8px;
+    margin-left: 2px;
+    display: block;
+    max-width: 520px;
+}
+
+/* OG card */
+.preview-og {
+    display: flex;
+    gap: 10px;
+    border-left: 3px solid #4c6ef5;
+    background: #252526;
+    border-radius: 4px;
+    padding: 8px 10px;
+    text-decoration: none;
+}
+.preview-og-thumb {
+    width: 80px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.preview-og-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.preview-og-domain {
+    font-size: 0.7em;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.preview-og-title {
+    font-weight: 600;
+    font-size: 0.88em;
+    color: #ddd;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.preview-og-title:hover {
+    text-decoration: underline;
+}
+.preview-og-desc {
+    font-size: 0.8em;
+    color: #aaa;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Code preview (Bitbucket) */
+.preview-code {
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    max-width: 520px;
+    overflow: hidden;
+    font-size: 0.82em;
+}
+.preview-code-header {
+    background: #252526;
+    padding: 5px 10px;
+    border-bottom: 1px solid #3a3a3a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: monospace;
+}
+.preview-code-header a {
+    color: #ccc;
+    text-decoration: none;
+}
+.preview-code-header a:hover {
+    text-decoration: underline;
+}
+.preview-code-range {
+    color: #888;
+    font-size: 0.9em;
+}
+.preview-code-body {
+    margin: 0;
+    padding: 4px 0;
+    overflow-x: auto;
+    background: #1e1e1e;
+    line-height: 1.5;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 0.9em;
+}
+.code-row {
+    display: block;
+    padding-right: 16px;
+}
+.code-row.hl {
+    background: rgba(255, 200, 60, 0.10);
+    border-left: 2px solid rgba(255, 200, 60, 0.5);
+}
+.code-row .ln {
+    display: inline-block;
+    min-width: 36px;
+    padding-right: 14px;
+    color: #4a4a4a;
+    text-align: right;
+    user-select: none;
+}
+/* Syntax token colors (VS Code Dark+ inspired) */
+.hl-kw  { color: #569cd6; }
+.hl-str { color: #ce9178; }
+.hl-cmt { color: #6a9955; font-style: italic; }
+.hl-num { color: #b5cea8; }
