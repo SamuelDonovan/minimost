@@ -677,11 +677,11 @@ a { color: #9cdcfe; }
 #reaction-picker {
     position: fixed;
     z-index: 1000;
-    background: var(--bg, #fff);
-    border: 1px solid #ccc;
+    background: #252526;
+    border: 1px solid #444;
     border-radius: 8px;
     padding: 8px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.55);
     width: 228px;
 }
 #reaction-search {
@@ -689,17 +689,23 @@ a { color: #9cdcfe; }
     box-sizing: border-box;
     margin-bottom: 6px;
     padding: 5px 8px;
-    border: 1px solid #ccc;
+    background: #2d2d2d;
+    border: 1px solid #555;
     border-radius: 4px;
     font-size: 13px;
+    color: #ddd;
     outline: none;
 }
+#reaction-search:focus { border-color: #007acc; }
+#reaction-search::placeholder { color: #666; }
 .reaction-picker-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 2px;
     max-height: 256px;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #555 transparent;
 }
 .reaction-picker-item {
     width: 38px;
@@ -713,7 +719,7 @@ a { color: #9cdcfe; }
     align-items: center;
     justify-content: center;
 }
-.reaction-picker-item:hover { background: rgba(0,0,0,0.08); }
+.reaction-picker-item:hover { background: rgba(255,255,255,0.09); }
 
 .reactions {
     display: flex;
@@ -728,19 +734,21 @@ a { color: #9cdcfe; }
     gap: 4px;
     padding: 2px 7px 2px 4px;
     border-radius: 12px;
-    background: rgba(0,0,0,0.07);
+    background: rgba(255,255,255,0.07);
+    color: #ccc;
     cursor: pointer;
     font-size: 12px;
-    border: 1px solid transparent;
+    border: 1px solid rgba(255,255,255,0.1);
     user-select: none;
     position: relative;
 }
-.reaction-chip:hover { background: rgba(0,0,0,0.13); }
+.reaction-chip:hover { background: rgba(255,255,255,0.13); }
 .reaction-chip.active {
-    background: rgba(88,101,242,0.13);
-    border-color: rgba(88,101,242,0.45);
+    background: rgba(0,122,204,0.22);
+    border-color: rgba(0,122,204,0.6);
+    color: #9cdcfe;
 }
-.reaction-chip.active:hover { background: rgba(88,101,242,0.22); }
+.reaction-chip.active:hover { background: rgba(0,122,204,0.32); }
 .reaction-count { font-size: 11px; font-weight: 600; line-height: 1; }
 
 .reaction-chip .reaction-tooltip {
@@ -749,8 +757,9 @@ a { color: #9cdcfe; }
     bottom: calc(100% + 6px);
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0,0,0,0.82);
-    color: #fff;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    color: #ddd;
     font-size: 11px;
     padding: 3px 8px;
     border-radius: 4px;
