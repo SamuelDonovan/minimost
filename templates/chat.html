@@ -1187,10 +1187,14 @@ function updateSuggestions() {
         return;
     }
 
-    currentSuggestions = allUsers.filter(u =>
-        u.toLowerCase().startsWith(lastPart) &&
-        !parts.includes(u)
-    );
+    const alreadyAdded = parts.slice(0, -1);
+    const matches = allUsers
+        .filter(u => !alreadyAdded.includes(u))
+        .map(u => ({ user: u, result: fuzzySearch(lastPart, u) }))
+        .filter(({ result }) => result !== null)
+        .sort((a, b) => b.result.score - a.result.score);
+
+    currentSuggestions = matches.map(m => m.user);
 
     if (!currentSuggestions.length) {
         dmSuggestions.style.display = "none";
@@ -1199,13 +1203,11 @@ function updateSuggestions() {
 
     dmSuggestions.innerHTML = "";
 
-    currentSuggestions.forEach((u, idx) => {
+    matches.forEach(({ user, result }, idx) => {
         const div = document.createElement("div");
         div.className = "autocomplete-suggestion";
-        div.textContent = u;
-
+        div.innerHTML = highlightFuzzyMatch(user, result.indices);
         div.onclick = () => selectSuggestion(idx);
-
         dmSuggestions.appendChild(div);
     });
 
@@ -1465,6 +1467,63 @@ function escapeHtml(text) {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+}
+
+// Fuzzy-matches query against text as a subsequence (case-insensitive).
+// Returns {score, indices} on match, null on no match.
+// Score bonuses: consecutive runs, word-boundary hits, start-of-string.
+function fuzzySearch(query, text) {
+    const q = query.toLowerCase();
+    const t = text.toLowerCase();
+    if (!q) return { score: 0, indices: [] };
+
+    const indices = [];
+    let qi = 0;
+    for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+        if (t[ti] === q[qi]) { indices.push(ti); qi++; }
+    }
+    if (qi < q.length) return null;
+
+    let score = 0;
+    let run = 0;
+    for (let i = 0; i < indices.length; i++) {
+        if (i > 0 && indices[i] === indices[i - 1] + 1) {
+            score += ++run * 2;
+        } else {
+            run = 0;
+        }
+        const idx = indices[i];
+        if (idx === 0 || /[\s_\-]/.test(t[idx - 1])) score += 8;
+    }
+    if (indices[0] === 0) score += 5;
+    return { score, indices };
+}
+
+// Wraps matched character positions in <mark class="fuzzy-highlight">.
+function highlightFuzzyMatch(text, indices) {
+    const set = new Set(indices);
+    let out = '';
+    for (let i = 0; i < text.length; i++) {
+        const ch = escapeHtml(text[i]);
+        out += set.has(i) ? `<mark class="fuzzy-highlight">${ch}</mark>` : ch;
+    }
+    return out;
+}
+
+// Returns an HTML snippet of content (~maxLen chars) centered on the first match,
+// with matched characters highlighted. Adds ellipsis when content is trimmed.
+function buildSearchSnippet(content, indices, maxLen = 120) {
+    if (!indices.length) {
+        const clipped = content.slice(0, maxLen);
+        return escapeHtml(clipped) + (content.length > maxLen ? '…' : '');
+    }
+    const start = Math.max(0, indices[0] - 30);
+    const end = Math.min(content.length, start + maxLen);
+    const snippet = content.slice(start, end);
+    const prefix = start > 0 ? '…' : '';
+    const suffix = end < content.length ? '…' : '';
+    const remapped = indices.filter(i => i >= start && i < end).map(i => i - start);
+    return prefix + highlightFuzzyMatch(snippet, remapped) + suffix;
 }
 
 let searchSelectedIndex = -1;
@@ -1749,19 +1808,22 @@ searchInput.addEventListener("input", debounce(() => {
     .then(r => r.json())
     .then(data => {
         searchResults.innerHTML = "";
-        searchSelectedIndex = -1; // reset selection
+        searchSelectedIndex = -1;
 
-        data.forEach(msg => {
+        // Score each result with fuzzySearch and sort best-first
+        const scored = data
+            .map(msg => ({ msg, result: fuzzySearch(q, msg.content) }))
+            .filter(({ result }) => result !== null)
+            .sort((a, b) => b.result.score - a.result.score);
+
+        scored.forEach(({ msg, result }) => {
             const d = document.createElement("div");
-            const time = new Date(msg.ts*1000).toLocaleTimeString();
-            d.innerHTML = `[${time}] <b>${escapeHtml(msg.sender)}</b>: ${formatText(msg.content)}`;
+            const time = new Date(msg.ts * 1000).toLocaleTimeString();
+            const snippet = buildSearchSnippet(msg.content, result.indices);
+            d.innerHTML = `[${time}] <b>${escapeHtml(msg.sender)}</b>: ${snippet}`;
             d.onclick = () => {
                 searchModal.style.display = "none";
-
-                // switch to the message's channel
                 switchChannel(msg.channel);
-
-                // scroll to the message once loaded
                 setTimeout(() => {
                     const el = document.getElementById(`msg-${msg.id}`);
                     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });

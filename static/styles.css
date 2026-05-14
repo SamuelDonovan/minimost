@@ -420,6 +420,11 @@ body {
 .autocomplete-suggestion:hover {
     background: #444;
 }
+mark.fuzzy-highlight {
+    background: transparent;
+    color: #7eb8f7;
+    font-weight: bold;
+}
 #msg-search-results div {
     padding: 6px;
     border-bottom: 1px solid #333;
