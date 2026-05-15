@@ -1,11 +1,11 @@
 # From the python standard library
 from functools import wraps
 import sqlite3
-from hashlib import sha256
 import time
 
 # From Flask
 from flask import session, redirect, request, render_template, Blueprint
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Local Imports
 from . import common
@@ -17,7 +17,7 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def hash_password(password: str) -> str:
-    return sha256(password.encode("utf-8")).hexdigest()
+    return generate_password_hash(password)
 
 
 def login_required(fn):
@@ -43,7 +43,7 @@ def login():
         ).fetchone()
         db.close()
 
-        if not row or row[0] != hash_password(password):
+        if not row or not check_password_hash(row[0], password):
             # Delay to prevent users from brute forcing others passwords
             time.sleep(3)
             return render_template("login.html", error="Invalid credentials")
