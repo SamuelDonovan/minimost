@@ -2,6 +2,7 @@
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
+[![security: semgrep](https://img.shields.io/badge/security-semgrep-green.svg)](https://semgrep.dev/)
 
 MiniMost is lightweight, self-host collaboration platform for messaging. The goal of this project is to be dependency light, runnable by users without root, and accessible in the browser.
 

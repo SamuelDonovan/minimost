@@ -10,9 +10,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
-      - run: pip install build black bandit
+      - run: pip install build black bandit semgrep
       - run: black --check src/
       - run: bandit -r src/
+      - run: semgrep scan --config=p/python --config=p/flask src/
       - run: python -m build --wheel
       - uses: actions/upload-artifact@v6
         with:

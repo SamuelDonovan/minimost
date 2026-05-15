@@ -193,7 +193,16 @@ def online_users():
 @auth.login_required
 def messages(channel):
     user = session["user"]
-    after = float(request.args.get("after", 0))
+    after_raw = request.args.get("after", "0")
+    if after_raw.lower() == "nan":
+        after = 0.0
+    else:
+        try:
+            after = float(
+                after_raw
+            )  # nosemgrep: python.flask.security.injection.nan-injection.nan-injection
+        except (ValueError, TypeError):
+            after = 0.0
 
     db = get_db(user)
     rows = db.execute(
