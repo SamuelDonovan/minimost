@@ -78,16 +78,8 @@ def channel_unreads():
     user = session["user"]
     db = get_db(user)
     placeholders = ",".join("?" * len(CHANNELS))
-    rows = db.execute(
-        f"""
-        SELECT channel, COUNT(*) as count
-        FROM messages
-        WHERE channel IN ({placeholders})
-          AND sender != ? AND read = 0 AND deleted = 0
-        GROUP BY channel
-    """,
-        (*CHANNELS, user),
-    ).fetchall()
+    sql = f"SELECT channel, COUNT(*) as count FROM messages WHERE channel IN ({placeholders}) AND sender != ? AND read = 0 AND deleted = 0 GROUP BY channel"  # nosec B608  # fmt: skip
+    rows = db.execute(sql, (*CHANNELS, user)).fetchall()
     db.close()
     result = {ch: 0 for ch in CHANNELS}
     for row in rows:

@@ -79,8 +79,10 @@ def _is_safe_url(url):
 
 
 def _fetch(url, max_bytes=65536):
+    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported scheme: {url}")
     req = urllib.request.Request(url, headers=_HEADERS)
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310
         return resp.read(max_bytes)
 
 

@@ -22,6 +22,9 @@ minimost = "minimost.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.bandit]
+exclude_dirs = ["build", "dist"]
+
 [tool.setuptools.package-data]
 minimost = [
     "templates/*",
