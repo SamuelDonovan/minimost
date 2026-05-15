@@ -12,10 +12,10 @@ from flask import (
 )
 
 # Local Imports
-import common
-import presence
-import auth
-import preview as preview_mod
+from . import common
+from . import presence
+from . import auth
+from . import preview as preview_mod
 
 chat_bp = Blueprint("chat", __name__)
 

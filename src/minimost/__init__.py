@@ -1,15 +1,12 @@
-# From the python standard library
 import secrets
 
-# From Flask 
 from flask import Flask
 
-# Local imports
-import common 
-import database 
-from auth import auth_bp
-from chat import chat_bp
-from presence import presence_bp
+from . import common, database
+from .auth import auth_bp
+from .chat import chat_bp
+from .presence import presence_bp
+
 
 def create_app():
     app = Flask(__name__)
@@ -18,8 +15,3 @@ def create_app():
     app.register_blueprint(chat_bp)
     app.register_blueprint(presence_bp)
     return app
-
-app = create_app()
-
-if __name__ == "__main__":
-    app.run(debug=True)

@@ -42,9 +42,10 @@ max_requests = 1000
 max_requests_jitter = 50
 
 # --------------------------------------------------------------------
-# Paths (optional but helpful)
+# Paths (set to your data directory where databases and uploads live)
 # --------------------------------------------------------------------
-chdir = "/home/sam/minimost"
+# chdir = "/srv/minimost"
+pythonpath = "src"
 
 # --------------------------------------------------------------------
 # Environment variables (optional)

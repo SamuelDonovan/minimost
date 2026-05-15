@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minimost"
+version = "0.1.0"
+description = "Lightweight self-hosted collaboration platform for messaging"
+readme = "README.md"
+requires-python = ">=3.6"
+dependencies = [
+    "flask",
+]
+
+[project.scripts]
+minimost = "minimost.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+minimost = [
+    "templates/*",
+    "static/*",
+    "static/reactions/*",
+]

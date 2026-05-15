@@ -8,8 +8,8 @@ import time
 from flask import session, redirect, request, render_template, Blueprint
 
 # Local Imports
-import common
-import presence 
+from . import common
+from . import presence
 
 AUTH_DB = "auth.db"
 

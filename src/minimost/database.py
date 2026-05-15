@@ -2,8 +2,8 @@
 import sqlite3
 
 # Local Imports
-import auth
-import presence
+from . import auth
+from . import presence
 
 def init_auth_db():
     db = sqlite3.connect(auth.AUTH_DB)
