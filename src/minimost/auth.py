@@ -80,7 +80,8 @@ def signup():
         db = sqlite3.connect(AUTH_DB)
         try:
             db.execute(
-                "INSERT INTO users VALUES (?, ?)", (username, hash_password(password))
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, hash_password(password)),
             )
             db.commit()
         except sqlite3.IntegrityError:
