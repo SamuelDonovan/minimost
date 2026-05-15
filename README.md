@@ -1,43 +1,6 @@
-Mom, can we have Mattermost?
+## MiniMost
 
-Mom: We have Mattermost at home.
-
-<details>
-  <summary>Mattermost at home:</summary>
-  <img src="./static/skype.png" alt="Skype Logo">
-</details>
-
----
-
-![Smurf Fine](./static/smurf.png)
-
-# MiniMost
-
-The two hardest problems in computer science are:
-
-&emsp;~~1. Cache invalidation~~
-
-&emsp;~~2. Naming things~~
-
-1. Communication
-2. Convincing others its communication
-3. DOM async race conditions 
-
-## FAQ
-
-Is it well written?
-
-> No
-
-Was the core functionality vibe coded in a weekend?
-
-> Maybe
-
-Is it not Skype?
-
-> Yes
-
-## Description 
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 MiniMost is lightweight, self-host collaboration platform for messaging. The goal of this project is to be dependency light, runnable by users without root, and accessible in the browser.
 
@@ -51,7 +14,7 @@ The biggest advantage is, we control the source and could make changes we want.
 
 ## Advantages of Skype
 
-Skype currently provides the only way to call or screenshare.
+Skype currently provides the only way to call or screen share.
 
 ## Shortcuts
 
@@ -68,7 +31,7 @@ All text modifiers use markdown syntax[^1]. The modifier can be started and ende
 
 ### Images
 
-Images can be attached using the paperclip icon next to the message box but also with Ctrl+v when the image is in your clipboard and by dragging an image over the messagebox.
+Images can be attached using the paperclip icon next to the message box but also with Ctrl+v when the image is in your clipboard and by dragging an image over the message box.
 
 ### Vim motions
 
@@ -84,45 +47,7 @@ Images can be attached using the paperclip icon next to the message box but also
 ### Help Menu
 * ? To open help menu.
 
-## Features
-
-- [x] Channels
-- [x] Editable messages
-- [x] Separate users
-- [x] User presence
-- [x] Persistent messages
-- [x] Message search
-- [x] Embedded images 
-- [x] Picture previews
-- [x] User sign up
-- [x] Direct messages
-- [x] Group messages
-- [ ] Password protected database
-- [ ] Password reset 
-- [x] Read protected databases 
-- [x] Sort users by most recently messaged 
-- [x] Autocomplete username for new DMs 
-- [x] Clickable URLs 
-- [x] Bold/Underline/Italic modifiers
-- [x] Typing indicators
-- [x] New message indicators
-- [x] Date/time stamps on messages  
-- [x] Scrollable sidebar 
-- [x] Bitbucket source previews for links
-- [x] Deletable messages 
-- [x] Vim motions
-- [x] Quote reply messages
-- [ ] Collapsable sidebar
-- [x] Show shortcuts with ?
-- [x] Show onerror image for retention policy 
-- [x] Add image retention policy
-- [x] Add unread indicator in broswer tab
-
-## Known Bugs/Work Arounds
-
-- [ ] 
-
-## Real FAQ
+## FAQ
 
 Are my messages secure?
 
@@ -140,10 +65,6 @@ When was this developed?
 This is great, but could it also have feature x?
 
 > Yeah! The great part of having the source code for this is that edits can be made! Feel free to create a PR with some proof showing the new feature works and it can be merged and redeployed.Bonus points if you can diff the changes down to the low side as any edits I make would be at home on my own time.
-
-I really want feature x but don't want to put in the time to figure out how to implement it. Can you add it?
-
-> Its more likely to get done if you're able to add the features you want, but if not feel free to add it to the features list in the features sections. It *might* get implemented at some point.
 
 ## How to run
 

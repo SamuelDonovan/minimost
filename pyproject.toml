@@ -8,9 +8,13 @@ version = "0.1.0"
 description = "Lightweight self-hosted collaboration platform for messaging"
 readme = "README.md"
 requires-python = ">=3.6"
+license = {file = "LICENSE"}
 dependencies = [
     "flask",
 ]
+
+[project.optional-dependencies]
+dev = ["black"]
 
 [project.scripts]
 minimost = "minimost.__main__:main"

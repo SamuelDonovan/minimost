@@ -5,6 +5,7 @@ import sqlite3
 from . import auth
 from . import presence
 
+
 def init_auth_db():
     db = sqlite3.connect(auth.AUTH_DB)
     db.execute("""
@@ -15,6 +16,7 @@ def init_auth_db():
     """)
     db.commit()
     db.close()
+
 
 def init_presence_db():
     db = sqlite3.connect(presence.PRESENCE_DB)
@@ -28,6 +30,7 @@ def init_presence_db():
     """)
     db.commit()
     db.close()
+
 
 init_auth_db()
 init_presence_db()

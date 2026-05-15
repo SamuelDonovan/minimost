@@ -37,6 +37,6 @@ def delete_files_older_than(directory: str, days: int, dry_run: bool = False):
                 path.unlink()
                 print(f"Deleted: {path}")
 
-if __name__ == "__main__":
-    delete_files_older_than(directory = "uploads", days=30)
 
+if __name__ == "__main__":
+    delete_files_older_than(directory="uploads", days=30)

@@ -4,8 +4,10 @@ import sqlite3
 
 DB_DIR = Path("users")
 
+
 def user_db_path(username: str) -> Path:
     return DB_DIR / f"{username}.db"
+
 
 def init_user_db(username: str):
     DB_DIR.mkdir(exist_ok=True)

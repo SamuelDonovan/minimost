@@ -119,6 +119,7 @@ def _build_code_result(raw, filepath, line_start, line_end, url):
 # URL:  https://bitbucket.org/{workspace}/{repo}/src/{ref}/{path}[#lines-N[:M]]
 # API:  https://api.bitbucket.org/2.0/repositories/{workspace}/{repo}/src/{ref}/{path}
 
+
 def _parse_bb_cloud(url):
     parsed = urllib.parse.urlparse(url)
     if parsed.netloc not in ("bitbucket.org", "www.bitbucket.org"):
@@ -155,14 +156,17 @@ def _bitbucket_cloud_preview(url):
 # API:  http(s)://{host}/rest/api/1.0/projects/{PROJECT}/repos/{repo}/raw/{path}
 # The scheme is inherited from the URL, so plain http:// works fine.
 
+
 def _parse_bb_server(url):
     parsed = urllib.parse.urlparse(url)
     parts = parsed.path.lstrip("/").split("/", 5)
     # Expected: ["projects", PROJECT, "repos", REPO, "browse", filepath]
-    if (len(parts) < 6
-            or parts[0] != "projects"
-            or parts[2] != "repos"
-            or parts[4] != "browse"):
+    if (
+        len(parts) < 6
+        or parts[0] != "projects"
+        or parts[2] != "repos"
+        or parts[4] != "browse"
+    ):
         return None
     project, repo, filepath = parts[1], parts[3], parts[5]
     if not filepath:

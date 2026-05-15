@@ -9,6 +9,7 @@ presence_bp = Blueprint("presence", __name__)
 
 PRESENCE_DB = "presence.db"
 
+
 def _init_tables():
     db = sqlite3.connect(PRESENCE_DB)
     db.execute("""
@@ -30,7 +31,9 @@ def _init_tables():
     db.commit()
     db.close()
 
+
 _init_tables()
+
 
 @presence_bp.route("/typing/<channel>", methods=["POST"])
 def typing_start(channel):
@@ -41,11 +44,12 @@ def typing_start(channel):
     db = sqlite3.connect(PRESENCE_DB)
     db.execute(
         "INSERT OR REPLACE INTO typing (user, channel, ts) VALUES (?, ?, ?)",
-        (user, channel, now)
+        (user, channel, now),
     )
     db.commit()
     db.close()
     return "", 204
+
 
 @presence_bp.route("/typing/<channel>", methods=["GET"])
 def typing_get(channel):
@@ -56,10 +60,11 @@ def typing_get(channel):
     db = sqlite3.connect(PRESENCE_DB)
     rows = db.execute(
         "SELECT user FROM typing WHERE channel = ? AND ts >= ? AND user != ?",
-        (channel, cutoff, user)
+        (channel, cutoff, user),
     ).fetchall()
     db.close()
     return [r[0] for r in rows]
+
 
 @presence_bp.route("/presence", methods=["POST"])
 def presence():
@@ -71,6 +76,7 @@ def presence():
     state = data.get("state")
     return update_presence(user, state)
 
+
 def update_presence(user, state):
     if not state:
         return "", 204
@@ -80,7 +86,7 @@ def update_presence(user, state):
 
     db.execute(
         "INSERT OR REPLACE INTO presence (user, last_seen, state) VALUES (?, ?, ?)",
-        (user, now, state)
+        (user, now, state),
     )
 
     db.commit()

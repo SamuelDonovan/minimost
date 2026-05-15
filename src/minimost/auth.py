@@ -4,7 +4,7 @@ import sqlite3
 from hashlib import sha256
 import time
 
-# From Flask 
+# From Flask
 from flask import session, redirect, request, render_template, Blueprint
 
 # Local Imports
@@ -15,8 +15,10 @@ AUTH_DB = "auth.db"
 
 auth_bp = Blueprint("auth", __name__)
 
+
 def hash_password(password: str) -> str:
     return sha256(password.encode("utf-8")).hexdigest()
+
 
 def login_required(fn):
     @wraps(fn)
@@ -24,7 +26,9 @@ def login_required(fn):
         if "user" not in session:
             return redirect("/login")
         return fn(*args, **kwargs)
+
     return wrapper
+
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 @auth_bp.route("/login.html", methods=["GET", "POST"])
@@ -35,8 +39,7 @@ def login():
 
         db = sqlite3.connect(AUTH_DB)
         row = db.execute(
-            "SELECT password_hash FROM users WHERE username = ?",
-            (username,)
+            "SELECT password_hash FROM users WHERE username = ?", (username,)
         ).fetchone()
         db.close()
 
@@ -51,6 +54,7 @@ def login():
 
     return render_template("login.html")
 
+
 @auth_bp.route("/logout")
 @login_required
 def logout():
@@ -58,6 +62,7 @@ def logout():
     presence.update_presence(user, "offline")
     session.clear()
     return redirect("/login")
+
 
 @auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -70,16 +75,12 @@ def signup():
             return render_template("signup.html", error="Missing fields")
 
         if password != confirm:
-            return render_template(
-                "signup.html",
-                error="Passwords do not match"
-            )
+            return render_template("signup.html", error="Passwords do not match")
 
         db = sqlite3.connect(AUTH_DB)
         try:
             db.execute(
-                "INSERT INTO users VALUES (?, ?)",
-                (username, hash_password(password))
+                "INSERT INTO users VALUES (?, ?)", (username, hash_password(password))
             )
             db.commit()
         except sqlite3.IntegrityError:

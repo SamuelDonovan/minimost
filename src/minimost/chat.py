@@ -6,9 +6,14 @@ import uuid
 import json
 from typing import List
 
-# From Flask 
+# From Flask
 from flask import (
-    request, jsonify, render_template, send_from_directory, session, Blueprint
+    request,
+    jsonify,
+    render_template,
+    send_from_directory,
+    session,
+    Blueprint,
 )
 
 # Local Imports
@@ -25,6 +30,7 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+
 def get_db(username: str):
     db = sqlite3.connect(str(common.user_db_path(username)))
     db.row_factory = sqlite3.Row
@@ -36,29 +42,35 @@ def get_db(username: str):
             pass
     return db
 
+
 def all_users():
     db = sqlite3.connect(auth.AUTH_DB)
     rows = db.execute("SELECT username FROM users").fetchall()
     db.close()
     return [r[0] for r in rows]
 
+
 # Channel Helpers
 def normalize_dm(users: List[str]) -> str:
     users = sorted(set(users))
     return "dm:" + ":".join(users)
+
 
 def channel_users(channel: str) -> List[str]:
     if channel.startswith("dm:"):
         return channel.split(":")[1:]
     return all_users()
 
+
 # Channels endpoint
 CHANNELS = ["general", "software", "firmware", "systems", "off-topic"]
+
 
 @chat_bp.route("/channels")
 @auth.login_required
 def channels():
     return jsonify(CHANNELS)
+
 
 @chat_bp.route("/channel_unreads")
 @auth.login_required
@@ -66,18 +78,22 @@ def channel_unreads():
     user = session["user"]
     db = get_db(user)
     placeholders = ",".join("?" * len(CHANNELS))
-    rows = db.execute(f"""
+    rows = db.execute(
+        f"""
         SELECT channel, COUNT(*) as count
         FROM messages
         WHERE channel IN ({placeholders})
           AND sender != ? AND read = 0 AND deleted = 0
         GROUP BY channel
-    """, (*CHANNELS, user)).fetchall()
+    """,
+        (*CHANNELS, user),
+    ).fetchall()
     db.close()
     result = {ch: 0 for ch in CHANNELS}
     for row in rows:
         result[row["channel"]] = row["count"]
     return jsonify(result)
+
 
 @chat_bp.route("/unread_count")
 @auth.login_required
@@ -85,7 +101,8 @@ def unread_count():
     user = session["user"]
     db = get_db(user)
 
-    row = db.execute("""
+    row = db.execute(
+        """
         SELECT
             COALESCE(SUM(
                 CASE
@@ -100,7 +117,9 @@ def unread_count():
              OR channel LIKE 'dm:%:' || ?
              OR channel LIKE 'dm:%:' || ? || ':%'
           )
-    """, (user, user, user, user)).fetchone()
+    """,
+        (user, user, user, user),
+    ).fetchone()
 
     count = row["unread"]
     return {"count": count}
@@ -113,7 +132,8 @@ def dms():
     user = session["user"]
     db = get_db(user)
 
-    rows = db.execute("""
+    rows = db.execute(
+        """
         SELECT
             channel,
             MAX(ts) AS last_ts,
@@ -132,7 +152,9 @@ def dms():
           )
         GROUP BY channel
         ORDER BY last_ts DESC
-    """, (user, user, user, user)).fetchall()
+    """,
+        (user, user, user, user),
+    ).fetchall()
 
     db.close()
 
@@ -141,34 +163,38 @@ def dms():
         users = r["channel"].split(":")[1:]
         others = [u for u in users if u != user]
 
-        result.append({
-            "channel": r["channel"],
-            "users": others,
-            "unread": int(r["unread"])  # 🔑 ensure JS-safe
-        })
+        result.append(
+            {
+                "channel": r["channel"],
+                "users": others,
+                "unread": int(r["unread"]),  # 🔑 ensure JS-safe
+            }
+        )
 
     return jsonify(result)
+
 
 # Presence endpoint
 @chat_bp.route("/online_users")
 def online_users():
-    presence_timeout = 3600 
-    cutoff = int(time()) - presence_timeout 
+    presence_timeout = 3600
+    cutoff = int(time()) - presence_timeout
     db = sqlite3.connect(presence.PRESENCE_DB)
     db.row_factory = sqlite3.Row
 
-    rows = db.execute("""
+    rows = db.execute(
+        """
         SELECT user, state
         FROM presence
         WHERE last_seen >= ?
-    """, (cutoff,)).fetchall()
+    """,
+        (cutoff,),
+    ).fetchall()
 
     db.close()
 
-    return jsonify({
-        row["user"]: row["state"].lower()
-        for row in rows
-    })
+    return jsonify({row["user"]: row["state"].lower() for row in rows})
+
 
 # Fetch messages
 @chat_bp.route("/messages/<channel>")
@@ -178,7 +204,8 @@ def messages(channel):
     after = float(request.args.get("after", 0))
 
     db = get_db(user)
-    rows = db.execute("""
+    rows = db.execute(
+        """
         SELECT
             id,
             channel,
@@ -200,7 +227,9 @@ def messages(channel):
                 OR (deleted = 1 AND deleted_ts > ?)
               )
         ORDER BY ts
-    """, (channel, after, after, after, after)).fetchall()
+    """,
+        (channel, after, after, after, after),
+    ).fetchall()
     db.close()
 
     return jsonify([dict(r) for r in rows])
@@ -249,21 +278,28 @@ def send(channel):
     for r in recipients:
         db = get_db(r)
         if text:
-            db.execute("""
+            db.execute(
+                """
                 INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)
                 VALUES (?, ?, ?, NULL, ?, 0, ?)
-            """, (channel, sender, text, ts, reply_to_id))
+            """,
+                (channel, sender, text, ts, reply_to_id),
+            )
 
         for filename in filenames:
-            db.execute("""
+            db.execute(
+                """
                 INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)
                 VALUES (?, ?, '', ?, ?, 0, ?)
-            """, (channel, sender, filename, ts, reply_to_id))
+            """,
+                (channel, sender, filename, ts, reply_to_id),
+            )
 
         db.commit()
         db.close()
 
     return "ok"
+
 
 @chat_bp.route("/message/<int:msg_id>")
 @auth.login_required
@@ -272,17 +308,19 @@ def get_message(msg_id):
     db = get_db(user)
     row = db.execute(
         "SELECT id, sender, content, filename, deleted FROM messages WHERE id = ?",
-        (msg_id,)
+        (msg_id,),
     ).fetchone()
     db.close()
     if not row:
         return "not found", 404
     return jsonify(dict(row))
 
+
 @chat_bp.route("/files/<path:filename>")
 @auth.login_required
 def files(filename):
     return send_from_directory("uploads", filename)
+
 
 # Search messages
 @chat_bp.route("/search_messages")
@@ -305,11 +343,12 @@ def search_messages():
         ORDER BY ts DESC
         LIMIT 50
         """,
-        (f"%{query}%",)
+        (f"%{query}%",),
     )
     results = [dict(r) for r in cur.fetchall()]
     db.close()
     return jsonify(results)
+
 
 # Edit message
 @chat_bp.route("/edit/<int:msg_id>", methods=["POST"])
@@ -321,8 +360,7 @@ def edit(msg_id):
     # 1. Fetch message metadata from editor DB
     db = get_db(editor)
     row = db.execute(
-        "SELECT channel, sender, ts FROM messages WHERE id = ?",
-        (msg_id,)
+        "SELECT channel, sender, ts FROM messages WHERE id = ?", (msg_id,)
     ).fetchone()
     db.close()
 
@@ -347,12 +385,13 @@ def edit(msg_id):
             SET content = ?, edited = 1, edited_ts = ?
             WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL
             """,
-            (new_text, edited_time, channel, editor, ts)
+            (new_text, edited_time, channel, editor, ts),
         )
         db.commit()
         db.close()
 
     return "ok"
+
 
 # Delete message (soft delete)
 @chat_bp.route("/delete/<int:msg_id>", methods=["POST"])
@@ -362,8 +401,7 @@ def delete_message(msg_id):
 
     db = get_db(deleter)
     row = db.execute(
-        "SELECT channel, sender, ts FROM messages WHERE id = ?",
-        (msg_id,)
+        "SELECT channel, sender, ts FROM messages WHERE id = ?", (msg_id,)
     ).fetchone()
     db.close()
 
@@ -386,20 +424,27 @@ def delete_message(msg_id):
             SET deleted = 1, deleted_ts = ?
             WHERE channel = ? AND sender = ? AND ts = ?
             """,
-            (deleted_time, channel, deleter, ts)
+            (deleted_time, channel, deleter, ts),
         )
         db.commit()
         db.close()
 
     return "ok"
 
+
 def _load_valid_reactions():
     try:
-        return {os.path.splitext(f)[0] for f in os.listdir("static/reactions") if f.endswith(".svg")}
+        return {
+            os.path.splitext(f)[0]
+            for f in os.listdir("static/reactions")
+            if f.endswith(".svg")
+        }
     except OSError:
         return set()
 
+
 VALID_REACTIONS = _load_valid_reactions()
+
 
 @chat_bp.route("/react/<int:msg_id>", methods=["POST"])
 @auth.login_required
@@ -412,8 +457,7 @@ def react(msg_id):
 
     db = get_db(user)
     row = db.execute(
-        "SELECT channel, sender, ts, reactions FROM messages WHERE id = ?",
-        (msg_id,)
+        "SELECT channel, sender, ts, reactions FROM messages WHERE id = ?", (msg_id,)
     ).fetchone()
     db.close()
 
@@ -455,7 +499,7 @@ def react(msg_id):
             SET reactions = ?, reactions_ts = ?
             WHERE channel = ? AND sender = ? AND ts = ?
             """,
-            (reactions_json, reactions_ts, channel, sender, ts)
+            (reactions_json, reactions_ts, channel, sender, ts),
         )
         db.commit()
         db.close()
@@ -469,17 +513,23 @@ def mark_read(channel):
     user = session["user"]
     db = get_db(user)
 
-    unread_rows = db.execute("""
+    unread_rows = db.execute(
+        """
         SELECT ts FROM messages
         WHERE channel = ? AND sender != ? AND read = 0
-    """, (channel, user)).fetchall()
+    """,
+        (channel, user),
+    ).fetchall()
 
-    db.execute("""
+    db.execute(
+        """
         UPDATE messages
         SET read = 1
         WHERE channel = ?
           AND sender != ?
-    """, (channel, user))
+    """,
+        (channel, user),
+    )
 
     db.commit()
     db.close()
@@ -488,7 +538,7 @@ def mark_read(channel):
         pdb = sqlite3.connect(presence.PRESENCE_DB)
         pdb.executemany(
             "INSERT OR IGNORE INTO read_receipts (channel, msg_ts, reader) VALUES (?, ?, ?)",
-            [(channel, row[0], user) for row in unread_rows]
+            [(channel, row[0], user) for row in unread_rows],
         )
         pdb.commit()
         pdb.close()
@@ -501,8 +551,7 @@ def mark_read(channel):
 def read_receipts(channel):
     pdb = sqlite3.connect(presence.PRESENCE_DB)
     rows = pdb.execute(
-        "SELECT msg_ts, reader FROM read_receipts WHERE channel = ?",
-        (channel,)
+        "SELECT msg_ts, reader FROM read_receipts WHERE channel = ?", (channel,)
     ).fetchall()
     pdb.close()
 
@@ -520,6 +569,7 @@ def users():
     users = [u for u in all_users() if u != me]
     return jsonify(users)
 
+
 @chat_bp.route("/link_preview")
 @auth.login_required
 def link_preview():
@@ -528,8 +578,8 @@ def link_preview():
         return jsonify({})
     return jsonify(preview_mod.fetch_preview(url))
 
+
 @chat_bp.route("/")
 @auth.login_required
 def index():
     return render_template("chat.html")
-

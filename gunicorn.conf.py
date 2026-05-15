@@ -22,8 +22,8 @@ keepalive = 2
 # --------------------------------------------------------------------
 loglevel = "info"
 
-accesslog = "-"    # stdout (systemd captures this)
-errorlog = "-"     # stderr
+accesslog = "-"  # stdout (systemd captures this)
+errorlog = "-"  # stderr
 
 # Or file-based logging:
 # accesslog = "/var/log/gunicorn/access.log"
@@ -50,4 +50,3 @@ pythonpath = "src"
 # --------------------------------------------------------------------
 # Environment variables (optional)
 # --------------------------------------------------------------------
-
