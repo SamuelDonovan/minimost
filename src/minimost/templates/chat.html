@@ -799,6 +799,7 @@ function switchChannel(c) {
     fetch(`/mark_read/${channel}`, { method: "POST" });
 
     fetchMessages();
+    fetchReadReceipts();
     refreshDMs();
     refreshTotalUnreadCount();
 }
