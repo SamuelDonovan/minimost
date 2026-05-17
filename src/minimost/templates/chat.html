@@ -2146,6 +2146,7 @@ function userInput(e) {
     const isInput = e.target.matches("input, textarea");
 
     if (e.key === "Escape") {
+        document.activeElement?.blur();
         closeAllModalsAndFocusChat();
     }
     // Avoid triggering while typing in inputs
