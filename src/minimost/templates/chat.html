@@ -7,7 +7,7 @@
     <meta name="description" content="Not skype">
     <link rel="stylesheet" href="../static/styles.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/sv+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
 </head>
 <body>
@@ -419,6 +419,8 @@ function refreshChannels() {
         .then(r => r.json())
         .then(counts => {
             hasUnreadChannels = Object.values(counts).some(c => c > 0);
+            channelUnreadCount = Object.values(counts).reduce((a, b) => a + b, 0);
+            updateTitleBadge(channelUnreadCount + lastUnreadCount);
 
             for (const [ch, count] of Object.entries(counts)) {
                 const el = document.querySelector(`[data-channel="${ch}"]`);
@@ -580,6 +582,7 @@ function refreshPresence() {
 
 let baseTitle = document.title;
 let lastUnreadCount = 0;
+let channelUnreadCount = 0;
 
 function initDesktopNotifications() {
     if (!("Notification" in window)) return;
@@ -637,33 +640,21 @@ let notifFavicon = null;
 let faviconFlashInterval = null;
 let faviconState = false;
 
-async function initFavicon() {
-    const link = document.querySelector("link[rel='icon'][type='image/png']");
+function initFavicon() {
+    const link = document.querySelector("link[rel='icon']");
     if (!link) return;
     normalFavicon = link.href;
-    notifFavicon = await buildNotifFavicon(normalFavicon);
-}
-
-function buildNotifFavicon(src) {
-    return new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => {
-            const sz = 32;
-            const canvas = document.createElement("canvas");
-            canvas.width = sz;
-            canvas.height = sz;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, sz, sz);
-            const r = 7;
-            ctx.beginPath();
-            ctx.arc(sz - r, r, r, 0, 2 * Math.PI);
-            ctx.fillStyle = "#e74c3c";
-            ctx.fill();
-            resolve(canvas.toDataURL());
-        };
-        img.onerror = () => resolve(null);
-        img.src = src;
-    });
+    // Build notification favicon synchronously via canvas so it's ready immediately
+    const sz = 32;
+    const canvas = document.createElement("canvas");
+    canvas.width = sz;
+    canvas.height = sz;
+    const ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    ctx.arc(sz / 2, sz / 2, 12, 0, 2 * Math.PI);
+    ctx.fillStyle = "#e74c3c";
+    ctx.fill();
+    notifFavicon = canvas.toDataURL();
 }
 
 function setFaviconHref(href) {
@@ -689,16 +680,15 @@ function refreshTotalUnreadCount() {
     fetch("/unread_count")
         .then(r => r.json())
         .then(data => {
-            if (data.count !== lastUnreadCount) {
-                lastUnreadCount = data.count;
-                updateTitleBadge(data.count);
-                updateAppBadge(data.count);
-                if (data.count > 0 || hasUnreadChannels) {
-                    startFaviconFlash();
-                    sendDesktopNotification(data.count);
-                } else {
-                    stopFaviconFlash();
-                }
+            const prevCount = lastUnreadCount;
+            lastUnreadCount = data.count;
+            updateTitleBadge(channelUnreadCount + lastUnreadCount);
+            updateAppBadge(lastUnreadCount);
+            if (lastUnreadCount > 0 || hasUnreadChannels) {
+                startFaviconFlash();
+                if (lastUnreadCount !== prevCount) sendDesktopNotification(lastUnreadCount);
+            } else {
+                stopFaviconFlash();
             }
         });
 }
