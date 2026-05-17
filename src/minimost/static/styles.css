@@ -393,6 +393,9 @@ body {
     box-sizing: border-box;
     padding: 5px 10px;
 }
+#msg-search-input {
+    width: 100%;
+}
 .input-suggest-wrap {
     position: relative;
     width: 90%;
