@@ -2335,6 +2335,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initDesktopNotifications();
     updateNotifMuteBtn();
     loadSidebar();
+    document.getElementById("chan").innerText = channel;
     switchChannel(channel);
     // Announce presence immediately on load rather than waiting for the first input event.
     sendPresence(document.visibilityState === "visible" ? "active" : "hidden");
