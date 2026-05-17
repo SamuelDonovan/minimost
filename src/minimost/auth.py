@@ -87,6 +87,18 @@ def signup():
                 error="Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)",
             )
 
+        if len(password) < 8:
+            return render_template("signup.html", error="Password must be at least 8 characters")
+
+        if not re.search(r"\d", password):
+            return render_template("signup.html", error="Password must contain at least one number")
+
+        if not re.search(r"[A-Z]", password):
+            return render_template("signup.html", error="Password must contain at least one uppercase letter")
+
+        if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
+            return render_template("signup.html", error="Password must contain at least one special character")
+
         if password != confirm:
             return render_template("signup.html", error="Passwords do not match")
 

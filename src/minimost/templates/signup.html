@@ -29,6 +29,12 @@
                     autocomplete="new-password"
                     oninput="checkPasswords()"
                 >
+                <ul id="password-requirements" class="pw-reqs" hidden>
+                    <li id="req-length"><span class="req-icon">•</span> 8+ characters</li>
+                    <li id="req-upper"><span class="req-icon">•</span> One uppercase letter</li>
+                    <li id="req-number"><span class="req-icon">•</span> One number</li>
+                    <li id="req-special"><span class="req-icon">•</span> One special character</li>
+                </ul>
                 <input
                     id="confirm_password"
                     name="confirm_password"
@@ -52,30 +58,53 @@
     </div>
 
     <script>
+    function setReq(id, met, active) {
+        const el = document.getElementById(id);
+        el.querySelector(".req-icon").textContent = met ? "✓" : (active ? "✗" : "•");
+        el.className = met ? "req-met" : (active ? "req-unmet" : "");
+    }
+
     function checkPasswords() {
         const password = document.getElementById("password").value;
         const confirm = document.getElementById("confirm_password").value;
         const message = document.getElementById("password-message");
         const button = document.getElementById("signup-btn");
+        const reqs = document.getElementById("password-requirements");
 
-        if (!password && !confirm) {
+        const active = password.length > 0;
+        reqs.hidden = !active;
+
+        const hasLength  = password.length >= 8;
+        const hasUpper   = /[A-Z]/.test(password);
+        const hasNumber  = /\d/.test(password);
+        const hasSpecial = /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>/?`~]/.test(password);
+
+        setReq("req-length",  hasLength,  active);
+        setReq("req-upper",   hasUpper,   active);
+        setReq("req-number",  hasNumber,  active);
+        setReq("req-special", hasSpecial, active);
+
+        const requirementsMet = hasLength && hasUpper && hasNumber && hasSpecial;
+
+        if (!active && !confirm) {
             message.textContent = "";
             message.className = "";
             button.disabled = true;
             return false;
         }
 
-        if (password === confirm) {
-            message.textContent = "✓ Passwords match";
-            message.className = "match";
-            button.disabled = false;
-            return true;
+        const passwordsMatch = confirm.length > 0 && password === confirm;
+
+        if (confirm.length > 0) {
+            message.textContent = passwordsMatch ? "✓ Passwords match" : "✗ Passwords do not match";
+            message.className   = passwordsMatch ? "match" : "no-match";
         } else {
-            message.textContent = "✗ Passwords do not match";
-            message.className = "no-match";
-            button.disabled = true;
-            return false;
+            message.textContent = "";
+            message.className = "";
         }
+
+        button.disabled = !(requirementsMet && passwordsMatch);
+        return requirementsMet && passwordsMatch;
     }
     </script>
 </body>

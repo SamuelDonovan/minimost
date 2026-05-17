@@ -121,3 +121,34 @@ button[type="submit"]:disabled {
 #password-message.no-match {
     color: #f88;
 }
+
+.pw-reqs {
+    list-style: none;
+    margin: 0;
+    padding: 6px 8px;
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pw-reqs li {
+    color: #666;
+}
+
+.pw-reqs li.req-met {
+    color: #6cf;
+}
+
+.pw-reqs li.req-unmet {
+    color: #f88;
+}
+
+.pw-reqs .req-icon {
+    display: inline-block;
+    width: 12px;
+    text-align: center;
+}
