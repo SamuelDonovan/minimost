@@ -50,11 +50,6 @@ def get_db(username: str):
     db = sqlite3.connect(str(common.user_db_path(username)))
     db.execute("PRAGMA journal_mode=WAL")
     db.row_factory = sqlite3.Row
-    try:
-        db.execute("ALTER TABLE messages ADD COLUMN reactions_ts REAL")
-        db.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists in this DB
     return db
 
 

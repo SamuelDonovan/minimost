@@ -26,6 +26,55 @@ def hash_password(password: str) -> str:
     return generate_password_hash(password)
 
 
+def _seed_channel_history(new_user: str) -> None:
+    """Copy all public channel message history into a newly created user's DB."""
+    adb = sqlite3.connect(AUTH_DB)
+    adb.execute("PRAGMA journal_mode=WAL")
+    row = adb.execute(
+        "SELECT username FROM users WHERE username != ? LIMIT 1", (new_user,)
+    ).fetchone()
+    adb.close()
+
+    if not row:
+        return
+
+    src_path = common.user_db_path(row[0])
+    if not src_path.exists():
+        return
+
+    src = sqlite3.connect(str(src_path))
+    src.execute("PRAGMA journal_mode=WAL")
+    rows = src.execute(
+        """
+        SELECT id, channel, sender, content, content_type, filename, ts,
+               edited, edited_ts, deleted, deleted_ts, reply_to_id,
+               reactions, reactions_ts, mentions, metadata, client_msg_id, expires_ts
+        FROM messages
+        WHERE channel NOT LIKE 'dm:%'
+        """
+    ).fetchall()
+    src.close()
+
+    if not rows:
+        return
+
+    dst = sqlite3.connect(str(common.user_db_path(new_user)))
+    dst.execute("PRAGMA journal_mode=WAL")
+    dst.executemany(
+        """
+        INSERT INTO messages
+            (id, channel, sender, content, content_type, filename, ts,
+             edited, edited_ts, deleted, deleted_ts, reply_to_id,
+             reactions, reactions_ts, mentions, metadata, client_msg_id, expires_ts,
+             read)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        """,
+        rows,
+    )
+    dst.commit()
+    dst.close()
+
+
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -117,6 +166,7 @@ def signup():
         db.close()
 
         common.init_user_db(username)
+        _seed_channel_history(username)
 
         session["user"] = username
         return redirect("/")
