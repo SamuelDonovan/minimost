@@ -161,3 +161,9 @@ button[type="submit"]:disabled {
     font-size: 12px;
     color: #6A9955;
 }
+
+@media (max-width: 360px) {
+    .auth-card {
+        width: calc(100% - 32px);
+    }
+}

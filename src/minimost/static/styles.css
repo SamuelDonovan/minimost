@@ -5,6 +5,7 @@ body {
     color: #ddd;
     display: flex;
     height: 100vh;
+    height: 100dvh;
 }
 #topbar {
     display: grid;
@@ -50,6 +51,7 @@ body {
     min-width: 220px;
     width: 260px;
     height: 100vh;
+    height: 100dvh;
     display: flex;
     background: #252526;
     flex-direction: column;
@@ -102,15 +104,8 @@ body {
         font-size: 1.0em;   /* Firefox size */
     }
 }
-/* Help button (adjust to match your UI) */
+/* Help button */
 #help-btn {
-    position: fixed;
-    bottom: 16px;
-    right: 16px;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    font-size: 20px;
     cursor: pointer;
 }
 
@@ -481,8 +476,22 @@ button, input, textarea{
 #input {
     padding: 10px;
 }
+#input-main {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+}
 #msg {
-    width: 80%;
+    flex: 1;
+}
+#input-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    flex-shrink: 0;
+}
+#input-actions #help-btn {
+    margin-right: 16px;
 }
 a { color: #9cdcfe; }
 .reply-preview {
@@ -766,5 +775,74 @@ a { color: #9cdcfe; }
     white-space: nowrap;
     pointer-events: none;
     z-index: 999;
+}
+
+/* ── Mobile layout ─────────────────────────────────────────────────────────── */
+#hamburger-btn { display: none; }
+
+#sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+}
+
+@media (max-width: 600px) {
+    #sidebar {
+        position: fixed;
+        top: 0;
+        left: -270px;
+        height: 100%;
+        width: 260px;
+        min-width: 0;
+        z-index: 100;
+        transition: left 0.2s ease;
+    }
+
+    #sidebar.sidebar-open {
+        left: 0;
+    }
+
+    #sidebar-backdrop {
+        display: block;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+    }
+
+    #sidebar-backdrop.sidebar-open {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    #hamburger-btn {
+        display: flex;
+        margin-right: 4px;
+    }
+
+    #topbar {
+        padding: 4px 8px;
+    }
+
+    #input {
+        padding: 6px 8px;
+    }
+
+    #msg {
+        height: 2.5em;
+        min-height: unset;
+    }
+
+    #input-actions {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    #input-actions #help-btn {
+        margin-right: 0;
+        margin-bottom: 12px;
+    }
+
 }
 .reaction-chip:hover .reaction-tooltip { display: block; }
