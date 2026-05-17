@@ -337,8 +337,6 @@ let fetchController = null;
 let readReceiptsMap = {};
 let hasUnreadChannels = false;
 
-const notifSound = new Audio('/static/notification.mp3');
-notifSound.preload = 'auto';
 let notifMuted = localStorage.getItem('notifMuted') === 'true';
 
 // Preview Renderer
@@ -835,6 +833,27 @@ function fetchMessages() {
                 // ⛔ Extra safety (paranoia is good here)
                 if (requestedChannel !== channel) return;
 
+                const msgId = `msg-${m.id}`;
+                const existing = document.getElementById(msgId);
+
+                if (m.deleted) {
+                    if (existing) {
+                        existing.remove();
+                        const divider = document.getElementById(`date-${new Date(m.ts * 1000).toDateString()}`);
+                        if (divider) {
+                            let next = divider.nextElementSibling;
+                            let hasMessages = false;
+                            while (next && !next.classList.contains("date-divider")) {
+                                if (next.classList.contains("msg")) { hasMessages = true; break; }
+                                next = next.nextElementSibling;
+                            }
+                            if (!hasMessages) divider.remove();
+                        }
+                    }
+                    lastTs = Math.max(lastTs, m.deleted_ts || m.ts);
+                    return;
+                }
+
                 const hasText = m.content && m.content.trim();
                 const hasImage = m.filename && m.filename.trim();
 
@@ -860,27 +879,6 @@ function fetchMessages() {
                     });
                     chat.appendChild(divider);
                     appended = true;
-                }
-
-                const msgId = `msg-${m.id}`;
-                const existing = document.getElementById(msgId);
-
-                if (m.deleted) {
-                    if (existing) {
-                        existing.remove();
-                        const divider = document.getElementById(`date-${new Date(m.ts * 1000).toDateString()}`);
-                        if (divider) {
-                            let next = divider.nextElementSibling;
-                            let hasMessages = false;
-                            while (next && !next.classList.contains("date-divider")) {
-                                if (next.classList.contains("msg")) { hasMessages = true; break; }
-                                next = next.nextElementSibling;
-                            }
-                            if (!hasMessages) divider.remove();
-                        }
-                    }
-                    lastTs = Math.max(lastTs, m.deleted_ts || m.ts);
-                    return;
                 }
 
                 const time = msgDate.toLocaleTimeString([], {
@@ -1059,8 +1057,7 @@ function fetchMessages() {
             });
 
             if (playNewMsgSound && document.hidden && !notifMuted) {
-                notifSound.currentTime = 0;
-                notifSound.play().catch(() => {});
+                new Audio('/static/notification.mp3').play().catch(() => {});
             }
 
             updateReadReceiptUI();
@@ -1418,7 +1415,22 @@ function deleteMsg(msgId) {
         .then(res => {
             if (!res.ok) throw new Error("Delete failed");
             const el = document.getElementById(`msg-${msgId}`);
-            if (el) el.remove();
+            if (!el) return;
+            // Find the date divider for this message's day before removing the element
+            let node = el.previousElementSibling;
+            while (node && !node.classList.contains("date-divider")) {
+                node = node.previousElementSibling;
+            }
+            el.remove();
+            if (node) {
+                let next = node.nextElementSibling;
+                let hasMessages = false;
+                while (next && !next.classList.contains("date-divider")) {
+                    if (next.classList.contains("msg")) { hasMessages = true; break; }
+                    next = next.nextElementSibling;
+                }
+                if (!hasMessages) node.remove();
+            }
         })
         .catch(err => {
             alert("Could not delete message");
