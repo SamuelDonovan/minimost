@@ -1,5 +1,6 @@
 import re
 import secrets
+from contextlib import suppress
 from pathlib import Path
 
 from flask import Flask
@@ -14,19 +15,15 @@ _PROJECT_ROOT = _HERE.parent.parent
 
 
 def _read_version() -> str:
-    try:
+    with suppress(Exception):
         from importlib.metadata import version
 
         return version("minimost")
-    except Exception:
-        pass
-    try:
+    with suppress(Exception):
         toml = (_PROJECT_ROOT / "pyproject.toml").read_text()
         m = re.search(r'^version\s*=\s*"([^"]+)"', toml, re.MULTILINE)
         if m:
             return m.group(1)
-    except Exception:
-        pass
     return "unknown"
 
 
