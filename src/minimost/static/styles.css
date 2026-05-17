@@ -385,15 +385,20 @@ body {
     padding: 20px;
     border: 1px solid #444;
     width: 50%;
-    max-height: 70%;
-    overflow-y: auto;
+    position: relative;
 }
 .modal-content input,
 .modal-content select {
-    width: 90%;    
     max-width: 100%;
     box-sizing: border-box;
     padding: 5px 10px;
+}
+.input-suggest-wrap {
+    position: relative;
+    width: 90%;
+}
+.input-suggest-wrap input {
+    width: 100%;
 }
 .autocomplete-suggestions {
     position: absolute;
@@ -401,8 +406,9 @@ body {
     border: 1px solid #555;
     max-height: 150px;
     overflow-y: auto;
-    width: calc(100% - 40px); /* adjust to fit input padding */
-    z-index: 1001; /* above modal content */
+    left: 0;
+    right: 0;
+    z-index: 1001;
     display: none;
     color: #ddd;
 }
