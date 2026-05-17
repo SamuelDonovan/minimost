@@ -44,15 +44,13 @@ def _seed_channel_history(new_user: str) -> None:
 
     src = sqlite3.connect(str(src_path))
     src.execute("PRAGMA journal_mode=WAL")
-    rows = src.execute(
-        """
+    rows = src.execute("""
         SELECT id, channel, sender, content, content_type, filename, ts,
                edited, edited_ts, deleted, deleted_ts, reply_to_id,
                reactions, reactions_ts, mentions, metadata, client_msg_id, expires_ts
         FROM messages
         WHERE channel NOT LIKE 'dm:%'
-        """
-    ).fetchall()
+        """).fetchall()
     src.close()
 
     if not rows:
@@ -137,16 +135,26 @@ def signup():
             )
 
         if len(password) < 8:
-            return render_template("signup.html", error="Password must be at least 8 characters")
+            return render_template(
+                "signup.html", error="Password must be at least 8 characters"
+            )
 
         if not re.search(r"\d", password):
-            return render_template("signup.html", error="Password must contain at least one number")
+            return render_template(
+                "signup.html", error="Password must contain at least one number"
+            )
 
         if not re.search(r"[A-Z]", password):
-            return render_template("signup.html", error="Password must contain at least one uppercase letter")
+            return render_template(
+                "signup.html",
+                error="Password must contain at least one uppercase letter",
+            )
 
         if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
-            return render_template("signup.html", error="Password must contain at least one special character")
+            return render_template(
+                "signup.html",
+                error="Password must contain at least one special character",
+            )
 
         if password != confirm:
             return render_template("signup.html", error="Passwords do not match")

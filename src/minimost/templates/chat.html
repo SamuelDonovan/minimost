@@ -876,7 +876,19 @@ function fetchMessages() {
                 const existing = document.getElementById(msgId);
 
                 if (m.deleted) {
-                    if (existing) existing.remove();
+                    if (existing) {
+                        existing.remove();
+                        const divider = document.getElementById(`date-${new Date(m.ts * 1000).toDateString()}`);
+                        if (divider) {
+                            let next = divider.nextElementSibling;
+                            let hasMessages = false;
+                            while (next && !next.classList.contains("date-divider")) {
+                                if (next.classList.contains("msg")) { hasMessages = true; break; }
+                                next = next.nextElementSibling;
+                            }
+                            if (!hasMessages) divider.remove();
+                        }
+                    }
                     lastTs = Math.max(lastTs, m.deleted_ts || m.ts);
                     return;
                 }

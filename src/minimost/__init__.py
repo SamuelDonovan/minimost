@@ -16,6 +16,7 @@ _PROJECT_ROOT = _HERE.parent.parent
 def _read_version() -> str:
     try:
         from importlib.metadata import version
+
         return version("minimost")
     except Exception:
         pass
