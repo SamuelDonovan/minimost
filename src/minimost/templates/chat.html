@@ -2734,6 +2734,63 @@ async function attachPreview(msgEl) {
     }
 }
 
+// Pinch-to-zoom adjusts message font size rather than scaling the page.
+(function () {
+    const FONT_MIN = 11;
+    const FONT_MAX = 22;
+    const FONT_DEFAULT = 14;
+    const chatEl = document.getElementById("chat");
+    const msgEl  = document.getElementById("msg");
+
+    function applyFontSize(size) {
+        chatEl.style.fontSize = size + "px";
+        msgEl.style.fontSize  = size + "px";
+    }
+
+    let fontSize = parseFloat(localStorage.getItem("chatFontSize")) || FONT_DEFAULT;
+    fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, fontSize));
+    applyFontSize(fontSize);
+
+    let startDist = null;
+    let startSize = fontSize;
+
+    function pinchDist(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    chatEl.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 2) {
+            startDist = pinchDist(e.touches);
+            startSize = fontSize;
+        }
+    }, { passive: true });
+
+    chatEl.addEventListener("touchmove", (e) => {
+        if (e.touches.length !== 2 || startDist === null) return;
+        e.preventDefault();
+        const scale = pinchDist(e.touches) / startDist;
+        fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, startSize * scale));
+        applyFontSize(fontSize);
+    }, { passive: false });
+
+    chatEl.addEventListener("touchend", (e) => {
+        if (e.touches.length < 2) {
+            startDist = null;
+            localStorage.setItem("chatFontSize", fontSize);
+        }
+    }, { passive: true });
+
+    chatEl.addEventListener("wheel", (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, fontSize - e.deltaY * 0.05));
+        applyFontSize(fontSize);
+        localStorage.setItem("chatFontSize", fontSize);
+    }, { passive: false });
+}());
+
 </script>
 </body>
 </html>
