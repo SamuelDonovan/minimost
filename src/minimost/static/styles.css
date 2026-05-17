@@ -113,7 +113,7 @@ body {
 #help-overlay {
     position: fixed;
     inset: 0;
-    background: #1e1e1e;
+    background: rgba(0,0,0,0.6);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -127,24 +127,87 @@ body {
 
 /* Modal */
 #help-modal {
-    background: #1e1e1e;
-    padding: 20px 24px;
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    padding: 24px 28px;
     border-radius: 8px;
     width: 90%;
-    max-width: 420px;
+    max-width: 460px;
+    max-height: 85vh;
+    overflow-y: auto;
     position: relative;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
+
+#help-modal h2 {
+    margin: 0 0 16px 0;
+    font-size: 1.3em;
+    font-weight: 700;
+}
+
+.help-section {
+    font-size: 0.7em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+    margin: 16px 0 6px 0;
+    border-bottom: 1px solid #3a3a3a;
+    padding-bottom: 4px;
+}
+
+#help-modal ul {
+    margin: 0;
+    padding: 0 0 0 4px;
+    list-style: none;
+}
+
+#help-modal li {
+    padding: 3px 0;
+    font-size: 13px;
+    color: #ccc;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+#help-modal kbd {
+    font-family: monospace;
+    font-size: 11px;
+    color: #007acc;
+    background: #1e1e1e;
+    border: 1px solid #3a5a7a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
+
+.help-presence {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+.help-presence.active  { background: #4fc3f7; }
+.help-presence.idle    { background: #ffd54f; }
+.help-presence.away    { background: #888; }
+.help-presence.offline { background: transparent; border: 2px solid #888; width: 8px; height: 8px; }
 
 /* Close button */
 #help-close {
     position: absolute;
-    top: 8px;
-    right: 10px;
+    top: 10px;
+    right: 12px;
     background: none;
     border: none;
     font-size: 22px;
+    color: #888;
     cursor: pointer;
+    line-height: 1;
+}
+#help-close:hover {
+    color: #ddd;
 }
 #main {
     flex: 1;

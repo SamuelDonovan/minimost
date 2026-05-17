@@ -160,29 +160,49 @@
     <div id="help-modal" role="dialog" aria-modal="true">
         <button id="help-close" aria-label="Close help">&times;</button>
 
-        <h2>Help</h2>
-        <p>
-            Welcome to the MiniMost!
-        </p>
+        <h2>Mini<span style="color:#007acc">Most</span></h2>
+
+        <h3 class="help-section">Messaging</h3>
         <ul>
-            <li><b>Enter</b> – Send message</li>
-            <li><b>Shift + Enter</b> – New line</li>
-            <li><b>i</b> – Focus message input</li>
-            <li><b>o</b> – Start new DM</li>
-            <li><b>/ or f</b> – Search messages</li>
-            <li><b>Ctrl + b</b> – Bold text</li>
-            <li><b>Ctrl + u</b> – Underline text</li>
-            <li><b>Ctrl + i</b> – Italicize text</li>
-            <li><b>Ctrl + s</b> – Strikethrough text</li>
-            <li><b>j / k</b> – Scroll down/up</li>
-            <li><b>d / u</b> – 2x scroll down/up</li>
-            <li><b>G / g(g)</b> – Scroll to bottom / top</li>
-            <li><b>Ctrl j / Ctrl k</b> – Scroll down/up through chats</li>
-            <li><b>Images</b> – Paste, drag, or attach images with the paperclip button</li>
-            <li><b>Esc</b> – Close menus/unfocus message input</li>
-            <li><b>?</b> – Open this help</li>
-            <li><b>Images</b> – Images are deleted after 30 days</li>
-            <li><b>Presence</b> – Blue (active), yellow (idle), solid gray (away), hollow gray (offline)</li>
+            <li><kbd>Enter</kbd> – Send message</li>
+            <li><kbd>Shift + Enter</kbd> – New line</li>
+            <li>Hover a message to reply, edit, delete, or react with emoji</li>
+        </ul>
+
+        <h3 class="help-section">Navigation</h3>
+        <ul>
+            <li><kbd>i</kbd> – Focus message input</li>
+            <li><kbd>o</kbd> – Start new DM</li>
+            <li><kbd>/</kbd> or <kbd>f</kbd> – Search messages</li>
+            <li><kbd>j</kbd> / <kbd>k</kbd> – Scroll down / up</li>
+            <li><kbd>d</kbd> / <kbd>u</kbd> – Scroll down / up (2×)</li>
+            <li><kbd>G</kbd> / <kbd>gg</kbd> – Jump to bottom / top</li>
+            <li><kbd>Ctrl J</kbd> / <kbd>Ctrl K</kbd> – Next / previous channel</li>
+            <li><kbd>Esc</kbd> – Close menus / unfocus input</li>
+            <li><kbd>?</kbd> – Open this help</li>
+        </ul>
+
+        <h3 class="help-section">Text Formatting</h3>
+        <ul>
+            <li><kbd>Ctrl B</kbd> – Bold</li>
+            <li><kbd>Ctrl I</kbd> – Italic</li>
+            <li><kbd>Ctrl U</kbd> – Underline</li>
+            <li><kbd>Ctrl S</kbd> – Strikethrough</li>
+        </ul>
+
+        <h3 class="help-section">Media &amp; Display</h3>
+        <ul>
+            <li>Paste, drag, or use the paperclip to attach images</li>
+            <li>Images are periodically deleted to save space</li>
+            <li>Pinch or <kbd>Ctrl + Scroll</kbd> to adjust font size</li>
+        </ul>
+
+        <h3 class="help-section">Status Indicators</h3>
+        <ul>
+            <li><span class="help-presence active"></span> <b>Active</b> – Currently using the app</li>
+            <li><span class="help-presence idle"></span> <b>Idle</b> – Tab open but no recent activity</li>
+            <li><span class="help-presence away"></span> <b>Away</b> – Tab hidden or in background</li>
+            <li><span class="help-presence offline"></span> <b>Offline</b> – Not connected</li>
         </ul>
     </div>
 </div>
