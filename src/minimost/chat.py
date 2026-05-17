@@ -4,6 +4,7 @@ import sqlite3
 import os
 import uuid
 import json
+from pathlib import Path
 from typing import List
 
 # From Flask
@@ -26,25 +27,40 @@ chat_bp = Blueprint("chat", __name__)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
-# Shared helpers
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+_HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent.parent
+
+UPLOAD_DIR = _PROJECT_ROOT / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+_CHANNELS_FILE = _PROJECT_ROOT / "channels.json"
+
+
+def _load_channels() -> List[str]:
+    try:
+        return json.loads(_CHANNELS_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return ["general"]
+
+
+CHANNELS = _load_channels()
 
 
 def get_db(username: str):
     db = sqlite3.connect(str(common.user_db_path(username)))
+    db.execute("PRAGMA journal_mode=WAL")
     db.row_factory = sqlite3.Row
-    for col_def in ("deleted_ts REAL", "reactions TEXT", "reactions_ts REAL"):
-        try:
-            db.execute("ALTER TABLE messages ADD COLUMN " + col_def)
-            db.commit()
-        except sqlite3.OperationalError:
-            pass
+    try:
+        db.execute("ALTER TABLE messages ADD COLUMN reactions_ts REAL")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists in this DB
     return db
 
 
 def all_users():
     db = sqlite3.connect(auth.AUTH_DB)
+    db.execute("PRAGMA journal_mode=WAL")
     rows = db.execute("SELECT username FROM users").fetchall()
     db.close()
     return [r[0] for r in rows]
@@ -60,10 +76,6 @@ def channel_users(channel: str) -> List[str]:
     if channel.startswith("dm:"):
         return channel.split(":")[1:]
     return all_users()
-
-
-# Channels endpoint
-CHANNELS = ["general", "software", "firmware", "systems", "off-topic"]
 
 
 @chat_bp.route("/channels")
@@ -117,7 +129,6 @@ def unread_count():
     return {"count": count}
 
 
-# DM list for sidebar
 @chat_bp.route("/dms")
 @auth.login_required
 def dms():
@@ -154,32 +165,28 @@ def dms():
     for r in rows:
         users = r["channel"].split(":")[1:]
         others = [u for u in users if u != user]
-
         result.append(
             {
                 "channel": r["channel"],
                 "users": others,
-                "unread": int(r["unread"]),  # 🔑 ensure JS-safe
+                "unread": int(r["unread"]),
             }
         )
 
     return jsonify(result)
 
 
-# Presence endpoint
 @chat_bp.route("/online_users")
+@auth.login_required
 def online_users():
     presence_timeout = 3600
     cutoff = int(time()) - presence_timeout
     db = sqlite3.connect(presence.PRESENCE_DB)
+    db.execute("PRAGMA journal_mode=WAL")
     db.row_factory = sqlite3.Row
 
     rows = db.execute(
-        """
-        SELECT user, state
-        FROM presence
-        WHERE last_seen >= ?
-    """,
+        "SELECT user, state FROM presence WHERE last_seen >= ?",
         (cutoff,),
     ).fetchall()
 
@@ -188,7 +195,6 @@ def online_users():
     return jsonify({row["user"]: row["state"].lower() for row in rows})
 
 
-# Fetch messages
 @chat_bp.route("/messages/<channel>")
 @auth.login_required
 def messages(channel):
@@ -233,10 +239,30 @@ def messages(channel):
     ).fetchall()
     db.close()
 
-    return jsonify([dict(r) for r in rows])
+    result = [dict(r) for r in rows]
+
+    if result:
+        ts_list = [r["ts"] for r in result]
+        placeholders = ",".join("?" * len(ts_list))
+        pdb = sqlite3.connect(presence.PRESENCE_DB)
+        pdb.execute("PRAGMA journal_mode=WAL")
+        rx_rows = pdb.execute(
+            f"SELECT msg_ts, emoji, reactor FROM message_reactions WHERE channel = ? AND msg_ts IN ({placeholders})",  # nosec B608
+            [channel] + ts_list,
+        ).fetchall()
+        pdb.close()
+
+        rx_map: dict = {}
+        for msg_ts, emoji, reactor in rx_rows:
+            rx_map.setdefault(msg_ts, {}).setdefault(emoji, []).append(reactor)
+
+        for msg in result:
+            reactions_dict = rx_map.get(msg["ts"])
+            msg["reactions"] = json.dumps(reactions_dict) if reactions_dict else None
+
+    return jsonify(result)
 
 
-# Send
 @chat_bp.route("/send/<channel>", methods=["POST"])
 @auth.login_required
 def send(channel):
@@ -249,7 +275,6 @@ def send(channel):
     filenames = []
 
     for f in files:
-        # 🔒 Guard: ensure this is a FileStorage
         if not hasattr(f, "filename"):
             continue
 
@@ -261,10 +286,9 @@ def send(channel):
             continue
         filename = f"{uuid.uuid4().hex}{ext}"
 
-        f.save(os.path.join(UPLOAD_DIR, filename))
+        f.save(UPLOAD_DIR / filename)
         filenames.append(filename)
 
-    # prevent empty messages
     if not text and not filenames:
         return "empty", 400
 
@@ -320,10 +344,9 @@ def get_message(msg_id):
 @chat_bp.route("/files/<path:filename>")
 @auth.login_required
 def files(filename):
-    return send_from_directory("uploads", filename)
+    return send_from_directory(UPLOAD_DIR, filename)
 
 
-# Search messages
 @chat_bp.route("/search_messages")
 @auth.login_required
 def search_messages():
@@ -333,8 +356,6 @@ def search_messages():
         return jsonify([])
 
     db = get_db(user)
-
-    # Search in all messages (limit results for performance)
     cur = db.execute(
         """
         SELECT id, channel, sender, content, ts
@@ -351,14 +372,12 @@ def search_messages():
     return jsonify(results)
 
 
-# Edit message
 @chat_bp.route("/edit/<int:msg_id>", methods=["POST"])
 @auth.login_required
 def edit(msg_id):
     editor = session["user"]
     new_text = request.form.get("text", "").strip()
 
-    # 1. Fetch message metadata from editor DB
     db = get_db(editor)
     row = db.execute(
         "SELECT channel, sender, ts FROM messages WHERE id = ?", (msg_id,)
@@ -371,12 +390,10 @@ def edit(msg_id):
     channel = row["channel"]
     ts = row["ts"]
 
-    # 2. Determine all recipients
     recipients = channel_users(channel)
     if editor not in recipients:
         recipients.append(editor)
 
-    # 3. Update the message in each recipient DB using timestamp
     edited_time = time()
     for r in recipients:
         db = get_db(r)
@@ -394,7 +411,6 @@ def edit(msg_id):
     return "ok"
 
 
-# Delete message (soft delete)
 @chat_bp.route("/delete/<int:msg_id>", methods=["POST"])
 @auth.login_required
 def delete_message(msg_id):
@@ -434,10 +450,11 @@ def delete_message(msg_id):
 
 
 def _load_valid_reactions():
+    reactions_dir = _HERE / "static" / "reactions"
     try:
         return {
             os.path.splitext(f)[0]
-            for f in os.listdir("static/reactions")
+            for f in os.listdir(reactions_dir)
             if f.endswith(".svg")
         }
     except OSError:
@@ -458,7 +475,7 @@ def react(msg_id):
 
     db = get_db(user)
     row = db.execute(
-        "SELECT channel, sender, ts, reactions FROM messages WHERE id = ?", (msg_id,)
+        "SELECT channel, sender, ts FROM messages WHERE id = ?", (msg_id,)
     ).fetchone()
     db.close()
 
@@ -469,41 +486,51 @@ def react(msg_id):
     sender = row["sender"]
     ts = row["ts"]
 
-    try:
-        reactions = json.loads(row["reactions"] or "{}")
-    except Exception:
-        reactions = {}
+    # Toggle reaction atomically in the shared presence DB to eliminate
+    # the read-modify-write race that per-user DBs cannot prevent.
+    pdb = sqlite3.connect(presence.PRESENCE_DB)
+    pdb.execute("PRAGMA journal_mode=WAL")
+    existing = pdb.execute(
+        "SELECT 1 FROM message_reactions WHERE channel=? AND msg_ts=? AND emoji=? AND reactor=?",
+        (channel, ts, reaction, user),
+    ).fetchone()
 
-    users = reactions.get(reaction, [])
-    if user in users:
-        users.remove(user)
+    if existing:
+        pdb.execute(
+            "DELETE FROM message_reactions WHERE channel=? AND msg_ts=? AND emoji=? AND reactor=?",
+            (channel, ts, reaction, user),
+        )
     else:
-        users.append(user)
+        pdb.execute(
+            "INSERT INTO message_reactions (channel, msg_ts, emoji, reactor) VALUES (?, ?, ?, ?)",
+            (channel, ts, reaction, user),
+        )
 
-    if users:
-        reactions[reaction] = users
-    else:
-        reactions.pop(reaction, None)
+    rx_rows = pdb.execute(
+        "SELECT emoji, reactor FROM message_reactions WHERE channel=? AND msg_ts=?",
+        (channel, ts),
+    ).fetchall()
+    pdb.commit()
+    pdb.close()
 
-    reactions_json = json.dumps(reactions)
+    reactions = {}
+    for emoji, reactor in rx_rows:
+        reactions.setdefault(emoji, []).append(reactor)
+
+    # Bump reactions_ts in each user DB so the polling query picks up the change.
     reactions_ts = time()
-
     recipients = channel_users(channel)
     if user not in recipients:
         recipients.append(user)
 
     for r in recipients:
-        db = get_db(r)
-        db.execute(
-            """
-            UPDATE messages
-            SET reactions = ?, reactions_ts = ?
-            WHERE channel = ? AND sender = ? AND ts = ?
-            """,
-            (reactions_json, reactions_ts, channel, sender, ts),
+        udb = get_db(r)
+        udb.execute(
+            "UPDATE messages SET reactions_ts=? WHERE channel=? AND sender=? AND ts=?",
+            (reactions_ts, channel, sender, ts),
         )
-        db.commit()
-        db.close()
+        udb.commit()
+        udb.close()
 
     return jsonify(reactions)
 
@@ -515,20 +542,12 @@ def mark_read(channel):
     db = get_db(user)
 
     unread_rows = db.execute(
-        """
-        SELECT ts FROM messages
-        WHERE channel = ? AND sender != ? AND read = 0
-    """,
+        "SELECT ts FROM messages WHERE channel = ? AND sender != ? AND read = 0",
         (channel, user),
     ).fetchall()
 
     db.execute(
-        """
-        UPDATE messages
-        SET read = 1
-        WHERE channel = ?
-          AND sender != ?
-    """,
+        "UPDATE messages SET read = 1 WHERE channel = ? AND sender != ?",
         (channel, user),
     )
 
@@ -537,6 +556,7 @@ def mark_read(channel):
 
     if unread_rows:
         pdb = sqlite3.connect(presence.PRESENCE_DB)
+        pdb.execute("PRAGMA journal_mode=WAL")
         pdb.executemany(
             "INSERT OR IGNORE INTO read_receipts (channel, msg_ts, reader) VALUES (?, ?, ?)",
             [(channel, row[0], user) for row in unread_rows],
@@ -551,6 +571,7 @@ def mark_read(channel):
 @auth.login_required
 def read_receipts(channel):
     pdb = sqlite3.connect(presence.PRESENCE_DB)
+    pdb.execute("PRAGMA journal_mode=WAL")
     rows = pdb.execute(
         "SELECT msg_ts, reader FROM read_receipts WHERE channel = ?", (channel,)
     ).fetchall()
@@ -565,10 +586,8 @@ def read_receipts(channel):
 @chat_bp.route("/users")
 @auth.login_required
 def users():
-    """Return all usernames except the current user"""
     me = session["user"]
-    users = [u for u in all_users() if u != me]
-    return jsonify(users)
+    return jsonify([u for u in all_users() if u != me])
 
 
 @chat_bp.route("/link_preview")

@@ -4,7 +4,7 @@ import time
 # Set up to run every day at 2:30 AM:
 #
 # crontab -e
-# 30 2 * * * /usr/bin/python3 /Data01/minimost/cleanup.py
+# 30 2 * * * /usr/bin/python3 /home/sam/minimost/src/minimost/clean.py
 
 
 def delete_files_older_than(directory: str, days: int, dry_run: bool = False):

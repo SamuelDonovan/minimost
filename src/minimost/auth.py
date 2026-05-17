@@ -1,7 +1,9 @@
 # From the python standard library
+import re
 from functools import wraps
 import sqlite3
 import time
+from pathlib import Path
 
 # From Flask
 from flask import session, redirect, request, render_template, Blueprint
@@ -11,7 +13,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from . import common
 from . import presence
 
-AUTH_DB = "auth.db"
+_HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent.parent
+AUTH_DB = str(_PROJECT_ROOT / "auth.db")
+
+_USERNAME_RE = re.compile(r"[A-Za-z0-9_\-]{1,32}")
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -38,6 +44,7 @@ def login():
         password = request.form["password"]
 
         db = sqlite3.connect(AUTH_DB)
+        db.execute("PRAGMA journal_mode=WAL")
         row = db.execute(
             "SELECT password_hash FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -74,10 +81,17 @@ def signup():
         if not username or not password:
             return render_template("signup.html", error="Missing fields")
 
+        if not _USERNAME_RE.fullmatch(username):
+            return render_template(
+                "signup.html",
+                error="Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)",
+            )
+
         if password != confirm:
             return render_template("signup.html", error="Passwords do not match")
 
         db = sqlite3.connect(AUTH_DB)
+        db.execute("PRAGMA journal_mode=WAL")
         try:
             db.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)",
@@ -90,7 +104,6 @@ def signup():
 
         db.close()
 
-        # create per-user chat DB
         common.init_user_db(username)
 
         session["user"] = username

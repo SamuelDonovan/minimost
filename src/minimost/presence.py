@@ -1,17 +1,28 @@
 # From the python standard library
 import time
 import sqlite3
+from pathlib import Path
 
 # From Flask
 from flask import session, request, Blueprint
 
 presence_bp = Blueprint("presence", __name__)
 
-PRESENCE_DB = "presence.db"
+_HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent.parent
+PRESENCE_DB = str(_PROJECT_ROOT / "presence.db")
 
 
 def _init_tables():
     db = sqlite3.connect(PRESENCE_DB)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS presence (
+            user TEXT PRIMARY KEY,
+            last_seen INTEGER NOT NULL,
+            state TEXT NOT NULL
+        )
+    """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS typing (
             user    TEXT NOT NULL,
@@ -28,6 +39,15 @@ def _init_tables():
             PRIMARY KEY (channel, msg_ts, reader)
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS message_reactions (
+            channel TEXT NOT NULL,
+            msg_ts  REAL NOT NULL,
+            emoji   TEXT NOT NULL,
+            reactor TEXT NOT NULL,
+            PRIMARY KEY (channel, msg_ts, emoji, reactor)
+        )
+    """)
     db.commit()
     db.close()
 
@@ -42,6 +62,7 @@ def typing_start(channel):
         return "", 204
     now = int(time.time())
     db = sqlite3.connect(PRESENCE_DB)
+    db.execute("PRAGMA journal_mode=WAL")
     db.execute(
         "INSERT OR REPLACE INTO typing (user, channel, ts) VALUES (?, ?, ?)",
         (user, channel, now),
@@ -58,6 +79,7 @@ def typing_get(channel):
         return []
     cutoff = int(time.time()) - 5
     db = sqlite3.connect(PRESENCE_DB)
+    db.execute("PRAGMA journal_mode=WAL")
     rows = db.execute(
         "SELECT user FROM typing WHERE channel = ? AND ts >= ? AND user != ?",
         (channel, cutoff, user),
@@ -71,24 +93,21 @@ def presence():
     user = session.get("user")
     if not user:
         return "", 204
-
     data = request.get_json(silent=True) or {}
     state = data.get("state")
-    return update_presence(user, state)
+    update_presence(user, state)
+    return "", 204
 
 
 def update_presence(user, state):
     if not state:
-        return "", 204
-
+        return
     now = int(time.time())
     db = sqlite3.connect(PRESENCE_DB)
-
+    db.execute("PRAGMA journal_mode=WAL")
     db.execute(
         "INSERT OR REPLACE INTO presence (user, last_seen, state) VALUES (?, ?, ?)",
         (user, now, state),
     )
-
     db.commit()
     db.close()
-    return "", 204

@@ -211,3 +211,6 @@ __marimo__/
 
 # Images 
 uploads/*
+
+# Secrets
+secret.key

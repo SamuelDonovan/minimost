@@ -1,8 +1,10 @@
-# From the python standard library
 from pathlib import Path
 import sqlite3
 
-DB_DIR = Path("users")
+_HERE = Path(__file__).resolve().parent
+_PROJECT_ROOT = _HERE.parent.parent
+
+DB_DIR = _PROJECT_ROOT / "users"
 
 
 def user_db_path(username: str) -> Path:
@@ -12,7 +14,8 @@ def user_db_path(username: str) -> Path:
 def init_user_db(username: str):
     DB_DIR.mkdir(exist_ok=True)
     path = user_db_path(username)
-    db = sqlite3.connect(path)
+    db = sqlite3.connect(str(path))
+    db.execute("PRAGMA journal_mode=WAL")
     cur = db.cursor()
 
     cur.execute("""
@@ -37,6 +40,7 @@ def init_user_db(username: str):
         reply_to_id INTEGER,
 
         reactions TEXT,
+        reactions_ts REAL,
         mentions TEXT,
         metadata TEXT,
 
