@@ -78,6 +78,14 @@ def channel_users(channel: str) -> List[str]:
     return all_users()
 
 
+def is_valid_channel(channel: str, user: str) -> bool:
+    """Return True only if user is permitted to access this channel."""
+    if channel.startswith("dm:"):
+        parts = channel.split(":")
+        return len(parts) >= 3 and user in parts[1:]
+    return channel in CHANNELS
+
+
 @chat_bp.route("/channels")
 @auth.login_required
 def channels():
@@ -267,9 +275,16 @@ def messages(channel):
 @auth.login_required
 def send(channel):
     sender = session["user"]
+
+    if not is_valid_channel(channel, sender):
+        return "forbidden", 403
+
     text = (request.form.get("text") or "").rstrip()
     reply_to_id_raw = request.form.get("reply_to_id")
-    reply_to_id = int(reply_to_id_raw) if reply_to_id_raw else None
+    try:
+        reply_to_id = int(reply_to_id_raw) if reply_to_id_raw else None
+    except (ValueError, TypeError):
+        reply_to_id = None
 
     files = request.files.getlist("files")
     filenames = []

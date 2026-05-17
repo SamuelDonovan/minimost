@@ -8,6 +8,8 @@ from flask import session, request, Blueprint
 
 presence_bp = Blueprint("presence", __name__)
 
+_VALID_STATES = {"active", "idle", "hidden", "offline"}
+
 _HERE = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent.parent
 PRESENCE_DB = str(_PROJECT_ROOT / "presence.db")
@@ -100,7 +102,7 @@ def presence():
 
 
 def update_presence(user, state):
-    if not state:
+    if state not in _VALID_STATES:
         return
     now = int(time.time())
     db = sqlite3.connect(PRESENCE_DB)
