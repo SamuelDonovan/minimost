@@ -20,11 +20,11 @@ release = "0.1.0"
 # -- General configuration ---------------------------------------------------
 
 extensions = [
-    "sphinx.ext.autodoc",       # Generate docs from docstrings
-    "sphinx.ext.napoleon",      # Support Google/NumPy style docstrings
-    "sphinx.ext.viewcode",      # Add [source] links to autodoc output
-    "sphinx.ext.intersphinx",   # Cross-reference to external docs
-    "sphinxcontrib.httpdomain", # HTTP route directives (.. http:get::, etc.)
+    "sphinx.ext.autodoc",  # Generate docs from docstrings
+    "sphinx.ext.napoleon",  # Support Google/NumPy style docstrings
+    "sphinx.ext.viewcode",  # Add [source] links to autodoc output
+    "sphinx.ext.intersphinx",  # Cross-reference to external docs
+    "sphinxcontrib.httpdomain",  # HTTP route directives (.. http:get::, etc.)
 ]
 
 # autodoc settings

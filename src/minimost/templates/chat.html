@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <title>MiniMost</title>
@@ -17,7 +17,7 @@
     const CURRENT_USER = "{{ session['user'] }}";
 </script>
 
-<div id="sidebar-backdrop" onclick="closeSidebar()"></div>
+<div id="sidebar-backdrop" role="button" tabindex="0" aria-label="Close sidebar" onclick="closeSidebar()" onkeydown="if(event.key==='Enter'||event.key===' ')closeSidebar()"></div>
 <div id="sidebar">
     <div id="sidebar-static">
         <button id="new-dm-btn" class="icon-btn" title="Start new direct message">
@@ -157,7 +157,7 @@
 
 <!-- Help Overlay -->
 <div id="help-overlay" class="hidden">
-    <div id="help-modal" role="dialog" aria-modal="true">
+    <dialog id="help-modal" open aria-label="Keyboard shortcuts and help">
         <button id="help-close" aria-label="Close help">&times;</button>
 
         <h2>Mini<span style="color:#007acc">Most</span></h2>
@@ -204,7 +204,7 @@
             <li><span class="help-presence away"></span> <b>Away</b> – Tab hidden or in background</li>
             <li><span class="help-presence offline"></span> <b>Offline</b> – Not connected</li>
         </ul>
-    </div>
+    </dialog>
 </div>
 
 <!-- keyboard handling -->
@@ -349,7 +349,6 @@ document.addEventListener("keydown", userInput);
 let channel = "general";
 let lastTs = 0;
 let unread = new Set();
-const seen = new Set();
 let lastRenderedDate = null;
 let forceScrollToBottom = false;
 let pendingFiles = [];
@@ -389,7 +388,7 @@ function addFiles(files) {
 // User color
 function userColor(name) {
     let h = 0;
-    for (let c of name) h = c.charCodeAt(0) + ((h << 5) - h);
+    for (let c of name) h = c.codePointAt(0) + ((h << 5) - h);
     return `hsl(${Math.abs(h) % 360}, 65%, 55%)`;
 }
 
@@ -603,7 +602,7 @@ let lastUnreadCount = 0;
 let channelUnreadCount = 0;
 
 function initDesktopNotifications() {
-    if (!("Notification" in window)) return;
+    if (!("Notification" in globalThis)) return;
     if (Notification.permission === "default") {
         Notification.requestPermission();
     }
@@ -624,7 +623,7 @@ function toggleNotifMute() {
 }
 
 function sendDesktopNotification(count) {
-    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if (!("Notification" in globalThis) || Notification.permission !== "granted") return;
     if (!document.hidden) return;
     new Notification("MiniMost", {
         body: `You have ${count} unread message${count === 1 ? "" : "s"}`,
@@ -806,7 +805,6 @@ function switchChannel(c) {
     channel = c;
     lastTs = 0;
     lastRenderedDate = null;
-    seen.clear();
 
     document.getElementById("chat").innerHTML = "";
     document.getElementById("typing-indicator").textContent = "";
@@ -827,6 +825,119 @@ function switchChannel(c) {
 // Fetch Messages
 function isNearBottom(el, threshold = 120) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+}
+
+function _removeDeletedMsg(existing, ts) {
+    if (!existing) return;
+    existing.remove();
+    const divider = document.getElementById(`date-${new Date(ts * 1000).toDateString()}`);
+    if (!divider) return;
+    let next = divider.nextElementSibling;
+    let hasMessages = false;
+    while (next && !next.classList.contains("date-divider")) {
+        if (next.classList.contains("msg")) { hasMessages = true; break; }
+        next = next.nextElementSibling;
+    }
+    if (!hasMessages) divider.remove();
+}
+
+function _ensureDateDivider(chat, dateKey, msgDate) {
+    const dividerId = `date-${dateKey}`;
+    if (document.getElementById(dividerId)) return false;
+    const divider = document.createElement("div");
+    divider.className = "date-divider";
+    divider.id = dividerId;
+    divider.textContent = msgDate.toLocaleDateString(undefined, {
+        weekday: "long", year: "numeric", month: "long", day: "numeric"
+    });
+    chat.appendChild(divider);
+    return true;
+}
+
+function _buildMsgHtml(m, time, fullTime, color) {
+    let html = "";
+    if (m.reply_to_id) {
+        html += `<div class="quoted-msg" id="quoted-${m.id}" onclick="scrollToMsg(${m.reply_to_id})"><em>Loading…</em></div>`;
+    }
+    html += `<span class="time" title="${fullTime}">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
+
+    if (m.edited) {
+        const editedDate = new Date(m.edited_ts * 1000);
+        const formatted = editedDate.toLocaleString('en-US', {
+            month: '2-digit', day: '2-digit', year: '2-digit',
+            hour: '2-digit', minute: '2-digit', hour12: true
+        });
+        html += `
+            <span class="edit-icon">
+                <svg class="edited-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <title>Last edited at ${formatted}</title>
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 8v4l3 3"/>
+                </svg>
+            </span>
+        `;
+    }
+
+    if (m.sender === CURRENT_USER) {
+        html += `<button class="edit-btn" title="Edit" onclick="startEdit(${m.id})">
+            <svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+            </svg>
+            </button>`;
+        html += `<button class="delete-btn" title="Delete" onclick="deleteMsg(${m.id})">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6"/>
+                <path d="M14 11v6"/>
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+            </svg>
+            </button>`;
+    }
+
+    html += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 17 4 12 9 7"/>
+            <path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
+        </svg>
+    </button>`;
+
+    html += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+            <line x1="9" y1="9" x2="9.01" y2="9"/>
+            <line x1="15" y1="9" x2="15.01" y2="9"/>
+        </svg>
+    </button>`;
+
+    html += ` : `;
+
+    if (m.content?.trim()) {
+        html += `<span class="text" id="msg-text-${m.id}">${formatText(m.content)}</span>`;
+    }
+
+    if (m.filename) {
+        const files = m.filename.split(",");
+        for (const f of files) {
+            if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
+                html += `
+                    <a href="/files/${f}" target="_blank">
+                        <img src="/files/${f}" class="chat-image" loading="lazy"
+                            onerror="this.onerror=null; this.src='static/retention.png';">
+                    </a>
+                `;
+            }
+        }
+    }
+
+    if (m.sender === CURRENT_USER) {
+        html += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
+    }
+
+    html += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
+    return html;
 }
 
 function fetchMessages() {
@@ -851,34 +962,18 @@ function fetchMessages() {
             let playNewMsgSound = false;
 
             data.forEach(m => {
-                // ⛔ Extra safety (paranoia is good here)
                 if (requestedChannel !== channel) return;
-
                 const msgId = `msg-${m.id}`;
                 const existing = document.getElementById(msgId);
 
                 if (m.deleted) {
-                    if (existing) {
-                        existing.remove();
-                        const divider = document.getElementById(`date-${new Date(m.ts * 1000).toDateString()}`);
-                        if (divider) {
-                            let next = divider.nextElementSibling;
-                            let hasMessages = false;
-                            while (next && !next.classList.contains("date-divider")) {
-                                if (next.classList.contains("msg")) { hasMessages = true; break; }
-                                next = next.nextElementSibling;
-                            }
-                            if (!hasMessages) divider.remove();
-                        }
-                    }
+                    _removeDeletedMsg(existing, m.ts);
                     lastTs = Math.max(lastTs, m.deleted_ts || m.ts);
                     return;
                 }
 
                 const hasText = m.content && m.content.trim();
                 const hasImage = m.filename && m.filename.trim();
-
-                // 🚫 Skip only truly empty messages
                 if (!hasText && !hasImage) {
                     lastTs = Math.max(lastTs, m.ts);
                     return;
@@ -886,170 +981,15 @@ function fetchMessages() {
 
                 const msgDate = new Date(m.ts * 1000);
                 const dateKey = msgDate.toDateString();
+                if (_ensureDateDivider(chat, dateKey, msgDate)) appended = true;
 
-                const dividerId = `date-${dateKey}`;
-                if (!document.getElementById(dividerId)) {
-                    const divider = document.createElement("div");
-                    divider.className = "date-divider";
-                    divider.id = dividerId;
-                    divider.textContent = msgDate.toLocaleDateString(undefined, {
-                        weekday: "long",
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric"
-                    });
-                    chat.appendChild(divider);
-                    appended = true;
-                }
-
-                const time = msgDate.toLocaleTimeString([], {
-                    hour: "numeric",
-                    minute: "2-digit"
-                });
-
+                const time = msgDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
                 const fullTime = msgDate.toLocaleString(undefined, {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                    second: "2-digit"
+                    weekday: "long", year: "numeric", month: "long", day: "numeric",
+                    hour: "numeric", minute: "2-digit", second: "2-digit"
                 });
-
                 const color = userColor(m.sender);
-
-                let html = "";
-                if (m.reply_to_id) {
-                    html += `<div class="quoted-msg" id="quoted-${m.id}" onclick="scrollToMsg(${m.reply_to_id})"><em>Loading…</em></div>`;
-                }
-                html += `<span class="time" title="${fullTime}">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
-
-                if (m.edited) {
-                    const editedDate = new Date(m.edited_ts * 1000); // JS uses milliseconds
-                    const formatted = editedDate.toLocaleString('en-US', {
-                        month: '2-digit',
-                        day: '2-digit',
-                        year: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true 
-                    });
-                    html += `
-                        <span class="edit-icon" >
-                            <svg class="edited-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <title>Last edited at ${formatted}</title>
-                                <circle cx="12" cy="12" r="10"/>
-                                <path d="M12 8v4l3 3"/>
-                            </svg>
-                        </span>
-                    `;
-                }
-
-                if (m.sender === CURRENT_USER) {
-                    html += `<button class="edit-btn" title="Edit" onclick="startEdit(${m.id})">
-                    <svg
-                        class="edit-icon"
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        >
-                        <path d="M12 20h9"/>
-                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                    </svg>
-                    </button>`;
-                    html += `<button class="delete-btn" title="Delete" onclick="deleteMsg(${m.id})">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        >
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                        <path d="M10 11v6"/>
-                        <path d="M14 11v6"/>
-                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-                    </svg>
-                    </button>`;
-                }
-
-                html += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        >
-                        <polyline points="9 17 4 12 9 7"/>
-                        <path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
-                    </svg>
-                </button>`;
-
-                html += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        >
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-                        <line x1="9" y1="9" x2="9.01" y2="9"/>
-                        <line x1="15" y1="9" x2="15.01" y2="9"/>
-                    </svg>
-                </button>`;
-
-                html += ` : `;
-
-                if (m.content?.trim()) {
-                    html += `<span class="text" id="msg-text-${m.id}">${formatText(m.content)}</span>`;
-                }
-
-                if (m.filename) {
-                    const files = m.filename.split(",");
-                    for (const f of files) {
-                        if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
-                            html += `
-                                <a href="/files/${f}" target="_blank">
-                                    <img
-                                        src="/files/${f}"
-                                        class="chat-image"
-                                        loading="lazy"
-                                        onerror="this.onerror=null; this.src='static/retention.png';"
-                                    >
-                                </a>
-                            `;
-                        }
-                    }
-                }
-
-                if (m.sender === CURRENT_USER) {
-                    html += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
-                }
-
-                html += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
+                const html = _buildMsgHtml(m, time, fullTime, color);
 
                 if (existing) {
                     const textSpan = existing.querySelector(".text");
@@ -1070,10 +1010,7 @@ function fetchMessages() {
                     if (m.sender !== CURRENT_USER) playNewMsgSound = true;
                 }
 
-                if (m.reply_to_id) {
-                    loadQuotedMsg(m.id, m.reply_to_id);
-                }
-
+                if (m.reply_to_id) loadQuotedMsg(m.id, m.reply_to_id);
                 lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0, m.reactions_ts || 0);
             });
 
@@ -1155,7 +1092,7 @@ dmUsersInput.addEventListener("keydown", (e) => {
     if (e.key === "Tab" && suggestionsVisible && items.length) {
         e.preventDefault();
         selectSuggestion(
-            suggestionIndex >= 0 ? suggestionIndex : 0
+            Math.max(suggestionIndex, 0)
         );
         return;
     }
@@ -1167,7 +1104,7 @@ dmUsersInput.addEventListener("keydown", (e) => {
         // If typing a username and suggestions exist → autocomplete
         if (typingUser && suggestionsVisible && items.length) {
             selectSuggestion(
-                suggestionIndex >= 0 ? suggestionIndex : 0
+                Math.max(suggestionIndex, 0)
             );
             return;
         }
@@ -1833,12 +1770,12 @@ function pickerReact(reactionName) {
 
 function buildReactionsHtml(msgId, reactionsJson) {
     let reactions;
-    try { reactions = JSON.parse(reactionsJson || "{}"); } catch(e) { reactions = {}; }
+    try { reactions = JSON.parse(reactionsJson || "{}"); } catch { reactions = {}; }
     let html = "";
     for (const name in reactions) {
         const users = reactions[name];
         if (!users || users.length === 0) continue;
-        const isActive = users.indexOf(CURRENT_USER) !== -1;
+        const isActive = users.includes(CURRENT_USER);
         const tooltip = escapeHtml(users.join(", "));
         html += `<span class="reaction-chip${isActive ? " active" : ""}" onclick="toggleReaction(${msgId}, '${name}')">`;
         html += `<img src="../static/reactions/${name}.svg" width="18" height="18" alt="${name}">`;
@@ -1964,9 +1901,9 @@ function scrollToMsg(msgId) {
 // Prevent HTML injection when re-inserting text
 function escapeHtml(text) {
     return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
 }
 
 // Fuzzy-matches query against text as a subsequence (case-insensitive).
@@ -1993,7 +1930,7 @@ function fuzzySearch(query, text) {
             run = 0;
         }
         const idx = indices[i];
-        if (idx === 0 || /[\s_\-]/.test(t[idx - 1])) score += 8;
+        if (idx === 0 || /[\s_-]/.test(t[idx - 1])) score += 8;
     }
     if (indices[0] === 0) score += 5;
     return { score, indices };
@@ -2056,7 +1993,7 @@ document.getElementById("msg-search-close").onclick = () => {
 };
 
 // Close modal on outside click
-window.onclick = e => {
+globalThis.onclick = e => {
     if (e.target === searchModal) searchModal.style.display = "none";
     if (e.target === dmModal) dmModal.style.display = "none";
 };
@@ -2120,7 +2057,15 @@ function wrapSelection(el, wrapper) {
     const end = el.selectionEnd;
     const value = el.value;
 
-    if (start !== end) {
+    if (start === end) {
+        // Insert wrapper and place cursor in between
+        el.value =
+            value.slice(0, start) +
+            wrapper + wrapper +
+            value.slice(end);
+
+        el.selectionStart = el.selectionEnd = start + wrapper.length;
+    } else {
         // Wrap selected text
         el.value =
             value.slice(0, start) +
@@ -2131,15 +2076,44 @@ function wrapSelection(el, wrapper) {
 
         el.selectionStart = start + wrapper.length;
         el.selectionEnd = end + wrapper.length;
-    } else {
-        // Insert wrapper and place cursor in between
-        el.value =
-            value.slice(0, start) +
-            wrapper + wrapper +
-            value.slice(end);
-
-        el.selectionStart = el.selectionEnd = start + wrapper.length;
     }
+}
+
+function _handleCtrlKey(e, isInput) {
+    if (!isInput) {
+        const items = Array.from(
+            document.querySelectorAll("#sidebar-dynamic [data-channel]")
+        );
+        if (!items.length) return;
+        let currentIndex = items.findIndex(el => el.dataset.channel === channel);
+        if (currentIndex === -1) currentIndex = 0;
+        if (e.key === "j") {
+            switchChannel(items[(currentIndex + 1) % items.length].dataset.channel);
+            e.preventDefault();
+        } else if (e.key === "k") {
+            switchChannel(items[(currentIndex - 1 + items.length) % items.length].dataset.channel);
+            e.preventDefault();
+        }
+        return;
+    }
+    if (e.key === "b") { e.preventDefault(); wrapSelection(e.target, "**"); }
+    else if (e.key === "i") { e.preventDefault(); wrapSelection(e.target, "*"); }
+    else if (e.key === "u") { e.preventDefault(); wrapSelection(e.target, "__"); }
+    else if (e.key === "s") { e.preventDefault(); wrapSelection(e.target, "~~"); }
+}
+
+function _handleVimKey(e) {
+    const scrollContainer = document.getElementById("chat");
+    const scrollRate = 200;
+    if (e.key === "j") { scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' }); }
+    else if (e.key === "k") { scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' }); }
+    else if (e.key === "d") { scrollContainer.scrollBy({ top: 2 * scrollRate, behavior: 'smooth' }); }
+    else if (e.key === "u") { scrollContainer.scrollBy({ top: -2 * scrollRate, behavior: 'smooth' }); }
+    else if (e.key === "G") { scrollContainer.scrollTop = scrollContainer.scrollHeight; }
+    else if (e.key === "g") { scrollContainer.scrollTop = 0; }
+    else if (e.key === "i") { e.preventDefault(); focusMessageInput(); }
+    else if (e.key === "o") { e.preventDefault(); openDmModal(); }
+    else if (e.key === "/" || e.key === "f") { e.preventDefault(); startSearch(); }
 }
 
 function userInput(e) {
@@ -2148,93 +2122,15 @@ function userInput(e) {
     if (e.key === "Escape") {
         document.activeElement?.blur();
         closeAllModalsAndFocusChat();
-    }
-    // Avoid triggering while typing in inputs
-    else if (e.key === "?" && !e.target.matches("input, textarea")) {
+    } else if (e.key === "?" && !isInput) {
         e.preventDefault();
         openHelp();
     }
 
-    /* ================================
-       Ctrl-based shortcuts
-    ================================= */
     if (e.ctrlKey || e.metaKey) {
-
-        // ---- Channel cycling (NOT in input) ----
-        if (!isInput) {
-            const items = Array.from(
-                document.querySelectorAll("#sidebar-dynamic [data-channel]")
-            );
-            if (!items.length) return;
-
-            let currentIndex = items.findIndex(
-                (el) => el.dataset.channel === channel
-            );
-            if (currentIndex === -1) currentIndex = 0;
-
-            if (e.key === "j") {
-                switchChannel(items[(currentIndex + 1) % items.length].dataset.channel);
-                e.preventDefault();
-            } else if (e.key === "k") {
-                switchChannel(items[(currentIndex - 1 + items.length) % items.length].dataset.channel);
-                e.preventDefault();
-            }
-            return;
-        }
-
-        // ---- Text formatting (ONLY in input) ----
-        if (isInput) {
-            if (e.key === "b") {
-                e.preventDefault();
-                wrapSelection(e.target, "**");
-            } else if (e.key === "i") {
-                e.preventDefault();
-                wrapSelection(e.target, "*");
-            } else if (e.key === "u") {
-                e.preventDefault();
-                wrapSelection(e.target, "__");
-            } else if (e.key === "s") {
-                e.preventDefault();
-                wrapSelection(e.target, "~~");
-            }
-            return;
-        }
-    }
-
-    /* ================================
-       Vim-style scrolling (NOT in input)
-    ================================= */
-    if (!isInput) {
-        const scrollContainer = document.getElementById("chat");
-        const scrollRate = 200;
-        if (e.key === "j") {
-            scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' });
-        } else if (e.key === "k") {
-            scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' });
-        } else if (e.key === "d") {
-             scrollContainer.scrollBy({ top: 2*scrollRate, behavior: 'smooth' });
-        }
-        else if (e.key === "u") {
-             scrollContainer.scrollBy({ top: -2*scrollRate, behavior: 'smooth' });
-        }
-        else if (e.key === "G") {
-             scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        }
-        else if (e.key === "g") {
-             scrollContainer.scrollTop = 0;
-        }
-        else if (e.key === "i") {
-             e.preventDefault();
-             focusMessageInput();
-        }
-        else if (e.key === "o") {
-             e.preventDefault();
-             openDmModal();
-        }
-        else if ((e.key === "/") || (e.key === "f")) {
-             e.preventDefault();
-             startSearch();
-        }
+        _handleCtrlKey(e, isInput);
+    } else if (!isInput) {
+        _handleVimKey(e);
     }
 }
 
@@ -2298,6 +2194,15 @@ function scrollIntoViewIfNeeded(el) {
     }
 }
 
+function _goToSearchResult(msgChannel, msgId) {
+    searchModal.style.display = "none";
+    switchChannel(msgChannel);
+    setTimeout(() => {
+        const el = document.getElementById(`msg-${msgId}`);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 200);
+}
+
 // Live search
 searchInput.addEventListener("input", debounce(() => {
     const q = searchInput.value.trim();
@@ -2322,14 +2227,7 @@ searchInput.addEventListener("input", debounce(() => {
             const time = new Date(msg.ts * 1000).toLocaleTimeString();
             const snippet = buildSearchSnippet(msg.content, result.indices);
             d.innerHTML = `[${time}] <b>${escapeHtml(msg.sender)}</b>: ${snippet}`;
-            d.onclick = () => {
-                searchModal.style.display = "none";
-                switchChannel(msg.channel);
-                setTimeout(() => {
-                    const el = document.getElementById(`msg-${msg.id}`);
-                    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                }, 200);
-            };
+            d.onclick = () => _goToSearchResult(msg.channel, msg.id);
             searchResults.appendChild(d);
         });
     });
@@ -2345,13 +2243,11 @@ searchInput.addEventListener("keydown", (e) => {
         e.preventDefault();
         searchSelectedIndex = (searchSelectedIndex + 1) % items.length;
         updateSearchHighlight();
-        //scrollIntoViewIfNeeded(items[searchSelectedIndex]);
     }
     else if (e.key === "ArrowUp") {
         e.preventDefault();
         searchSelectedIndex = (searchSelectedIndex - 1 + items.length) % items.length;
         updateSearchHighlight();
-        //scrollIntoViewIfNeeded(items[searchSelectedIndex]);
     }
     else if (e.key === "Enter") {
         e.preventDefault();
@@ -2467,8 +2363,8 @@ const _EXT_TO_LANG = {
 };
 
 const _HL_RULES = (() => {
-    const STR     = /"[^"\\\n]*(?:\\.[^"\\\n]*)*"|'[^'\\\n]*(?:\\.[^'\\\n]*)*'/y;
-    const NUM     = /\b0x[\da-fA-F]+[uUlL]*|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[fFlLuU]*\b/y;
+    const STR     = /"[^"\\\n]*(?:\\.[^"\\\n]*)*"|'[^'\\\n]*(?:\\.[^'\\\n]*)*'/y; // NOSONAR
+    const NUM     = /\b0x[\da-fA-F]+[uUlL]*|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[fFlLuU]*\b/y; // NOSONAR
     const CMT_SL  = /\/\/[^\n]*/y;
     const CMT_BLK = /\/\*.*?\*\//y;
     const CMT_HSH  = /#[^\n]*/y;
@@ -2477,8 +2373,8 @@ const _HL_RULES = (() => {
     const CM_VAR   = /\$(?:ENV|CACHE)?\{[^}]*\}/y;
     const VL_NUM   = /\d+\s*'\s*[bBoOdDhH][0-9a-fA-FxXzZ_]*/y;
     const VL_DIR   = /`\w+/y;
-    const kw  = (...ws) => new RegExp(`\\b(?:${ws.join('|')})\\b`, 'y');
-    const kwi = (...ws) => new RegExp(`\\b(?:${ws.join('|')})\\b`, 'yi');
+    const kw  = (...ws) => new RegExp(String.raw`\b(?:${ws.join('|')})\b`, 'y');
+    const kwi = (...ws) => new RegExp(String.raw`\b(?:${ws.join('|')})\b`, 'yi');
 
     return {
         python: [
@@ -2649,7 +2545,7 @@ const _HL_RULES = (() => {
 })();
 
 function _syntaxHighlight(text, ext) {
-    const _esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const _esc = s => s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
     const lang = _EXT_TO_LANG[(ext || '').toLowerCase()];
     const rules = lang ? _HL_RULES[lang] : null;
     if (!rules) return _esc(text);
@@ -2750,7 +2646,7 @@ async function attachPreview(msgEl) {
     try {
         const resp = await fetch(`/link_preview?url=${encodeURIComponent(url)}`);
         data = await resp.json();
-    } catch (_) {
+    } catch {
         return;
     }
 
@@ -2767,7 +2663,7 @@ async function attachPreview(msgEl) {
 
     const receipt = msgEl.querySelector(".read-receipt");
     if (receipt) {
-        msgEl.insertBefore(previewEl, receipt);
+        receipt.before(previewEl);
     } else {
         msgEl.appendChild(previewEl);
     }
@@ -2786,7 +2682,7 @@ async function attachPreview(msgEl) {
         msgEl.style.fontSize  = size + "px";
     }
 
-    let fontSize = parseFloat(localStorage.getItem("chatFontSize")) || FONT_DEFAULT;
+    let fontSize = Number.parseFloat(localStorage.getItem("chatFontSize")) || FONT_DEFAULT;
     fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, fontSize));
     applyFontSize(fontSize);
 
@@ -2796,7 +2692,7 @@ async function attachPreview(msgEl) {
     function pinchDist(touches) {
         const dx = touches[0].clientX - touches[1].clientX;
         const dy = touches[0].clientY - touches[1].clientY;
-        return Math.sqrt(dx * dx + dy * dy);
+        return Math.hypot(dx, dy);
     }
 
     chatEl.addEventListener("touchstart", (e) => {

@@ -52,6 +52,8 @@ _PROJECT_ROOT = _HERE.parent.parent
 AUTH_DB = str(_PROJECT_ROOT / "auth.db")
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_\-]{1,32}")
+_WAL = "PRAGMA journal_mode=WAL"
+_SIGNUP_TEMPLATE = "signup.html"
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -108,7 +110,7 @@ def _seed_channel_history(new_user: str) -> None:
     :returns: None
     """
     adb = sqlite3.connect(AUTH_DB)
-    adb.execute("PRAGMA journal_mode=WAL")
+    adb.execute(_WAL)
     row = adb.execute(
         "SELECT username FROM users WHERE username != ? LIMIT 1", (new_user,)
     ).fetchone()
@@ -122,7 +124,7 @@ def _seed_channel_history(new_user: str) -> None:
         return
 
     src = sqlite3.connect(str(src_path))
-    src.execute("PRAGMA journal_mode=WAL")
+    src.execute(_WAL)
     rows = src.execute("""
         SELECT id, channel, sender, content, content_type, filename, ts,
                edited, edited_ts, deleted, deleted_ts, reply_to_id,
@@ -136,7 +138,7 @@ def _seed_channel_history(new_user: str) -> None:
         return
 
     dst = sqlite3.connect(str(common.user_db_path(new_user)))
-    dst.execute("PRAGMA journal_mode=WAL")
+    dst.execute(_WAL)
     dst.executemany(
         """
         INSERT INTO messages
@@ -225,7 +227,7 @@ def login():
         password = request.form["password"]
 
         db = sqlite3.connect(AUTH_DB)
-        db.execute("PRAGMA journal_mode=WAL")
+        db.execute(_WAL)
         row = db.execute(
             "SELECT password_hash FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -243,7 +245,7 @@ def login():
     return render_template("login.html")
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["GET"])
 @login_required
 def logout():
     """Log the current user out and redirect to the login page.
@@ -257,10 +259,36 @@ def logout():
     :returns: A redirect response to ``/login``.
     :rtype: flask.Response
     """
-    user = session.get("user")
+    user = session["user"]
     presence.update_presence(user, "offline")
     session.clear()
     return redirect("/login")
+
+
+def _validate_signup(username: str, password: str, confirm: str):
+    """Validate signup form fields and return an error string, or ``None`` on success.
+
+    :param username: The submitted username.
+    :param password: The submitted password.
+    :param confirm: The password confirmation field.
+    :returns: A human-readable error message, or ``None`` if all rules pass.
+    :rtype: str or None
+    """
+    if not username or not password:
+        return "Missing fields"
+    if not _USERNAME_RE.fullmatch(username):
+        return "Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)"
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if not re.search(r"\d", password):
+        return "Password must contain at least one number"
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
+        return "Password must contain at least one special character"
+    if password != confirm:
+        return "Passwords do not match"
+    return None
 
 
 @auth_bp.route("/signup", methods=["GET", "POST"])
@@ -309,42 +337,12 @@ def signup():
         password = request.form["password"]
         confirm = request.form["confirm_password"]
 
-        if not username or not password:
-            return render_template("signup.html", error="Missing fields")
-
-        if not _USERNAME_RE.fullmatch(username):
-            return render_template(
-                "signup.html",
-                error="Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)",
-            )
-
-        if len(password) < 8:
-            return render_template(
-                "signup.html", error="Password must be at least 8 characters"
-            )
-
-        if not re.search(r"\d", password):
-            return render_template(
-                "signup.html", error="Password must contain at least one number"
-            )
-
-        if not re.search(r"[A-Z]", password):
-            return render_template(
-                "signup.html",
-                error="Password must contain at least one uppercase letter",
-            )
-
-        if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
-            return render_template(
-                "signup.html",
-                error="Password must contain at least one special character",
-            )
-
-        if password != confirm:
-            return render_template("signup.html", error="Passwords do not match")
+        error = _validate_signup(username, password, confirm)
+        if error:
+            return render_template(_SIGNUP_TEMPLATE, error=error)
 
         db = sqlite3.connect(AUTH_DB)
-        db.execute("PRAGMA journal_mode=WAL")
+        db.execute(_WAL)
         try:
             db.execute(
                 "INSERT INTO users (username, password_hash) VALUES (?, ?)",
@@ -353,7 +351,7 @@ def signup():
             db.commit()
         except sqlite3.IntegrityError:
             db.close()
-            return render_template("signup.html", error="User already exists")
+            return render_template(_SIGNUP_TEMPLATE, error="User already exists")
 
         db.close()
 
@@ -363,4 +361,4 @@ def signup():
         session["user"] = username
         return redirect("/")
 
-    return render_template("signup.html")
+    return render_template(_SIGNUP_TEMPLATE)

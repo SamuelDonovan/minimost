@@ -7,6 +7,7 @@
 [![security: semgrep](https://img.shields.io/badge/security-semgrep-green.svg)](https://semgrep.dev/)
 [![CodeQL](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml)
 [![Documentation Status](https://readthedocs.org/projects/minimost/badge/?version=latest)](https://minimost.readthedocs.io/en/latest/)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=SamuelDonovan_minimost)
 
 **MiniMost** is a lightweight, self-hosted chat platform built for private networks. It runs entirely on Python and SQLite — no external database, no root access, no infrastructure required. Just Flask and a browser.
 

@@ -70,6 +70,8 @@ from . import preview as preview_mod
 chat_bp = Blueprint("chat", __name__)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_WAL = "PRAGMA journal_mode=WAL"
+_MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
 
 _HERE = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent.parent
@@ -128,7 +130,7 @@ def get_db(username: str):
         db.close()
     """
     db = sqlite3.connect(str(common.user_db_path(username)))
-    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(_WAL)
     db.row_factory = sqlite3.Row
     return db
 
@@ -147,7 +149,7 @@ def all_users() -> List[str]:
     :rtype: list of str
     """
     db = sqlite3.connect(auth.AUTH_DB)
-    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(_WAL)
     rows = db.execute("SELECT username FROM users").fetchall()
     db.close()
     return [r[0] for r in rows]
@@ -236,7 +238,7 @@ def is_valid_channel(channel: str, user: str) -> bool:
     return channel in CHANNELS
 
 
-@chat_bp.route("/channels")
+@chat_bp.route("/channels", methods=["GET"])
 @auth.login_required
 def channels():
     """Return the list of public channel names.
@@ -254,7 +256,7 @@ def channels():
     return jsonify(CHANNELS)
 
 
-@chat_bp.route("/channel_unreads")
+@chat_bp.route("/channel_unreads", methods=["GET"])
 @auth.login_required
 def channel_unreads():
     """Return unread message counts for every public channel.
@@ -279,13 +281,13 @@ def channel_unreads():
     sql = f"SELECT channel, COUNT(*) as count FROM messages WHERE channel IN ({placeholders}) AND sender != ? AND read = 0 AND deleted = 0 GROUP BY channel"  # nosec B608  # fmt: skip
     rows = db.execute(sql, (*CHANNELS, user)).fetchall()
     db.close()
-    result = {ch: 0 for ch in CHANNELS}
+    result = dict.fromkeys(CHANNELS, 0)
     for row in rows:
         result[row["channel"]] = row["count"]
     return jsonify(result)
 
 
-@chat_bp.route("/unread_count")
+@chat_bp.route("/unread_count", methods=["GET"])
 @auth.login_required
 def unread_count():
     """Return the total number of unread direct messages for the current user.
@@ -337,7 +339,7 @@ def unread_count():
     return {"count": count}
 
 
-@chat_bp.route("/dms")
+@chat_bp.route("/dms", methods=["GET"])
 @auth.login_required
 def dms():
     """Return a summary of all DM conversations involving the current user.
@@ -406,7 +408,7 @@ def dms():
     return jsonify(result)
 
 
-@chat_bp.route("/online_users")
+@chat_bp.route("/online_users", methods=["GET"])
 @auth.login_required
 def online_users():
     """Return presence states for all recently active users.
@@ -431,7 +433,7 @@ def online_users():
     presence_timeout = 3600
     cutoff = int(time()) - presence_timeout
     db = sqlite3.connect(presence.PRESENCE_DB)
-    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(_WAL)
     db.row_factory = sqlite3.Row
 
     rows = db.execute(
@@ -444,7 +446,7 @@ def online_users():
     return jsonify({row["user"]: row["state"].lower() for row in rows})
 
 
-@chat_bp.route("/messages/<channel>")
+@chat_bp.route("/messages/<channel>", methods=["GET"])
 @auth.login_required
 def messages(channel):
     """Fetch messages for a channel since a given timestamp.
@@ -544,7 +546,7 @@ def messages(channel):
         ts_list = [r["ts"] for r in result]
         placeholders = ",".join("?" * len(ts_list))
         pdb = sqlite3.connect(presence.PRESENCE_DB)
-        pdb.execute("PRAGMA journal_mode=WAL")
+        pdb.execute(_WAL)
         rx_rows = pdb.execute(
             f"SELECT msg_ts, emoji, reactor FROM message_reactions WHERE channel = ? AND msg_ts IN ({placeholders})",  # nosec B608
             [channel] + ts_list,
@@ -630,23 +632,7 @@ def send(channel):
     except (ValueError, TypeError):
         reply_to_id = None
 
-    files = request.files.getlist("files")
-    filenames = []
-
-    for f in files:
-        if not hasattr(f, "filename"):
-            continue
-
-        if not f.filename:
-            continue
-
-        ext = os.path.splitext(f.filename)[1].lower()
-        if ext not in ALLOWED_EXTENSIONS:
-            continue
-        filename = f"{uuid.uuid4().hex}{ext}"
-
-        f.save(UPLOAD_DIR / filename)
-        filenames.append(filename)
+    filenames = _save_uploaded_files(request.files.getlist("files"))
 
     if not text and not filenames:
         return "empty", 400
@@ -685,7 +671,7 @@ def send(channel):
     return "ok"
 
 
-@chat_bp.route("/message/<int:msg_id>")
+@chat_bp.route("/message/<int:msg_id>", methods=["GET"])
 @auth.login_required
 def get_message(msg_id):
     """Fetch a single message by its database ID.
@@ -720,7 +706,7 @@ def get_message(msg_id):
     return jsonify(dict(row))
 
 
-@chat_bp.route("/files/<path:filename>")
+@chat_bp.route("/files/<path:filename>", methods=["GET"])
 @auth.login_required
 def files(filename):
     """Serve an uploaded image file.
@@ -744,7 +730,7 @@ def files(filename):
     return send_from_directory(UPLOAD_DIR, filename)
 
 
-@chat_bp.route("/search_messages")
+@chat_bp.route("/search_messages", methods=["GET"])
 @auth.login_required
 def search_messages():
     """Search the current user's message history by keyword.
@@ -830,9 +816,7 @@ def edit(msg_id):
     new_text = request.form.get("text", "").strip()
 
     db = get_db(editor)
-    row = db.execute(
-        "SELECT channel, sender, ts FROM messages WHERE id = ?", (msg_id,)
-    ).fetchone()
+    row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
     db.close()
 
     if not row or row["sender"] != editor:
@@ -897,9 +881,7 @@ def delete_message(msg_id):
     deleter = session["user"]
 
     db = get_db(deleter)
-    row = db.execute(
-        "SELECT channel, sender, ts FROM messages WHERE id = ?", (msg_id,)
-    ).fetchone()
+    row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
     db.close()
 
     if not row or row["sender"] != deleter:
@@ -959,6 +941,21 @@ def _load_valid_reactions():
 VALID_REACTIONS = _load_valid_reactions()
 
 
+def _save_uploaded_files(files) -> List[str]:
+    """Validate and save uploaded image files, returning their stored filenames."""
+    filenames = []
+    for f in files:
+        if not hasattr(f, "filename") or not f.filename:
+            continue
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            continue
+        filename = f"{uuid.uuid4().hex}{ext}"
+        f.save(UPLOAD_DIR / filename)
+        filenames.append(filename)
+    return filenames
+
+
 @chat_bp.route("/react/<int:msg_id>", methods=["POST"])
 @auth.login_required
 def react(msg_id):
@@ -1010,9 +1007,7 @@ def react(msg_id):
         return "invalid reaction", 400
 
     db = get_db(user)
-    row = db.execute(
-        "SELECT channel, sender, ts FROM messages WHERE id = ?", (msg_id,)
-    ).fetchone()
+    row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
     db.close()
 
     if not row:
@@ -1025,7 +1020,7 @@ def react(msg_id):
     # Toggle reaction atomically in the shared presence DB to eliminate
     # the read-modify-write race that per-user DBs cannot prevent.
     pdb = sqlite3.connect(presence.PRESENCE_DB)
-    pdb.execute("PRAGMA journal_mode=WAL")
+    pdb.execute(_WAL)
     existing = pdb.execute(
         "SELECT 1 FROM message_reactions WHERE channel=? AND msg_ts=? AND emoji=? AND reactor=?",
         (channel, ts, reaction, user),
@@ -1123,7 +1118,7 @@ def mark_read(channel):
 
     if unread_rows:
         pdb = sqlite3.connect(presence.PRESENCE_DB)
-        pdb.execute("PRAGMA journal_mode=WAL")
+        pdb.execute(_WAL)
         pdb.executemany(
             "INSERT OR IGNORE INTO read_receipts (channel, msg_ts, reader) VALUES (?, ?, ?)",
             [(channel, row[0], user) for row in unread_rows],
@@ -1134,7 +1129,7 @@ def mark_read(channel):
     return "", 204
 
 
-@chat_bp.route("/read_receipts/<channel>")
+@chat_bp.route("/read_receipts/<channel>", methods=["GET"])
 @auth.login_required
 def read_receipts(channel):
     """Return read receipts for all messages in a channel.
@@ -1160,7 +1155,7 @@ def read_receipts(channel):
     :rtype: flask.Response (application/json)
     """
     pdb = sqlite3.connect(presence.PRESENCE_DB)
-    pdb.execute("PRAGMA journal_mode=WAL")
+    pdb.execute(_WAL)
     rows = pdb.execute(
         "SELECT msg_ts, reader FROM read_receipts WHERE channel = ?", (channel,)
     ).fetchall()
@@ -1172,7 +1167,7 @@ def read_receipts(channel):
     return jsonify(result)
 
 
-@chat_bp.route("/users")
+@chat_bp.route("/users", methods=["GET"])
 @auth.login_required
 def users():
     """Return a list of all registered users except the current user.
@@ -1191,7 +1186,7 @@ def users():
     return jsonify([u for u in all_users() if u != me])
 
 
-@chat_bp.route("/link_preview")
+@chat_bp.route("/link_preview", methods=["GET"])
 @auth.login_required
 def link_preview():
     """Fetch a link preview card for a URL.
@@ -1231,7 +1226,7 @@ def link_preview():
     return jsonify(preview_mod.fetch_preview(url))
 
 
-@chat_bp.route("/")
+@chat_bp.route("/", methods=["GET"])
 @auth.login_required
 def index():
     """Serve the main chat single-page application.

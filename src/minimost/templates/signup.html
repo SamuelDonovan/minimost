@@ -17,9 +17,9 @@
         <div class="auth-error">{{ error }}</div>
         {% endif %}
 
-        <form method="post" onsubmit="return checkPasswords()">
+        <form method="post" autocomplete="on" onsubmit="return checkPasswords()">
             <div class="auth-field">
-                <input name="username" placeholder="Username" required autocomplete="username">
+                <input id="username" type="text" name="username" placeholder="Username" required autocomplete="username">
                 <input
                     id="password"
                     name="password"
@@ -61,8 +61,16 @@
     <script>
     function setReq(id, met, active) {
         const el = document.getElementById(id);
-        el.querySelector(".req-icon").textContent = met ? "✓" : (active ? "✗" : "•");
-        el.className = met ? "req-met" : (active ? "req-unmet" : "");
+        let icon;
+        if (met) icon = "✓";
+        else if (active) icon = "✗";
+        else icon = "•";
+        el.querySelector(".req-icon").textContent = icon;
+        let cls;
+        if (met) cls = "req-met";
+        else if (active) cls = "req-unmet";
+        else cls = "";
+        el.className = cls;
     }
 
     function checkPasswords() {
@@ -78,7 +86,7 @@
         const hasLength  = password.length >= 8;
         const hasUpper   = /[A-Z]/.test(password);
         const hasNumber  = /\d/.test(password);
-        const hasSpecial = /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>/?`~]/.test(password);
+        const hasSpecial = /[!@#$%^&*()\-_=+[\]{};':"\\|,.<>/?`~]/.test(password);
 
         setReq("req-length",  hasLength,  active);
         setReq("req-upper",   hasUpper,   active);
