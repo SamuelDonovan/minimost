@@ -17,7 +17,7 @@
     const CURRENT_USER = "{{ session['user'] }}";
 </script>
 
-<div id="sidebar-backdrop" role="button" tabindex="0" aria-label="Close sidebar" onclick="closeSidebar()" onkeydown="if(event.key==='Enter'||event.key===' ')closeSidebar()"></div>
+<button id="sidebar-backdrop" aria-label="Close sidebar" onclick="closeSidebar()"></button>
 <div id="sidebar">
     <div id="sidebar-static">
         <button id="new-dm-btn" class="icon-btn" title="Start new direct message">
@@ -2364,7 +2364,8 @@ const _EXT_TO_LANG = {
 
 const _HL_RULES = (() => {
     const STR     = /"[^"\\\n]*(?:\\.[^"\\\n]*)*"|'[^'\\\n]*(?:\\.[^'\\\n]*)*'/y; // NOSONAR
-    const NUM     = /\b0x[\da-fA-F]+[uUlL]*|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[fFlLuU]*\b/y; // NOSONAR
+    const NUM_HEX = /\b0x[\da-fA-F]+[uUlL]*/y;
+    const NUM_DEC = /\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[fFlLuU]*\b/y;
     const CMT_SL  = /\/\/[^\n]*/y;
     const CMT_BLK = /\/\*.*?\*\//y;
     const CMT_HSH  = /#[^\n]*/y;
@@ -2385,7 +2386,7 @@ const _HL_RULES = (() => {
                'finally','for','from','global','if','import','in','is',
                'lambda','nonlocal','not','or','pass','raise','return',
                'try','while','with','yield'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         js: [
             [STR,     'str'],
@@ -2396,7 +2397,7 @@ const _HL_RULES = (() => {
                'in','instanceof','let','new','null','of','return','static',
                'super','switch','this','throw','true','try','typeof',
                'undefined','var','void','while','with','yield'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         c: [
             [STR,     'str'],
@@ -2409,7 +2410,7 @@ const _HL_RULES = (() => {
                'struct','switch','template','this','throw','true','try',
                'typedef','typename','union','unsigned','virtual','void',
                'volatile','while','override'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         sh: [
             [STR,     'str'],
@@ -2417,7 +2418,7 @@ const _HL_RULES = (() => {
             [kw('if','then','else','elif','fi','for','while','do','done',
                'case','esac','in','function','return','local','export',
                'readonly','true','false'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         make: [
             [CMT_HSH, 'cmt'],
@@ -2444,7 +2445,7 @@ const _HL_RULES = (() => {
                  'get_filename_component','get_target_property','set_target_properties',
                  'add_definitions','add_compile_options',
                  'ON','OFF','TRUE','FALSE','YES','NO','NOTFOUND'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         vhdl: [
             [STR,      'str'],
@@ -2469,7 +2470,7 @@ const _HL_RULES = (() => {
                  'rising_edge','falling_edge','to_integer','to_unsigned','to_signed',
                  'conv_integer','conv_std_logic_vector',
                  'ieee','std_logic_1164','numeric_std','numeric_bit'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         verilog: [
             [STR,     'str'],
@@ -2500,8 +2501,8 @@ const _HL_RULES = (() => {
                 'randcase','ref','sequence','shortint','shortreal',
                 'static','string','struct','super','this','typedef',
                 'union','unique','var','virtual','void','with'), 'kw'],
-            [VL_NUM, 'num'],
-            [NUM,    'num'],
+            [VL_NUM,   'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         java: [
             [STR,     'str'],
@@ -2514,7 +2515,7 @@ const _HL_RULES = (() => {
                'protected','public','return','short','static','strictfp',
                'super','switch','synchronized','this','throw','throws',
                'transient','true','try','var','void','volatile','while'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         go: [
             [STR,     'str'],
@@ -2526,7 +2527,7 @@ const _HL_RULES = (() => {
                'error','string','int','int8','int16','int32','int64',
                'uint','uint8','uint16','uint32','uint64','uintptr',
                'float32','float64','complex64','complex128','bool','byte','rune'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         rust: [
             [STR,     'str'],
@@ -2539,7 +2540,7 @@ const _HL_RULES = (() => {
                'i128','isize','u8','u16','u32','u64','u128','usize',
                'f32','f64','bool','char','str','String','Option','Result',
                'Some','None','Ok','Err','Vec','Box','Arc','Rc'), 'kw'],
-            [NUM, 'num'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
     };
 })();
