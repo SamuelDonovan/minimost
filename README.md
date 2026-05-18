@@ -97,7 +97,7 @@ gunicorn "minimost:create_app()" --workers 4 --bind 0.0.0.0:5000
 Edit `channels.json` in the project root to define your public channels:
 
 ```json
-["general", "software", "firmware", "off-topic"]
+["general", "software", "firmware", "systems", "off-topic"]
 ```
 
 ---

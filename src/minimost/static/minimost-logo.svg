@@ -4,7 +4,7 @@
   <!-- teardrop tail -->
   <path d="M40,81 Q34,81 29,91 Q36,82 56,81" fill="none" stroke="#007acc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <!-- wordmark -->
-  <text x="20" y="46" font-family="'JetBrains Mono',monospace" font-size="32" font-weight="800" fill="#e4e4e4" letter-spacing="-1">mini<tspan fill="#007acc">most</tspan></text>
+  <text x="20" y="46" font-family="'JetBrains Mono',monospace" font-size="32" font-weight="800" fill="#e4e4e4" letter-spacing="-1">Mini<tspan fill="#007acc">Most</tspan></text>
   <!-- tagline -->
   <text x="20" y="68" font-family="'JetBrains Mono',monospace" font-size="10.5" fill="#4a9955"># mini app · most features</text>
 </svg>

@@ -1,3 +1,52 @@
+"""
+minimost.presence
+=================
+
+Real-time presence tracking, typing indicators, read receipts, and message
+reactions — all backed by the shared ``presence.db`` SQLite database.
+
+This module manages all **transient shared state** in MiniMost.  Because
+MiniMost stores per-user message history in individual SQLite files, a
+separate shared database is needed for data that all users must see
+simultaneously: who is typing, who is online, who has read a message, and
+what reactions a message has received.
+
+**``presence.db`` tables:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Table
+     - Purpose
+   * - ``presence``
+     - One row per user: ``last_seen`` (epoch) and ``state`` (active/idle/
+       hidden/offline).  Updated on every presence heartbeat.
+   * - ``typing``
+     - One row per (user, channel) pair.  Timestamp is updated on each
+       keystroke.  Rows older than 5 s are considered stale.
+   * - ``read_receipts``
+     - Permanent record of (channel, msg_ts, reader) triples written when a
+       user calls ``/mark_read/<channel>``.
+   * - ``message_reactions``
+     - One row per (channel, msg_ts, emoji, reactor) combination.  Toggled
+       atomically by ``/react/<msg_id>``.
+
+The tables are created at module import time by :func:`_init_tables`.
+
+Module-level attributes
+-----------------------
+presence_bp : flask.Blueprint
+    The Flask Blueprint for presence routes.  Registered in
+    :func:`minimost.create_app`.
+
+PRESENCE_DB : str
+    Absolute path to the shared ``presence.db`` SQLite file.
+
+_VALID_STATES : set of str
+    Allowed presence state values: ``{"active", "idle", "hidden", "offline"}``.
+"""
+
 # From the python standard library
 import time
 import sqlite3
@@ -16,6 +65,22 @@ PRESENCE_DB = str(_PROJECT_ROOT / "presence.db")
 
 
 def _init_tables():
+    """Create all required tables in ``presence.db`` if they do not exist.
+
+    Called unconditionally at module import time.  Uses
+    ``CREATE TABLE IF NOT EXISTS`` throughout, so repeated calls are safe.
+
+    **Tables created:**
+
+    * ``presence`` — tracks each user's last-seen timestamp and state.
+    * ``typing`` — records when a user was last observed typing in a channel.
+    * ``read_receipts`` — permanent log of which users have read which
+      messages.
+    * ``message_reactions`` — stores each (channel, message, emoji, user)
+      reaction tuple.
+
+    :returns: None
+    """
     db = sqlite3.connect(PRESENCE_DB)
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("""
@@ -59,6 +124,25 @@ _init_tables()
 
 @presence_bp.route("/typing/<channel>", methods=["POST"])
 def typing_start(channel):
+    """Record that the current user is typing in a channel.
+
+    Route: ``POST /typing/<channel>``
+
+    Does **not** require the ``@login_required`` decorator — if the session
+    is missing, the request is silently dropped (``204 No Content``) rather
+    than redirecting to the login page.  This avoids a redirect loop when the
+    client sends typing notifications for a brief period after a session
+    expiry.
+
+    The timestamp is written to the ``typing`` table using
+    ``INSERT OR REPLACE``, so the row for ``(user, channel)`` is updated in
+    place on each call.
+
+    :param channel: The channel name or DM identifier.
+    :type channel: str
+    :returns: Empty body with HTTP 204 No Content.
+    :rtype: flask.Response
+    """
     user = session.get("user")
     if not user:
         return "", 204
@@ -76,6 +160,24 @@ def typing_start(channel):
 
 @presence_bp.route("/typing/<channel>", methods=["GET"])
 def typing_get(channel):
+    """Return the list of users currently typing in a channel.
+
+    Route: ``GET /typing/<channel>``
+
+    A user is considered to be "currently typing" if their ``ts`` in the
+    ``typing`` table is within the last **5 seconds**.  The current user is
+    excluded from the result so they never see their own typing indicator.
+
+    The client polls this endpoint every second and displays a
+    ``"<user> is typing…"`` banner in the chat area.
+
+    :param channel: The channel name or DM identifier.
+    :type channel: str
+    :returns: JSON array of usernames who are currently typing,
+        e.g. ``["alice", "bob"]``.  Returns ``[]`` if the session is
+        missing or no one is typing.
+    :rtype: flask.Response (application/json)
+    """
     user = session.get("user")
     if not user:
         return []
@@ -92,6 +194,32 @@ def typing_get(channel):
 
 @presence_bp.route("/presence", methods=["POST"])
 def presence():
+    """Update the current user's presence state.
+
+    Route: ``POST /presence``
+
+    Accepts a JSON body with a ``state`` key.  Valid values are defined by
+    :data:`_VALID_STATES`: ``"active"``, ``"idle"``, ``"hidden"``,
+    ``"offline"``.
+
+    The client sends this request:
+
+    * Immediately when the page's ``visibilitychange`` event fires
+      (``"hidden"`` when the tab goes to the background,
+      ``"active"`` when it returns).
+    * After detecting 5 minutes of keyboard/mouse inactivity (``"idle"``).
+    * On a 30-second heartbeat to keep ``last_seen`` fresh.
+
+    Silently returns ``204`` if the session is missing or the state is
+    invalid.
+
+    Request body (JSON):
+        **state** (str): One of ``"active"``, ``"idle"``, ``"hidden"``,
+        ``"offline"``.
+
+    :returns: Empty body with HTTP 204 No Content.
+    :rtype: flask.Response
+    """
     user = session.get("user")
     if not user:
         return "", 204
@@ -101,7 +229,24 @@ def presence():
     return "", 204
 
 
-def update_presence(user, state):
+def update_presence(user: str, state) -> None:
+    """Write a presence record directly to ``presence.db``.
+
+    This function is the shared implementation used by both the
+    ``/presence`` HTTP route and the :func:`minimost.auth.logout` view
+    (which sets the user's state to ``"offline"`` before clearing the
+    session).
+
+    If *state* is not in :data:`_VALID_STATES` the function returns
+    immediately without writing anything.
+
+    :param user: The username whose presence should be updated.
+    :type user: str
+    :param state: New presence state — one of ``"active"``, ``"idle"``,
+        ``"hidden"``, ``"offline"``.
+    :type state: str
+    :returns: None
+    """
     if state not in _VALID_STATES:
         return
     now = int(time.time())

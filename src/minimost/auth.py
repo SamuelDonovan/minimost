@@ -1,3 +1,37 @@
+"""
+minimost.auth
+=============
+
+Authentication routes, password utilities, and access-control decorator.
+
+This module handles everything related to user identity:
+
+* **Registration** (``/signup``) — validates and stores new user credentials,
+  creates the user's SQLite database, and seeds it with public channel history
+  so a new user is not greeted by an empty chat.
+
+* **Login** (``/login``) — verifies credentials and establishes a Flask session.
+
+* **Logout** (``/logout``) — marks the user as offline and clears the session.
+
+* **:func:`login_required`** — a decorator applied to every route that requires
+  an authenticated session.
+
+Module-level attributes
+-----------------------
+AUTH_DB : str
+    Absolute path to the shared ``auth.db`` SQLite file that holds all user
+    credentials.
+
+auth_bp : flask.Blueprint
+    The Flask Blueprint for all authentication routes.  Registered in
+    :func:`minimost.create_app`.
+
+_USERNAME_RE : re.Pattern
+    Compiled regular expression that a username must fully match:
+    ``[A-Za-z0-9_\\-]{1,32}``.
+"""
+
 # From the python standard library
 import re
 from functools import wraps
@@ -23,11 +57,56 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def hash_password(password: str) -> str:
+    """Hash a plaintext password using PBKDF2.
+
+    Delegates to :func:`werkzeug.security.generate_password_hash`, which
+    applies a random salt and uses PBKDF2-HMAC-SHA256 by default.  The
+    returned string is suitable for storage in ``auth.db`` and can be
+    verified with :func:`werkzeug.security.check_password_hash`.
+
+    :param password: The plaintext password to hash.
+    :type password: str
+    :returns: A Werkzeug-format hash string that encodes the algorithm,
+        iterations, salt, and digest.
+    :rtype: str
+
+    Example::
+
+        hashed = hash_password("S3cr3t!")
+        assert check_password_hash(hashed, "S3cr3t!")
+    """
     return generate_password_hash(password)
 
 
 def _seed_channel_history(new_user: str) -> None:
-    """Copy all public channel message history into a newly created user's DB."""
+    """Copy all public channel message history into a newly created user's DB.
+
+    When a new account is created, this function seeds the new user's
+    ``messages`` table with every public-channel message from an existing
+    user's database.  This ensures new users can see the full conversation
+    history from the moment they join, rather than starting with a blank
+    slate.
+
+    **Algorithm:**
+
+    1. Pick any existing user from ``auth.db`` (other than *new_user*).
+    2. Open that user's ``.db`` file as the source.
+    3. Select all rows from ``messages`` where ``channel NOT LIKE 'dm:%'``
+       (i.e. public channels only — DMs are never copied).
+    4. Insert those rows verbatim into the new user's database with
+       ``read = 1`` so they generate no unread-message notifications.
+
+    **Edge cases:**
+
+    * If no other users exist (first registration), the function returns
+      immediately — there is no history to copy.
+    * If the existing user's ``.db`` file is missing on disk, the function
+      also returns without error.
+
+    :param new_user: The username of the account being registered.
+    :type new_user: str
+    :returns: None
+    """
     adb = sqlite3.connect(AUTH_DB)
     adb.execute("PRAGMA journal_mode=WAL")
     row = adb.execute(
@@ -74,6 +153,31 @@ def _seed_channel_history(new_user: str) -> None:
 
 
 def login_required(fn):
+    """Decorator that enforces an authenticated Flask session.
+
+    Wraps a Flask view function so that unauthenticated requests are
+    redirected to ``/login`` instead of executing the view.  The session
+    key ``"user"`` is set by the :func:`login` route upon successful
+    authentication.
+
+    This decorator preserves the wrapped function's name and docstring via
+    :func:`functools.wraps`, which is required for Flask's endpoint
+    registration to work correctly when multiple routes use the decorator.
+
+    :param fn: The Flask view function to protect.
+    :type fn: callable
+    :returns: A wrapped view function that checks for ``session["user"]``
+        before calling *fn*.
+    :rtype: callable
+
+    Example::
+
+        @chat_bp.route("/messages/<channel>")
+        @login_required
+        def messages(channel):
+            ...
+    """
+
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if "user" not in session:
@@ -86,6 +190,36 @@ def login_required(fn):
 @auth_bp.route("/login", methods=["GET", "POST"])
 @auth_bp.route("/login.html", methods=["GET", "POST"])
 def login():
+    """Display the login form and authenticate users.
+
+    **GET** — renders ``login.html``.
+
+    **POST** — reads ``username`` and ``password`` from the form, looks up
+    the stored hash in ``auth.db``, and verifies it with
+    :func:`werkzeug.security.check_password_hash`.
+
+    On success:
+
+    * Sets ``session["user"]`` to the authenticated username.
+    * Calls :func:`minimost.common.init_user_db` to ensure the user's
+      database exists (relevant after a manual ``users/`` directory wipe).
+    * Redirects to ``/`` (the main chat interface).
+
+    On failure:
+
+    * Waits **3 seconds** before responding to slow down brute-force
+      attempts.
+    * Re-renders ``login.html`` with a generic ``"Invalid credentials"``
+      error (username and password failures are intentionally
+      indistinguishable).
+
+    Routes: ``GET /login``, ``POST /login``,
+    ``GET /login.html``, ``POST /login.html``
+
+    :returns: A rendered ``login.html`` template (GET or failed POST), or a
+        redirect to ``/`` on success.
+    :rtype: flask.Response
+    """
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
@@ -112,6 +246,17 @@ def login():
 @auth_bp.route("/logout")
 @login_required
 def logout():
+    """Log the current user out and redirect to the login page.
+
+    Sets the user's presence state to ``"offline"`` in ``presence.db`` via
+    :func:`minimost.presence.update_presence`, then clears the Flask session
+    and redirects to ``/login``.
+
+    Route: ``GET /logout``
+
+    :returns: A redirect response to ``/login``.
+    :rtype: flask.Response
+    """
     user = session.get("user")
     presence.update_presence(user, "offline")
     session.clear()
@@ -120,6 +265,45 @@ def logout():
 
 @auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
+    """Display the registration form and create new user accounts.
+
+    **GET** — renders ``signup.html``.
+
+    **POST** — validates the submitted ``username``, ``password``, and
+    ``confirm_password`` fields, creates the account, and logs the user in.
+
+    **Validation rules (enforced server-side):**
+
+    * ``username`` must fully match ``[A-Za-z0-9_\\-]{1,32}``.
+    * ``password`` must be at least 8 characters long.
+    * ``password`` must contain at least one digit (``\\d``).
+    * ``password`` must contain at least one uppercase ASCII letter.
+    * ``password`` must contain at least one special character from the
+      set ``!@#$%^&*()_+-=[]{};\\':|,./<>?`~``.
+    * ``password`` and ``confirm_password`` must match.
+
+    The same rules are enforced client-side in ``signup.html`` for
+    immediate feedback, but server-side validation is authoritative.
+
+    On success:
+
+    1. Inserts ``(username, hashed_password)`` into ``auth.db``.
+    2. Calls :func:`minimost.common.init_user_db` to create the user's DB.
+    3. Calls :func:`_seed_channel_history` to populate public channel history.
+    4. Sets ``session["user"]`` and redirects to ``/``.
+
+    On failure:
+
+    * Returns ``signup.html`` with a descriptive ``error`` variable.
+    * If the username is already taken (``IntegrityError``), the error
+      message says so.
+
+    Routes: ``GET /signup``, ``POST /signup``
+
+    :returns: A rendered ``signup.html`` template on GET or validation
+        failure, or a redirect to ``/`` on successful registration.
+    :rtype: flask.Response
+    """
     if request.method == "POST":
         username = request.form["username"].strip()
         password = request.form["password"]
