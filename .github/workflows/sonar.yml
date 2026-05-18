@@ -24,7 +24,10 @@ jobs:
           cache: pip
 
       - name: Install package
-        run: pip install -e .
+        run: pip install -e ".[dev]"
+
+      - name: Run tests and generate coverage report
+        run: pytest --cov=src/minimost --cov-report=xml --no-header -q
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v6

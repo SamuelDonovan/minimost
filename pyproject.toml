@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["black"]
+dev = ["black", "pytest", "pytest-cov"]
 docs = ["sphinx>=7", "sphinx-rtd-theme>=2", "sphinxcontrib-httpdomain>=1.8"]
 
 [project.scripts]
@@ -22,6 +22,13 @@ minimost = "minimost.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src/minimost --cov-report=xml --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src/minimost"]
 
 [tool.bandit]
 exclude_dirs = ["build", "dist"]
