@@ -304,7 +304,15 @@ def _fetch(url, max_bytes=65536):
         raise ValueError(f"Disallowed host: {url}")
     if not _resolves_to_public_ip(parsed.hostname):
         raise ValueError(f"Unsafe URL: {url}")
-    req = urllib.request.Request(url, headers=_HEADERS)
+
+    netloc = parsed.hostname
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    safe_url = urllib.parse.urlunparse(
+        (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
+
+    req = urllib.request.Request(safe_url, headers=_HEADERS)
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310
         return resp.read(max_bytes)
 
