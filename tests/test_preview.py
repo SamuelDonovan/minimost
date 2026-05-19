@@ -122,6 +122,36 @@ def test_is_safe_url_bad_url():
            preview._is_safe_url("not a url at all ://%%%") is False  # depends on urlparse
 
 
+# ── _resolves_to_public_ip ────────────────────────────────────────────────────
+
+def test_resolves_to_public_ip_returns_true():
+    infos = [(None, None, None, None, ("93.184.216.34", 0))]
+    with patch("socket.getaddrinfo", return_value=infos):
+        assert preview._resolves_to_public_ip("example.com") is True
+
+
+def test_resolves_to_public_ip_private():
+    infos = [(None, None, None, None, ("192.168.1.1", 0))]
+    with patch("socket.getaddrinfo", return_value=infos):
+        assert preview._resolves_to_public_ip("internal.host") is False
+
+
+def test_resolves_to_public_ip_dns_failure():
+    with patch("socket.getaddrinfo", side_effect=OSError("DNS fail")):
+        assert preview._resolves_to_public_ip("bad.host") is False
+
+
+def test_resolves_to_public_ip_empty_result():
+    with patch("socket.getaddrinfo", return_value=[]):
+        assert preview._resolves_to_public_ip("example.com") is False
+
+
+def test_resolves_to_public_ip_invalid_addr():
+    infos = [(None, None, None, None, ("not-an-ip", 0))]
+    with patch("socket.getaddrinfo", return_value=infos):
+        assert preview._resolves_to_public_ip("weird.host") is False
+
+
 # ── _fetch ────────────────────────────────────────────────────────────────────
 
 def test_fetch_invalid_scheme():
@@ -135,8 +165,9 @@ def test_fetch_success():
     mock_resp.__exit__ = MagicMock(return_value=False)
     mock_resp.read.return_value = b"hello"
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        result = preview._fetch("https://example.com/")
+    with patch.object(preview, "_resolves_to_public_ip", return_value=True):
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = preview._fetch("https://example.com/")
     assert result == b"hello"
 
 
@@ -146,10 +177,17 @@ def test_fetch_respects_max_bytes():
     mock_resp.__exit__ = MagicMock(return_value=False)
     mock_resp.read.return_value = b"x" * 100
 
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        preview._fetch("https://example.com/", max_bytes=100)
+    with patch.object(preview, "_resolves_to_public_ip", return_value=True):
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            preview._fetch("https://example.com/", max_bytes=100)
 
     mock_resp.read.assert_called_once_with(100)
+
+
+def test_fetch_unsafe_host_raises():
+    with patch.object(preview, "_resolves_to_public_ip", return_value=False):
+        with pytest.raises(ValueError, match="Unsafe URL"):
+            preview._fetch("https://private.corp/resource")
 
 
 # ── _build_code_result ────────────────────────────────────────────────────────
