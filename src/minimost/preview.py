@@ -72,6 +72,9 @@ _HEADERS = {
     "Accept": "text/html,*/*",
     "Accept-Language": "en-US,en;q=0.5",
 }
+_ALLOWED_PREVIEW_HOSTS = {
+    "bitbucket.org",
+}
 
 _PRIVATE_RANGES = re.compile(
     r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1)"
@@ -255,6 +258,22 @@ def _resolves_to_public_ip(hostname):
     return True
 
 
+def _is_allowed_host(hostname):
+    """Return True if *hostname* is in the preview allowlist.
+
+    Allows exact matches and subdomains of entries in
+    :data:`_ALLOWED_PREVIEW_HOSTS`.
+    """
+    if not hostname:
+        return False
+    host = hostname.rstrip(".").lower()
+    for allowed in _ALLOWED_PREVIEW_HOSTS:
+        allowed_host = allowed.rstrip(".").lower()
+        if host == allowed_host or host.endswith("." + allowed_host):
+            return True
+    return False
+
+
 def _fetch(url, max_bytes=65536):
     """Fetch the body of an HTTP/HTTPS URL with safety limits.
 
@@ -281,7 +300,9 @@ def _fetch(url, max_bytes=65536):
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Unsupported scheme: {url}")
-    if not parsed.hostname or not _resolves_to_public_ip(parsed.hostname):
+    if not parsed.hostname or not _is_allowed_host(parsed.hostname):
+        raise ValueError(f"Disallowed host: {url}")
+    if not _resolves_to_public_ip(parsed.hostname):
         raise ValueError(f"Unsafe URL: {url}")
     req = urllib.request.Request(url, headers=_HEADERS)
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310
