@@ -72,8 +72,9 @@ _HEADERS = {
     "Accept": "text/html,*/*",
     "Accept-Language": "en-US,en;q=0.5",
 }
+_BB_CLOUD_HOST = "bitbucket.org"
 _ALLOWED_PREVIEW_HOSTS = {
-    "bitbucket.org",
+    _BB_CLOUD_HOST,
 }
 
 _PRIVATE_RANGES = re.compile(
@@ -422,7 +423,7 @@ def _parse_bb_cloud(url):
     :rtype: tuple or None
     """
     parsed = urllib.parse.urlparse(url)
-    if parsed.netloc not in ("bitbucket.org", "www.bitbucket.org"):
+    if parsed.netloc not in (_BB_CLOUD_HOST, f"www.{_BB_CLOUD_HOST}"):
         return None
     parts = parsed.path.lstrip("/").split("/", 4)
     if len(parts) < 5 or parts[2] != "src":
@@ -629,7 +630,7 @@ def fetch_preview(url):
     if not _is_safe_url(url):
         return {}
 
-    if parsed.netloc in ("bitbucket.org", "www.bitbucket.org"):
+    if parsed.netloc in (_BB_CLOUD_HOST, f"www.{_BB_CLOUD_HOST}"):
         result = _bitbucket_cloud_preview(url)
     elif _parse_bb_server(url) is not None:
         result = _bitbucket_server_preview(url)
