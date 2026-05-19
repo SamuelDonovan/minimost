@@ -58,6 +58,8 @@ _PRIVATE_RANGES : re.Pattern
 """
 
 import re
+import ipaddress
+import socket
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
@@ -224,6 +226,35 @@ def _is_safe_url(url):
     return not _PRIVATE_RANGES.match(host)
 
 
+def _resolves_to_public_ip(hostname):
+    """Return True if *hostname* resolves only to public IP addresses."""
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except Exception:
+        return False
+
+    if not infos:
+        return False
+
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+
+    return True
+
+
 def _fetch(url, max_bytes=65536):
     """Fetch the body of an HTTP/HTTPS URL with safety limits.
 
@@ -247,8 +278,11 @@ def _fetch(url, max_bytes=65536):
         DNS failure, etc.).
     :raises urllib.error.HTTPError: If the server returns a non-2xx status.
     """
-    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Unsupported scheme: {url}")
+    if not parsed.hostname or not _resolves_to_public_ip(parsed.hostname):
+        raise ValueError(f"Unsafe URL: {url}")
     req = urllib.request.Request(url, headers=_HEADERS)
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310
         return resp.read(max_bytes)
