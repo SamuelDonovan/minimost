@@ -1,0 +1,17 @@
+name: Semgrep
+
+on:
+  push:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+      - run: pip install semgrep
+      - run: semgrep scan --config=p/python --config=p/flask src/

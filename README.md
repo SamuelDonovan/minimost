@@ -3,8 +3,8 @@
 ---
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
-[![security: semgrep](https://img.shields.io/badge/security-semgrep-green.svg)](https://semgrep.dev/)
+[![Bandit](https://github.com/SamuelDonovan/minimost/actions/workflows/bandit.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/bandit.yml)
+[![Semgrep](https://github.com/SamuelDonovan/minimost/actions/workflows/semgrep.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/semgrep.yml)
 [![CodeQL](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml)
 [![Documentation Status](https://readthedocs.org/projects/minimost/badge/?version=latest)](https://minimost.readthedocs.io/en/latest/)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=alert_status)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
