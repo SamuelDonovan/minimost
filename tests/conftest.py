@@ -45,6 +45,7 @@ def app(isolated_dbs):
     from minimost import create_app
     application = create_app()
     application.config["TESTING"] = True
+    application.config["CSRF_ENABLED"] = False
     return application
 
 

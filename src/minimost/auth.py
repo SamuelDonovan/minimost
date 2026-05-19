@@ -189,15 +189,26 @@ def login_required(fn):
     return wrapper
 
 
-@auth_bp.route("/login", methods=["GET", "POST"])
-@auth_bp.route("/login.html", methods=["GET", "POST"])
+@auth_bp.route("/login", methods=["GET"])
+@auth_bp.route("/login.html", methods=["GET"])
 def login():
-    """Display the login form and authenticate users.
+    """Render the login page.
 
-    **GET** — renders ``login.html``.
+    Routes: ``GET /login``, ``GET /login.html``
 
-    **POST** — reads ``username`` and ``password`` from the form, looks up
-    the stored hash in ``auth.db``, and verifies it with
+    :returns: A rendered ``login.html`` template.
+    :rtype: flask.Response
+    """
+    return render_template("login.html")
+
+
+@auth_bp.route("/login", methods=["POST"])
+@auth_bp.route("/login.html", methods=["POST"])
+def login_post():
+    """Authenticate a user from the login form.
+
+    Reads ``username`` and ``password`` from the form, looks up the stored
+    hash in ``auth.db``, and verifies it with
     :func:`werkzeug.security.check_password_hash`.
 
     On success:
@@ -215,34 +226,30 @@ def login():
       error (username and password failures are intentionally
       indistinguishable).
 
-    Routes: ``GET /login``, ``POST /login``,
-    ``GET /login.html``, ``POST /login.html``
+    Routes: ``POST /login``, ``POST /login.html``
 
-    :returns: A rendered ``login.html`` template (GET or failed POST), or a
-        redirect to ``/`` on success.
+    :returns: A rendered ``login.html`` template on failure, or a redirect
+        to ``/`` on success.
     :rtype: flask.Response
     """
-    if request.method == "POST":
-        username = request.form["username"].strip()
-        password = request.form["password"]
+    username = request.form["username"].strip()
+    password = request.form["password"]
 
-        db = sqlite3.connect(AUTH_DB)
-        db.execute(_WAL)
-        row = db.execute(
-            "SELECT password_hash FROM users WHERE username = ?", (username,)
-        ).fetchone()
-        db.close()
+    db = sqlite3.connect(AUTH_DB)
+    db.execute(_WAL)
+    row = db.execute(
+        "SELECT password_hash FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    db.close()
 
-        if not row or not check_password_hash(row[0], password):
-            # Delay to prevent users from brute forcing others passwords
-            time.sleep(3)
-            return render_template("login.html", error="Invalid credentials")
+    if not row or not check_password_hash(row[0], password):
+        # Delay to prevent users from brute forcing others passwords
+        time.sleep(3)
+        return render_template("login.html", error="Invalid credentials")
 
-        session["user"] = username
-        common.init_user_db(username)
-        return redirect("/")
-
-    return render_template("login.html")
+    session["user"] = username
+    common.init_user_db(username)
+    return redirect("/")
 
 
 @auth_bp.route("/logout", methods=["GET"])
@@ -291,13 +298,23 @@ def _validate_signup(username: str, password: str, confirm: str):
     return None
 
 
-@auth_bp.route("/signup", methods=["GET", "POST"])
+@auth_bp.route("/signup", methods=["GET"])
 def signup():
-    """Display the registration form and create new user accounts.
+    """Render the registration page.
 
-    **GET** — renders ``signup.html``.
+    Route: ``GET /signup``
 
-    **POST** — validates the submitted ``username``, ``password``, and
+    :returns: A rendered ``signup.html`` template.
+    :rtype: flask.Response
+    """
+    return render_template(_SIGNUP_TEMPLATE)
+
+
+@auth_bp.route("/signup", methods=["POST"])
+def signup_post():
+    """Create a new user account from the registration form.
+
+    Validates the submitted ``username``, ``password``, and
     ``confirm_password`` fields, creates the account, and logs the user in.
 
     **Validation rules (enforced server-side):**
@@ -309,9 +326,6 @@ def signup():
     * ``password`` must contain at least one special character from the
       set ``!@#$%^&*()_+-=[]{};\\':|,./<>?`~``.
     * ``password`` and ``confirm_password`` must match.
-
-    The same rules are enforced client-side in ``signup.html`` for
-    immediate feedback, but server-side validation is authoritative.
 
     On success:
 
@@ -326,39 +340,36 @@ def signup():
     * If the username is already taken (``IntegrityError``), the error
       message says so.
 
-    Routes: ``GET /signup``, ``POST /signup``
+    Route: ``POST /signup``
 
-    :returns: A rendered ``signup.html`` template on GET or validation
-        failure, or a redirect to ``/`` on successful registration.
+    :returns: A rendered ``signup.html`` template on validation failure, or
+        a redirect to ``/`` on successful registration.
     :rtype: flask.Response
     """
-    if request.method == "POST":
-        username = request.form["username"].strip()
-        password = request.form["password"]
-        confirm = request.form["confirm_password"]
+    username = request.form["username"].strip()
+    password = request.form["password"]
+    confirm = request.form["confirm_password"]
 
-        error = _validate_signup(username, password, confirm)
-        if error:
-            return render_template(_SIGNUP_TEMPLATE, error=error)
+    error = _validate_signup(username, password, confirm)
+    if error:
+        return render_template(_SIGNUP_TEMPLATE, error=error)
 
-        db = sqlite3.connect(AUTH_DB)
-        db.execute(_WAL)
-        try:
-            db.execute(
-                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-                (username, hash_password(password)),
-            )
-            db.commit()
-        except sqlite3.IntegrityError:
-            db.close()
-            return render_template(_SIGNUP_TEMPLATE, error="User already exists")
-
+    db = sqlite3.connect(AUTH_DB)
+    db.execute(_WAL)
+    try:
+        db.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            (username, hash_password(password)),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
         db.close()
+        return render_template(_SIGNUP_TEMPLATE, error="User already exists")
 
-        common.init_user_db(username)
-        _seed_channel_history(username)
+    db.close()
 
-        session["user"] = username
-        return redirect("/")
+    common.init_user_db(username)
+    _seed_channel_history(username)
 
-    return render_template(_SIGNUP_TEMPLATE)
+    session["user"] = username
+    return redirect("/")

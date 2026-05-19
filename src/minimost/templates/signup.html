@@ -18,6 +18,7 @@
         {% endif %}
 
         <form method="post" autocomplete="on" onsubmit="return checkPasswords()">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="auth-field">
                 <input id="username" type="text" name="username" placeholder="Username" required autocomplete="username">
                 <input

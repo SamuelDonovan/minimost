@@ -32,7 +32,7 @@ import secrets
 from contextlib import suppress
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, abort, request, session
 
 from . import common, database
 from .auth import auth_bp
@@ -121,6 +121,30 @@ def create_app():
 
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
+    def _csrf_token() -> str:
+        """Return a per-session CSRF token, generating one if absent."""
+        if "_csrf_token" not in session:
+            session["_csrf_token"] = secrets.token_hex(32)
+        return session["_csrf_token"]  # type: ignore[return-value]
+
+    app.jinja_env.globals["csrf_token"] = _csrf_token
+
+    @app.before_request
+    def _enforce_csrf():
+        # Only validate on state-changing methods and only when CSRF is enabled.
+        if not app.config.get("CSRF_ENABLED", True):
+            return
+        if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
+            return
+        # Chat and presence routes are API endpoints protected by session auth;
+        # CSRF validation applies only to the HTML form routes in the auth blueprint.
+        if request.blueprint != "auth":
+            return
+        expected = session.get("_csrf_token", "")
+        submitted = request.form.get("csrf_token", "")
+        if not expected or not secrets.compare_digest(expected, submitted):
+            abort(403)
+
     @app.context_processor
     def inject_version():
         """Inject the application version into every template context.
@@ -133,4 +157,5 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(presence_bp)
+
     return app
