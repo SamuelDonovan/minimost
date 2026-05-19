@@ -14,6 +14,19 @@
 
 ---
 
+## Screenshots
+
+![Login page](docs/_static/screenshot-login.png)
+*The login page — clean, minimal, and version-tagged.*
+
+![Chat interface](docs/_static/screenshot-chat.png)
+*The main chat interface — channel list, direct messages, inline image attachments, and real-time typing indicators.*
+
+![Message search](docs/_static/screenshot-message-search.png)
+*Full-text message search with highlighted results.*
+
+---
+
 ## Features
 
 - **Channels & Direct Messages** — public channels (configurable) and private one-on-one DMs
@@ -153,7 +166,8 @@ All formatting uses Markdown syntax (underline uses `__text__`). Shortcuts work 
 - Password complexity is enforced on both frontend and backend (8+ characters, uppercase, number, special character)
 - All database queries use parameterized statements — no SQL injection surface
 - Each user has an isolated SQLite database; channel history is shared only through controlled writes
-- SAST scanning via [Bandit](https://bandit.readthedocs.io/) and [CodeQL](https://codeql.github.com/) in CI
+- SAST scanning via [Bandit](https://bandit.readthedocs.io/), [Semgrep](https://semgrep.dev/), [CodeQL](https://codeql.github.com/), and [SonarCloud](https://sonarcloud.io/) in CI
+- Dependency vulnerabilities audited on every push with [pip-audit](https://github.com/pypa/pip-audit)
 - Flask debug mode is disabled in production
 
 ---
@@ -170,7 +184,7 @@ There is no self-service password reset. An administrator would need to update t
 
 **Does it have feature X from Slack/Discord/Mattermost?**
 
-Probably not. Those products have hundreds of engineers and years of development. MiniMost is intentionally minimal — the goal is something that runs anywhere with zero infrastructure overhead. If you want a feature, open a PR.
+Probably not. Those products have hundreds of engineers and years of development. MiniMost is intentionally minimal — the goal is something that runs anywhere with zero infrastructure overhead.
 
 **Can I run this on Windows?**
 

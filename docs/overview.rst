@@ -18,6 +18,28 @@ runs on any machine with Python 3.6+, stores its data in plain SQLite files
 that you can inspect with any SQLite browser, and requires no configuration
 to get started.
 
+Screenshots
+-----------
+
+.. figure:: _static/screenshot-login.png
+   :alt: MiniMost login page
+   :width: 100%
+
+   The login page — clean, minimal, and version-tagged.
+
+.. figure:: _static/screenshot-chat.png
+   :alt: MiniMost chat interface
+   :width: 100%
+
+   The main chat interface — channel list, direct messages, inline image
+   attachments, and real-time typing indicators.
+
+.. figure:: _static/screenshot-message-search.png
+   :alt: MiniMost message search
+   :width: 100%
+
+   Full-text message search with highlighted results.
+
 Features
 --------
 
@@ -79,8 +101,8 @@ Security
 - 3-second delay on failed login attempts (brute-force protection).
 - Per-user isolated SQLite databases.
 - Parameterized SQL queries throughout.
-- SSRF protection on link preview fetching.
-- SAST scanning with Bandit and CodeQL.
+- SSRF protection on link preview fetching (allowlist, private-range block, DNS resolution check).
+- SAST scanning with Bandit, Semgrep, CodeQL, and SonarCloud; dependency CVEs audited with pip-audit.
 
 Technical Stack
 ---------------

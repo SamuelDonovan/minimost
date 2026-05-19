@@ -85,14 +85,21 @@ auto-linked but sanitised to ``http``/``https`` schemes only.
 
 **SSRF (Server-Side Request Forgery)**
 
-The link preview endpoint validates URLs through :func:`minimost.preview._is_safe_url`
-before making any outgoing request. The following are blocked:
+The link preview endpoint applies three defences in order before making any
+outgoing request:
 
-- ``localhost``
-- ``127.x.x.x`` (loopback)
-- ``10.x.x.x``, ``172.16–31.x.x``, ``192.168.x.x`` (RFC 1918 private ranges)
-- ``::1`` (IPv6 loopback)
-- Non-HTTP/HTTPS schemes
+1. **Scheme check** — only ``http`` and ``https`` URLs are accepted.
+2. **Allowlist** (:func:`minimost.preview._is_allowed_host`) — the hostname
+   must be an exact match or subdomain of an entry in
+   :data:`minimost.preview._ALLOWED_PREVIEW_HOSTS`. Currently only
+   ``bitbucket.org`` is permitted.
+3. **Private-range block** (:func:`minimost.preview._is_safe_url`) — the
+   hostname is matched against a regex that rejects loopback and RFC 1918
+   private ranges (``localhost``, ``127.x.x.x``, ``10.x.x.x``,
+   ``172.16–31.x.x``, ``192.168.x.x``, ``::1``).
+4. **DNS resolution check** (:func:`minimost.preview._resolves_to_public_ip`)
+   — the hostname is resolved and every returned IP address is verified to be
+   public, preventing DNS rebinding attacks.
 
 **Path traversal (file serving)**
 
@@ -145,12 +152,13 @@ communications.
 There is no built-in audit trail of who accessed what and when. SQLite's WAL
 files are ephemeral and not preserved across checkpoints.
 
-**No CSRF protection**
+**CSRF protection scope**
 
-MiniMost does not use CSRF tokens. Its API is consumed by its own JavaScript
-client using session cookies. On a private network behind a firewall this is
-generally acceptable; on the public internet, consider adding Flask-WTF or
-another CSRF protection layer.
+CSRF tokens are enforced on the HTML form routes (``/login`` and ``/signup``)
+via a session-stored token rendered as a hidden ``<input>`` in each form and
+validated in a ``before_request`` hook. The chat and presence API endpoints
+rely on Flask's signed session cookie for authentication; these endpoints do
+not require CSRF tokens as they are not reachable via cross-origin HTML forms.
 
 **No rate limiting on signup**
 
@@ -173,15 +181,21 @@ a TLS-terminating reverse proxy:
 Security Scanning
 -----------------
 
-The MiniMost codebase is scanned by:
+The MiniMost codebase is scanned automatically on every push via GitHub
+Actions, and weekly on a schedule:
 
-- `Bandit <https://bandit.readthedocs.io/>`_ — Python SAST tool. Results are
-  reviewed and suppressed with ``# nosec`` annotations where false positives
-  are confirmed.
-- `CodeQL <https://codeql.github.com/>`_ — GitHub's semantic code analysis.
-  Run on every push via GitHub Actions.
-- `Semgrep <https://semgrep.dev/>`_ — Additional rule-based scanning,
-  including Flask-specific rules (e.g. NaN injection in query parameters).
+- `Bandit <https://bandit.readthedocs.io/>`_ — Python-specific SAST tool.
+  Results are reviewed and suppressed with ``# nosec`` annotations where false
+  positives are confirmed.
+- `Semgrep <https://semgrep.dev/>`_ — Rule-based SAST, including
+  Flask-specific rules (``p/python``, ``p/flask``).
+- `CodeQL <https://codeql.github.com/>`_ — GitHub's semantic code analysis
+  engine; catches data-flow and taint-tracking issues beyond pattern matching.
+- `SonarCloud <https://sonarcloud.io/>`_ — Continuous quality and security
+  gate covering code smells, hotspots, and coverage tracking.
+- `pip-audit <https://github.com/pypa/pip-audit>`_ — Audits installed
+  dependencies against the PyPI Advisory Database and the Open Source
+  Vulnerability (OSV) database to detect known CVEs in third-party packages.
 
 Reporting Vulnerabilities
 --------------------------
