@@ -1,4 +1,5 @@
 """Tests targeting specific uncovered branches."""
+
 import runpy
 import sqlite3
 import time
@@ -8,8 +9,8 @@ import minimost.chat as chat_mod
 import minimost.common as common_mod
 import minimost.preview as preview
 
-
 # ── preview._is_safe_url exception branch ────────────────────────────────────
+
 
 def test_is_safe_url_parse_exception():
     with patch("urllib.parse.urlparse", side_effect=Exception("bad")):
@@ -19,6 +20,7 @@ def test_is_safe_url_parse_exception():
 
 # ── clean.py __main__ guard ───────────────────────────────────────────────────
 
+
 def test_clean_main_guard(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "uploads").mkdir()
@@ -27,6 +29,7 @@ def test_clean_main_guard(tmp_path, monkeypatch):
 
 # ── __main__.py __main__ guard ────────────────────────────────────────────────
 
+
 def test_main_module_guard():
     with patch("sys.argv", ["minimost"]):
         with patch("flask.Flask.run"):
@@ -34,6 +37,7 @@ def test_main_module_guard():
 
 
 # ── chat.py send: sender not in recipients branch ────────────────────────────
+
 
 def test_send_sender_not_in_channel_users(alice):
     """Covers 'if sender not in recipients: recipients.append(sender)' in send."""
@@ -44,6 +48,7 @@ def test_send_sender_not_in_channel_users(alice):
 
 
 # ── chat.py edit: editor not in recipients branch ────────────────────────────
+
 
 def test_edit_editor_not_in_channel_users(alice):
     """Covers 'if editor not in recipients: recipients.append(editor)' in edit."""
@@ -65,6 +70,7 @@ def test_edit_editor_not_in_channel_users(alice):
 
 # ── chat.py delete: deleter not in recipients branch ─────────────────────────
 
+
 def test_delete_deleter_not_in_channel_users(alice):
     """Covers 'if deleter not in recipients: recipients.append(deleter)' in delete."""
     common_mod.init_user_db("bob")
@@ -84,6 +90,7 @@ def test_delete_deleter_not_in_channel_users(alice):
 
 
 # ── chat.py react: user not in recipients branch ──────────────────────────────
+
 
 def test_react_user_not_in_channel_users(alice):
     """Covers 'if user not in recipients: recipients.append(user)' in react."""

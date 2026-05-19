@@ -1,4 +1,5 @@
 """Tests for chat module helper functions."""
+
 import json
 import os
 import sqlite3
@@ -23,6 +24,7 @@ def _add_user(username):
 
 # ── normalize_dm ──────────────────────────────────────────────────────────────
 
+
 def test_normalize_dm_sorts():
     assert chat_mod.normalize_dm(["bob", "alice"]) == "dm:alice:bob"
 
@@ -42,6 +44,7 @@ def test_normalize_dm_three_users():
 
 # ── channel_users ─────────────────────────────────────────────────────────────
 
+
 def test_channel_users_dm():
     users = chat_mod.channel_users("dm:alice:bob")
     assert "alice" in users
@@ -57,6 +60,7 @@ def test_channel_users_public():
 
 
 # ── is_valid_channel ──────────────────────────────────────────────────────────
+
 
 def test_is_valid_channel_public_in_list():
     assert chat_mod.is_valid_channel("general", "alice") is True
@@ -80,6 +84,7 @@ def test_is_valid_channel_dm_too_few_parts():
 
 # ── all_users ─────────────────────────────────────────────────────────────────
 
+
 def test_all_users_empty():
     users = chat_mod.all_users()
     assert users == []
@@ -93,6 +98,7 @@ def test_all_users_returns_all():
 
 
 # ── get_db ────────────────────────────────────────────────────────────────────
+
 
 def test_get_db_returns_connection():
     common_mod.init_user_db("alice")
@@ -109,6 +115,7 @@ def test_get_db_row_factory():
 
 
 # ── _load_channels ────────────────────────────────────────────────────────────
+
 
 def test_load_channels_from_file(tmp_path, monkeypatch):
     channels_file = tmp_path / "channels.json"
@@ -134,6 +141,7 @@ def test_load_channels_fallback_on_invalid_json(tmp_path, monkeypatch):
 
 # ── _load_valid_reactions ─────────────────────────────────────────────────────
 
+
 def test_load_valid_reactions_with_svgs(tmp_path, monkeypatch):
     reactions_dir = tmp_path / "reactions"
     reactions_dir.mkdir()
@@ -157,6 +165,7 @@ def test_load_valid_reactions_oserror():
 
 # ── _save_uploaded_files ──────────────────────────────────────────────────────
 
+
 def test_save_uploaded_files_empty():
     result = chat_mod._save_uploaded_files([])
     assert result == []
@@ -164,6 +173,7 @@ def test_save_uploaded_files_empty():
 
 def test_save_uploaded_files_no_filename():
     from unittest.mock import MagicMock
+
     f = MagicMock()
     f.filename = ""
     result = chat_mod._save_uploaded_files([f])
@@ -172,6 +182,7 @@ def test_save_uploaded_files_no_filename():
 
 def test_save_uploaded_files_invalid_extension():
     from unittest.mock import MagicMock
+
     f = MagicMock()
     f.filename = "script.exe"
     result = chat_mod._save_uploaded_files([f])
@@ -180,6 +191,7 @@ def test_save_uploaded_files_invalid_extension():
 
 def test_save_uploaded_files_valid_extension():
     from unittest.mock import MagicMock
+
     f = MagicMock()
     f.filename = "photo.png"
     f.save = MagicMock()

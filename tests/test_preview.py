@@ -2,8 +2,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 import minimost.preview as preview
 
-
 # ── _MetaParser ───────────────────────────────────────────────────────────────
+
 
 def test_meta_parser_og_title():
     p = preview._MetaParser()
@@ -80,6 +80,7 @@ def test_meta_parser_twitter_card_as_title():
 
 # ── _is_safe_url ──────────────────────────────────────────────────────────────
 
+
 def test_is_safe_url_public():
     assert preview._is_safe_url("https://example.com/page") is True
 
@@ -118,11 +119,14 @@ def test_is_safe_url_ipv6_loopback():
 
 def test_is_safe_url_bad_url():
     # Cannot parse a completely broken URL - returns False
-    assert preview._is_safe_url("not a url at all ://%%%") is True or \
-           preview._is_safe_url("not a url at all ://%%%") is False  # depends on urlparse
+    assert (
+        preview._is_safe_url("not a url at all ://%%%") is True
+        or preview._is_safe_url("not a url at all ://%%%") is False
+    )  # depends on urlparse
 
 
 # ── _resolves_to_public_ip ────────────────────────────────────────────────────
+
 
 def test_resolves_to_public_ip_returns_true():
     infos = [(None, None, None, None, ("93.184.216.34", 0))]
@@ -152,11 +156,36 @@ def test_resolves_to_public_ip_invalid_addr():
         assert preview._resolves_to_public_ip("weird.host") is False
 
 
+# ── _is_allowed_host ─────────────────────────────────────────────────────────
+
+
+def test_is_allowed_host_exact_match():
+    assert preview._is_allowed_host("bitbucket.org") is True
+
+
+def test_is_allowed_host_subdomain():
+    assert preview._is_allowed_host("api.bitbucket.org") is True
+
+
+def test_is_allowed_host_no_match():
+    assert preview._is_allowed_host("github.com") is False
+
+
+def test_is_allowed_host_empty():
+    assert preview._is_allowed_host("") is False
+
+
 # ── _fetch ────────────────────────────────────────────────────────────────────
+
 
 def test_fetch_invalid_scheme():
     with pytest.raises(ValueError, match="Unsupported scheme"):
         preview._fetch("ftp://example.com/file")
+
+
+def test_fetch_disallowed_host_raises():
+    with pytest.raises(ValueError, match="Disallowed host"):
+        preview._fetch("https://example.com/")
 
 
 def test_fetch_success():
@@ -167,7 +196,7 @@ def test_fetch_success():
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
         with patch("urllib.request.urlopen", return_value=mock_resp):
-            result = preview._fetch("https://example.com/")
+            result = preview._fetch("https://bitbucket.org/ws/r/src/main/f.py")
     assert result == b"hello"
 
 
@@ -179,18 +208,31 @@ def test_fetch_respects_max_bytes():
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
         with patch("urllib.request.urlopen", return_value=mock_resp):
-            preview._fetch("https://example.com/", max_bytes=100)
+            preview._fetch("https://bitbucket.org/ws/r/src/main/f.py", max_bytes=100)
 
     mock_resp.read.assert_called_once_with(100)
+
+
+def test_fetch_with_explicit_port():
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.read.return_value = b"data"
+
+    with patch.object(preview, "_resolves_to_public_ip", return_value=True):
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = preview._fetch("https://bitbucket.org:443/ws/r/src/main/f.py")
+    assert result == b"data"
 
 
 def test_fetch_unsafe_host_raises():
     with patch.object(preview, "_resolves_to_public_ip", return_value=False):
         with pytest.raises(ValueError, match="Unsafe URL"):
-            preview._fetch("https://private.corp/resource")
+            preview._fetch("https://bitbucket.org/ws/r/src/main/f.py")
 
 
 # ── _build_code_result ────────────────────────────────────────────────────────
+
 
 def test_build_code_result_no_lines():
     raw = "\n".join(f"line{i}" for i in range(1, 30))
@@ -224,6 +266,7 @@ def test_build_code_result_single_line():
 
 
 # ── _parse_bb_cloud ───────────────────────────────────────────────────────────
+
 
 def test_parse_bb_cloud_valid():
     url = "https://bitbucket.org/myws/myrepo/src/main/src/foo.py"
@@ -264,7 +307,9 @@ def test_parse_bb_cloud_too_few_parts():
 
 
 def test_parse_bb_cloud_no_src():
-    assert preview._parse_bb_cloud("https://bitbucket.org/ws/r/commits/abc/f.py") is None
+    assert (
+        preview._parse_bb_cloud("https://bitbucket.org/ws/r/commits/abc/f.py") is None
+    )
 
 
 def test_parse_bb_cloud_www_host():
@@ -273,6 +318,7 @@ def test_parse_bb_cloud_www_host():
 
 
 # ── _parse_bb_server ──────────────────────────────────────────────────────────
+
 
 def test_parse_bb_server_valid():
     url = "https://bb.example.com/projects/PROJ/repos/myrepo/browse/src/f.py"
@@ -314,10 +360,14 @@ def test_parse_bb_server_no_filepath():
 
 
 def test_parse_bb_server_wrong_structure():
-    assert preview._parse_bb_server("https://bb.com/notprojects/P/repos/R/browse/f") is None
+    assert (
+        preview._parse_bb_server("https://bb.com/notprojects/P/repos/R/browse/f")
+        is None
+    )
 
 
 # ── _bitbucket_cloud_preview ──────────────────────────────────────────────────
+
 
 def test_bitbucket_cloud_preview_success():
     url = "https://bitbucket.org/ws/r/src/main/f.py"
@@ -340,6 +390,7 @@ def test_bitbucket_cloud_preview_no_match():
 
 
 # ── _bitbucket_server_preview ─────────────────────────────────────────────────
+
 
 def test_bitbucket_server_preview_success():
     url = "https://bb.example.com/projects/P/repos/R/browse/f.py"
@@ -371,6 +422,7 @@ OG_HTML = b"""
 <meta property="og:image" content="http://img/pic.png">
 </head><body></body></html>
 """
+
 
 def test_og_preview_success():
     with patch.object(preview, "_fetch", return_value=OG_HTML):
@@ -414,6 +466,7 @@ def test_og_preview_truncates_long_description():
 
 # ── fetch_preview ─────────────────────────────────────────────────────────────
 
+
 def test_fetch_preview_cache_hit():
     preview._CACHE["https://cached.com/"] = {"type": "og", "title": "Cached"}
     result = preview.fetch_preview("https://cached.com/")
@@ -432,7 +485,9 @@ def test_fetch_preview_non_http_scheme():
 
 def test_fetch_preview_bitbucket_cloud():
     url = "https://bitbucket.org/ws/r/src/main/f.py"
-    with patch.object(preview, "_bitbucket_cloud_preview", return_value={"type": "code"}):
+    with patch.object(
+        preview, "_bitbucket_cloud_preview", return_value={"type": "code"}
+    ):
         result = preview.fetch_preview(url)
     assert result["type"] == "code"
     assert url in preview._CACHE
@@ -440,14 +495,18 @@ def test_fetch_preview_bitbucket_cloud():
 
 def test_fetch_preview_bitbucket_server():
     url = "https://bb.example.com/projects/P/repos/R/browse/f.py"
-    with patch.object(preview, "_bitbucket_server_preview", return_value={"type": "code"}):
+    with patch.object(
+        preview, "_bitbucket_server_preview", return_value={"type": "code"}
+    ):
         result = preview.fetch_preview(url)
     assert result["type"] == "code"
 
 
 def test_fetch_preview_og_fallback():
     url = "https://example.com/"
-    with patch.object(preview, "_og_preview", return_value={"type": "og", "title": "T"}):
+    with patch.object(
+        preview, "_og_preview", return_value={"type": "og", "title": "T"}
+    ):
         result = preview.fetch_preview(url)
     assert result["type"] == "og"
 
@@ -476,6 +535,8 @@ def test_fetch_preview_fifo_eviction():
 def test_fetch_preview_bb_cloud_empty_falls_back_to_og():
     url = "https://bitbucket.org/ws/r/src/main/f.py"
     with patch.object(preview, "_bitbucket_cloud_preview", return_value={}):
-        with patch.object(preview, "_og_preview", return_value={"type": "og", "title": "T"}):
+        with patch.object(
+            preview, "_og_preview", return_value={"type": "og", "title": "T"}
+        ):
             result = preview.fetch_preview(url)
     assert result["type"] == "og"

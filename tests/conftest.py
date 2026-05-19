@@ -23,8 +23,10 @@ def isolated_dbs(tmp_path, monkeypatch):
     preview_mod._CACHE.clear()
 
     from minimost.database import init_auth_db
+
     init_auth_db()
     from minimost.presence import _init_tables
+
     _init_tables()
 
     yield
@@ -43,6 +45,7 @@ def _add_user(auth_db, username, password="Password1!"):
 @pytest.fixture
 def app(isolated_dbs):
     from minimost import create_app
+
     application = create_app()
     application.config["TESTING"] = True
     application.config["CSRF_ENABLED"] = False

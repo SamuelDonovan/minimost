@@ -1,4 +1,5 @@
 """Tests for chat routes: messages, send, edit, delete, react, search, etc."""
+
 import io
 import json
 import sqlite3
@@ -40,6 +41,7 @@ def _insert_message(username, channel="general", content="hello", ts=None, sende
 
 # ── GET / (index) ─────────────────────────────────────────────────────────────
 
+
 def test_index_unauthenticated(client):
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 302
@@ -52,6 +54,7 @@ def test_index_authenticated(alice):
 
 
 # ── GET /channels ─────────────────────────────────────────────────────────────
+
 
 def test_channels_unauthenticated(client):
     resp = client.get("/channels")
@@ -68,6 +71,7 @@ def test_channels_returns_list(alice):
 
 # ── GET /channel_unreads ──────────────────────────────────────────────────────
 
+
 def test_channel_unreads_empty(alice):
     resp = alice.get("/channel_unreads")
     assert resp.status_code == 200
@@ -82,7 +86,12 @@ def test_channel_unreads_counts(alice_and_bob, app):
     alice_db = sqlite3.connect(str(common_mod.user_db_path("alice")))
     alice_db.execute(
         "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, 0)",
-        ("general", "bob", "hi", ts, ),
+        (
+            "general",
+            "bob",
+            "hi",
+            ts,
+        ),
     )
     alice_db.commit()
     alice_db.close()
@@ -92,6 +101,7 @@ def test_channel_unreads_counts(alice_and_bob, app):
 
 
 # ── GET /unread_count ─────────────────────────────────────────────────────────
+
 
 def test_unread_count_zero(alice):
     resp = alice.get("/unread_count")
@@ -115,6 +125,7 @@ def test_unread_count_with_dm(alice):
 
 # ── GET /dms ──────────────────────────────────────────────────────────────────
 
+
 def test_dms_empty(alice):
     resp = alice.get("/dms")
     assert resp.status_code == 200
@@ -137,6 +148,7 @@ def test_dms_returns_conversations(alice):
 
 # ── GET /online_users ─────────────────────────────────────────────────────────
 
+
 def test_online_users_empty(alice):
     resp = alice.get("/online_users")
     assert resp.status_code == 200
@@ -156,6 +168,7 @@ def test_online_users_shows_recent(alice):
 
 
 # ── GET /messages/<channel> ───────────────────────────────────────────────────
+
 
 def test_messages_unauthenticated(client):
     resp = client.get("/messages/general")
@@ -229,6 +242,7 @@ def test_messages_deleted_tombstone(alice):
 
 # ── POST /send/<channel> ──────────────────────────────────────────────────────
 
+
 def test_send_unauthenticated(client):
     resp = client.post("/send/general", data={"text": "hi"})
     assert resp.status_code == 302
@@ -262,7 +276,9 @@ def test_send_stores_in_db(alice):
 def test_send_propagates_to_all_users(alice_and_bob):
     alice_and_bob.post("/send/general", data={"text": "broadcast"})
     bob_db = sqlite3.connect(str(common_mod.user_db_path("bob")))
-    row = bob_db.execute("SELECT content FROM messages WHERE channel='general'").fetchone()
+    row = bob_db.execute(
+        "SELECT content FROM messages WHERE channel='general'"
+    ).fetchone()
     bob_db.close()
     assert row is not None
     assert row[0] == "broadcast"
@@ -280,17 +296,22 @@ def test_send_dm_forbidden_for_outsider(alice_and_bob):
 
 def test_send_with_reply_to(alice):
     msg_id, _ = _insert_message("alice", "general", "parent")
-    resp = alice.post("/send/general", data={"text": "reply", "reply_to_id": str(msg_id)})
+    resp = alice.post(
+        "/send/general", data={"text": "reply", "reply_to_id": str(msg_id)}
+    )
     assert resp.status_code == 200
 
 
 def test_send_with_invalid_reply_to(alice):
-    resp = alice.post("/send/general", data={"text": "reply", "reply_to_id": "notanint"})
+    resp = alice.post(
+        "/send/general", data={"text": "reply", "reply_to_id": "notanint"}
+    )
     assert resp.status_code == 200
 
 
 def test_send_file(alice, tmp_path):
     import minimost.chat as chat
+
     orig_upload = chat.UPLOAD_DIR
     chat.UPLOAD_DIR.mkdir(exist_ok=True)
     img = io.BytesIO(b"\xff\xd8\xff" + b"\x00" * 10)
@@ -314,6 +335,7 @@ def test_send_file_invalid_extension(alice):
 
 # ── GET /message/<id> ─────────────────────────────────────────────────────────
 
+
 def test_get_message_found(alice):
     msg_id, _ = _insert_message("alice", "general", "single")
     resp = alice.get(f"/message/{msg_id}")
@@ -329,6 +351,7 @@ def test_get_message_not_found(alice):
 
 # ── GET /files/<filename> ─────────────────────────────────────────────────────
 
+
 def test_files_unauthenticated(client):
     resp = client.get("/files/something.jpg")
     assert resp.status_code == 302
@@ -343,6 +366,7 @@ def test_files_serves_file(alice):
 
 
 # ── GET /search_messages ──────────────────────────────────────────────────────
+
 
 def test_search_empty_query(alice):
     resp = alice.get("/search_messages?q=")
@@ -365,6 +389,7 @@ def test_search_finds_match(alice):
 
 # ── POST /edit/<id> ───────────────────────────────────────────────────────────
 
+
 def test_edit_unauthenticated(client):
     resp = client.post("/edit/1", data={"text": "new"})
     assert resp.status_code == 302
@@ -381,7 +406,9 @@ def test_edit_updates_content(alice):
     msg_id, _ = _insert_message("alice", "general", "original")
     alice.post(f"/edit/{msg_id}", data={"text": "new text"})
     db = sqlite3.connect(str(common_mod.user_db_path("alice")))
-    row = db.execute("SELECT content, edited FROM messages WHERE id=?", (msg_id,)).fetchone()
+    row = db.execute(
+        "SELECT content, edited FROM messages WHERE id=?", (msg_id,)
+    ).fetchone()
     db.close()
     assert row[0] == "new text"
     assert row[1] == 1
@@ -390,7 +417,9 @@ def test_edit_updates_content(alice):
 def test_edit_forbidden_for_other_user(alice_and_bob, app):
     _insert_message("bob", "general", "bobs msg")
     bob_db = sqlite3.connect(str(common_mod.user_db_path("bob")))
-    bob_row = bob_db.execute("SELECT id FROM messages WHERE content='bobs msg'").fetchone()
+    bob_row = bob_db.execute(
+        "SELECT id FROM messages WHERE content='bobs msg'"
+    ).fetchone()
     bob_db.close()
 
     resp = alice_and_bob.post(f"/edit/{bob_row[0]}", data={"text": "hacked"})
@@ -414,9 +443,7 @@ def test_edit_propagates_to_other_users(alice_and_bob):
         db.close()
 
     alice_db = sqlite3.connect(str(common_mod.user_db_path("alice")))
-    msg_id = alice_db.execute(
-        "SELECT id FROM messages WHERE ts=?", (ts,)
-    ).fetchone()[0]
+    msg_id = alice_db.execute("SELECT id FROM messages WHERE ts=?", (ts,)).fetchone()[0]
     alice_db.close()
 
     alice_and_bob.post(f"/edit/{msg_id}", data={"text": "edited"})
@@ -428,6 +455,7 @@ def test_edit_propagates_to_other_users(alice_and_bob):
 
 
 # ── POST /delete/<id> ─────────────────────────────────────────────────────────
+
 
 def test_delete_unauthenticated(client):
     resp = client.post("/delete/1")
@@ -471,6 +499,7 @@ def test_delete_not_found(alice):
 
 # ── POST /react/<id> ──────────────────────────────────────────────────────────
 
+
 def test_react_unauthenticated(client):
     resp = client.post("/react/1", data={"reaction": "thumbs_up"})
     assert resp.status_code == 302
@@ -513,6 +542,7 @@ def test_react_toggle_removes(alice):
 
 
 # ── POST /mark_read/<channel> ─────────────────────────────────────────────────
+
 
 def test_mark_read_unauthenticated(client):
     resp = client.post("/mark_read/general")
@@ -567,6 +597,7 @@ def test_mark_read_no_unread_messages(alice):
 
 # ── GET /read_receipts/<channel> ──────────────────────────────────────────────
 
+
 def test_read_receipts_empty(alice):
     data = alice.get("/read_receipts/general").get_json()
     assert data == {}
@@ -588,6 +619,7 @@ def test_read_receipts_returns_data(alice):
 
 # ── GET /users ────────────────────────────────────────────────────────────────
 
+
 def test_users_unauthenticated(client):
     resp = client.get("/users")
     assert resp.status_code == 302
@@ -600,6 +632,7 @@ def test_users_excludes_self(alice_and_bob):
 
 
 # ── GET /link_preview ─────────────────────────────────────────────────────────
+
 
 def test_link_preview_empty_url(alice):
     resp = alice.get("/link_preview?url=")

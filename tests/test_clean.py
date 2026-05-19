@@ -49,6 +49,7 @@ def test_skips_subdirectory(tmp_path):
 
 def test_skips_unreadable_file(tmp_path):
     from unittest.mock import MagicMock
+
     # Use a fake path object so only the file's stat raises, not the
     # directory's (which would break the is_dir() check in Python 3.11).
     fake = MagicMock()

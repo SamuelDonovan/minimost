@@ -309,7 +309,14 @@ def _fetch(url, max_bytes=65536):
     if parsed.port is not None:
         netloc = f"{netloc}:{parsed.port}"
     safe_url = urllib.parse.urlunparse(
-        (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+        (
+            parsed.scheme,
+            netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
     )
 
     req = urllib.request.Request(safe_url, headers=_HEADERS)

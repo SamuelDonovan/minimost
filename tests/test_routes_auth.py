@@ -1,4 +1,5 @@
 """Tests for auth routes: login, logout, signup."""
+
 import sqlite3
 from unittest.mock import patch
 from werkzeug.security import generate_password_hash
@@ -20,6 +21,7 @@ def _add_user(username, password="Password1!"):
 
 # ── GET /login ────────────────────────────────────────────────────────────────
 
+
 def test_login_get(client):
     resp = client.get("/login")
     assert resp.status_code == 200
@@ -32,6 +34,7 @@ def test_login_html_alias(client):
 
 
 # ── POST /login ───────────────────────────────────────────────────────────────
+
 
 def test_login_post_invalid_credentials(client):
     _add_user("alice")
@@ -74,6 +77,7 @@ def test_login_post_sets_session(client):
 
 # ── GET /logout ───────────────────────────────────────────────────────────────
 
+
 def test_logout_unauthenticated(client):
     resp = client.get("/logout", follow_redirects=False)
     assert resp.status_code == 302
@@ -94,12 +98,14 @@ def test_logout_redirects_to_login(alice):
 
 # ── GET /signup ───────────────────────────────────────────────────────────────
 
+
 def test_signup_get(client):
     resp = client.get("/signup")
     assert resp.status_code == 200
 
 
 # ── POST /signup ──────────────────────────────────────────────────────────────
+
 
 def test_signup_validation_error(client):
     resp = client.post(
@@ -182,6 +188,7 @@ def test_signup_seeds_history(client):
     """New user gets public channel history from existing user's DB."""
     _add_user("existing")
     import time
+
     existing_db = sqlite3.connect(str(common_mod.user_db_path("existing")))
     existing_db.execute(
         "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, ?)",

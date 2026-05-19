@@ -18,6 +18,7 @@ def test_hash_password_different_each_call():
 
 # ── _validate_signup ──────────────────────────────────────────────────────────
 
+
 def test_validate_signup_ok():
     assert _validate_signup("alice", "Password1!", "Password1!") is None
 
@@ -73,6 +74,7 @@ def test_validate_signup_valid_hyphens_underscores():
 
 # ── _seed_channel_history ─────────────────────────────────────────────────────
 
+
 def test_seed_no_existing_users(isolated_dbs):
     common_mod.init_user_db("newuser")
     _seed_channel_history("newuser")
@@ -85,7 +87,10 @@ def test_seed_no_existing_users(isolated_dbs):
 def test_seed_existing_user_no_db_file(isolated_dbs):
     db = sqlite3.connect(auth_mod.AUTH_DB)
     from werkzeug.security import generate_password_hash
-    db.execute("INSERT INTO users VALUES (?, ?)", ("ghost", generate_password_hash("x")))
+
+    db.execute(
+        "INSERT INTO users VALUES (?, ?)", ("ghost", generate_password_hash("x"))
+    )
     db.commit()
     db.close()
     common_mod.init_user_db("newuser")
@@ -101,7 +106,9 @@ def test_seed_copies_public_channel_messages(isolated_dbs):
     from time import time
 
     adb = sqlite3.connect(auth_mod.AUTH_DB)
-    adb.execute("INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x")))
+    adb.execute(
+        "INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x"))
+    )
     adb.commit()
     adb.close()
 
@@ -130,7 +137,9 @@ def test_seed_does_not_copy_dm_messages(isolated_dbs):
     from time import time
 
     adb = sqlite3.connect(auth_mod.AUTH_DB)
-    adb.execute("INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x")))
+    adb.execute(
+        "INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x"))
+    )
     adb.commit()
     adb.close()
 
@@ -156,7 +165,9 @@ def test_seed_empty_public_history(isolated_dbs):
     from werkzeug.security import generate_password_hash
 
     adb = sqlite3.connect(auth_mod.AUTH_DB)
-    adb.execute("INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x")))
+    adb.execute(
+        "INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x"))
+    )
     adb.commit()
     adb.close()
 

@@ -1,11 +1,12 @@
 """Tests for presence routes: typing and presence updates."""
+
 import sqlite3
 import time
 
 import minimost.presence as presence_mod
 
-
 # ── POST /typing/<channel> ────────────────────────────────────────────────────
+
 
 def test_typing_unauthenticated_returns_204(client):
     resp = client.post("/typing/general")
@@ -24,6 +25,7 @@ def test_typing_authenticated_stores_record(alice):
 
 
 # ── GET /typing/<channel> ─────────────────────────────────────────────────────
+
 
 def test_typing_get_unauthenticated(client):
     resp = client.get("/typing/general")
@@ -77,6 +79,7 @@ def test_typing_get_excludes_stale(alice_and_bob):
 
 # ── POST /presence ────────────────────────────────────────────────────────────
 
+
 def test_presence_unauthenticated_returns_204(client):
     resp = client.post(
         "/presence", json={"state": "active"}, content_type="application/json"
@@ -118,6 +121,7 @@ def test_presence_no_json_body(alice):
 
 
 # ── update_presence (direct) ──────────────────────────────────────────────────
+
 
 def test_update_presence_valid():
     presence_mod.update_presence("testuser", "active")
