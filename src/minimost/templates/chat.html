@@ -72,6 +72,10 @@
         <div id="topbar-channel">
             <span class="chan-hash">#</span><span id="chan"></span>
             <span id="vim-mode-indicator">-- visual --</span>
+            <div id="private-ch-controls">
+                <button class="icon-btn" onclick="openRenameChannel()" title="Rename channel">Rename</button>
+                <button class="icon-btn" onclick="openChannelMembers()" title="Manage members">Members</button>
+            </div>
         </div>
     </div>
 
@@ -137,6 +141,54 @@
         <div class="modal-actions">
             <button id="dm-start">Start</button>
             <button id="dm-cancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Create Private Channel Modal -->
+<div id="create-private-ch-modal" class="modal">
+    <div class="modal-content">
+        <h3>New Private Channel</h3>
+        <label>Channel name</label><br>
+        <input type="text" id="private-ch-name" placeholder="e.g. miniost-enjoyers" style="width:90%; margin-bottom:10px">
+        <label>Members</label>
+        <div class="input-suggest-wrap">
+            <input id="private-ch-members-input" placeholder="Enter usernames (comma separated)" autocomplete="off">
+            <div id="private-ch-suggestions" class="autocomplete-suggestions"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="private-ch-create-btn">Create</button>
+            <button id="private-ch-create-cancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Private Channel Modal -->
+<div id="rename-private-ch-modal" class="modal">
+    <div class="modal-content">
+        <h3>Rename Channel</h3>
+        <input type="text" id="rename-ch-input" placeholder="New channel name" style="width:90%">
+        <div class="modal-actions">
+            <button id="rename-ch-submit-btn">Rename</button>
+            <button id="rename-ch-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Channel Members Modal -->
+<div id="private-ch-members-modal" class="modal">
+    <div class="modal-content">
+        <h3 id="members-modal-title">Members</h3>
+        <div id="members-list" style="margin-bottom:12px"></div>
+        <hr>
+        <h4 style="margin:8px 0">Add Member</h4>
+        <div class="input-suggest-wrap">
+            <input type="text" id="add-member-input" placeholder="Username" autocomplete="off">
+            <div id="add-member-suggestions" class="autocomplete-suggestions"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="add-member-submit-btn">Add</button>
+            <button id="members-modal-close-btn">Close</button>
         </div>
     </div>
 </div>
@@ -367,6 +419,10 @@ let lastRenderedDate = null;
 let forceScrollToBottom = false;
 let pendingFiles = [];
 let fetchController = null;
+let privateChannelMap = {};
+let privateChannelUnreadCount = 0;
+let privateChannelMembers = {};
+let presenceMapCache = {};
 let readReceiptsMap = {};
 let hasUnreadChannels = false;
 
@@ -417,13 +473,14 @@ function loadSidebar() {
 
     Promise.all([
         fetch("/channels").then(r => r.json()),
+        fetch("/private_channels").then(r => r.json()),
         fetch("/dms").then(r => r.json()),
         fetch("/online_users").then(r => r.json())
-    ]).then(([chs, dms, online]) => {
+    ]).then(([chs, privateChannels, dms, online]) => {
 
-        // Channels
+        // Public channels
         const chTitle = document.createElement("b");
-        chTitle.innerText = "Channels";
+        chTitle.innerText = "Public Channels";
         sb.appendChild(chTitle);
 
         chs.forEach(c => {
@@ -432,10 +489,43 @@ function loadSidebar() {
 
         sb.appendChild(document.createElement("hr"));
 
+        // Private channels
+        const privateHeader = document.createElement("div");
+        privateHeader.id = "private-ch-sidebar-header";
+        privateHeader.className = "sidebar-section-header";
+        const privateTitleEl = document.createElement("b");
+        privateTitleEl.textContent = "Private Channels";
+        const newPCBtn = document.createElement("button");
+        newPCBtn.className = "icon-btn sidebar-new-btn";
+        newPCBtn.title = "New private channel";
+        newPCBtn.textContent = "+";
+        newPCBtn.onclick = openCreatePrivateChannel;
+        privateHeader.appendChild(privateTitleEl);
+        privateHeader.appendChild(newPCBtn);
+        sb.appendChild(privateHeader);
+
+        privateChannels.forEach(pc => {
+            privateChannelMap[pc.channel] = pc.name;
+            privateChannelMembers[pc.channel] = pc.members || [];
+            const el = sidebarEntry("$ " + pc.name, pc.channel, pc.unread);
+            bindPCTooltip(el);
+        });
+
+        sb.appendChild(document.createElement("hr"));
+
         // DMs
-        const dmTitle = document.createElement("b");
-        dmTitle.innerText = "Direct Messages";
-        sb.appendChild(dmTitle);
+        const dmHeader = document.createElement("div");
+        dmHeader.className = "sidebar-section-header";
+        const dmTitleEl = document.createElement("b");
+        dmTitleEl.textContent = "Direct Messages";
+        const newDmBtn = document.createElement("button");
+        newDmBtn.className = "icon-btn sidebar-new-btn";
+        newDmBtn.title = "New direct message";
+        newDmBtn.textContent = "+";
+        newDmBtn.onclick = openDmModal;
+        dmHeader.appendChild(dmTitleEl);
+        dmHeader.appendChild(newDmBtn);
+        sb.appendChild(dmHeader);
 
         refreshPresence();
         refreshChannels();
@@ -444,7 +534,7 @@ function loadSidebar() {
             sidebarEntry(label, dm.channel);
         });
 
-        // 🔑 ensure highlight is correct after rebuild
+        // ensure highlight is correct after rebuild
         updateSidebarActive();
     });
 }
@@ -455,7 +545,7 @@ function refreshChannels() {
         .then(counts => {
             hasUnreadChannels = Object.values(counts).some(c => c > 0);
             channelUnreadCount = Object.values(counts).reduce((a, b) => a + b, 0);
-            updateTitleBadge(channelUnreadCount + lastUnreadCount);
+            updateTitleBadge(channelUnreadCount + privateChannelUnreadCount + lastUnreadCount);
 
             for (const [ch, count] of Object.entries(counts)) {
                 const el = document.querySelector(`[data-channel="${ch}"]`);
@@ -473,11 +563,53 @@ function refreshChannels() {
                 }
             }
 
-            if (hasUnreadChannels) {
+            if (hasUnreadChannels || privateChannelUnreadCount > 0) {
                 startFaviconFlash();
             } else if (lastUnreadCount === 0) {
                 stopFaviconFlash();
             }
+        });
+}
+
+function refreshPrivateChannels() {
+    fetch("/private_channels")
+        .then(r => r.json())
+        .then(channels => {
+            const sb = document.getElementById("sidebar-dynamic");
+            const header = document.getElementById("private-ch-sidebar-header");
+            if (!header) return;
+
+            const seen = new Set();
+            let insertAfter = header;
+
+            channels.forEach(pc => {
+                privateChannelMap[pc.channel] = pc.name;
+                privateChannelMembers[pc.channel] = pc.members || [];
+                const el = sidebarEntry("$ " + pc.name, pc.channel, pc.unread);
+                bindPCTooltip(el);
+                seen.add(pc.channel);
+                sb.insertBefore(el, insertAfter.nextSibling);
+                insertAfter = el;
+            });
+
+            sb.querySelectorAll(".sidebar-private").forEach(el => {
+                if (!seen.has(el.dataset.channel)) el.remove();
+            });
+
+            privateChannelUnreadCount = channels.reduce((s, pc) => s + pc.unread, 0);
+            updateTitleBadge(channelUnreadCount + privateChannelUnreadCount + lastUnreadCount);
+
+            if (channel.startsWith("private:") && privateChannelMap[channel]) {
+                document.getElementById("chan").innerText = privateChannelMap[channel];
+            }
+
+            if (privateChannelUnreadCount > 0 || hasUnreadChannels) {
+                startFaviconFlash();
+            } else if (lastUnreadCount === 0) {
+                stopFaviconFlash();
+            }
+
+            updateSidebarActive();
         });
 }
 
@@ -488,7 +620,7 @@ function refreshDMs() {
             const sb = document.getElementById("sidebar-dynamic");
 
             const dmHeader = Array.from(sb.children)
-                .find(e => e.tagName === "B" && e.innerText === "Direct Messages");
+                .find(e => e.classList?.contains("sidebar-section-header") && e.querySelector("b")?.textContent === "Direct Messages");
             if (!dmHeader) return;
 
             const seen = new Set();
@@ -583,6 +715,7 @@ function refreshPresence() {
     fetch("/online_users")
         .then(r => r.json())
         .then(presenceMap => {
+            presenceMapCache = presenceMap;
             document.querySelectorAll(".sidebar-dm").forEach(el => {
                 const channel = el.dataset.channel;
                 const users = channel
@@ -717,9 +850,9 @@ function refreshTotalUnreadCount() {
         .then(data => {
             const prevCount = lastUnreadCount;
             lastUnreadCount = data.count;
-            updateTitleBadge(channelUnreadCount + lastUnreadCount);
+            updateTitleBadge(channelUnreadCount + privateChannelUnreadCount + lastUnreadCount);
             updateAppBadge(lastUnreadCount);
-            if (lastUnreadCount > 0 || hasUnreadChannels) {
+            if (lastUnreadCount > 0 || hasUnreadChannels || privateChannelUnreadCount > 0) {
                 startFaviconFlash();
                 if (lastUnreadCount !== prevCount) sendDesktopNotification(lastUnreadCount);
             } else {
@@ -753,7 +886,7 @@ function sidebarEntry(label, channelName, unread = 0) {
     if (channelName.startsWith("dm:")) {
         d.classList.add("sidebar-dm");
 
-        // 🔑 Reuse or create presence
+        // Reuse or create presence dot
         let presence = existingPresence;
         if (!presence) {
             presence = document.createElement("span");
@@ -763,6 +896,10 @@ function sidebarEntry(label, channelName, unread = 0) {
         }
 
         d.appendChild(presence);
+    }
+
+    if (channelName.startsWith("private:")) {
+        d.classList.add("sidebar-private");
     }
 
     if (unread > 0) {
@@ -828,7 +965,11 @@ function switchChannel(c) {
     document.getElementById("typing-indicator").textContent = "";
     readReceiptsMap = {};
     document.querySelector(`[data-channel="${c}"]`)?.querySelector(".unread-badge")?.remove();
-    document.getElementById("chan").innerText = c;
+    const isPrivate = c.startsWith("private:");
+    document.getElementById("chan").innerText = isPrivate ? (privateChannelMap[c] || c) : c;
+    document.querySelector(".chan-hash").textContent = isPrivate ? "$" : "#";
+    const pcControls = document.getElementById("private-ch-controls");
+    if (pcControls) pcControls.style.display = isPrivate ? "flex" : "none";
 
     forceScrollToBottom = true;
 
@@ -993,6 +1134,19 @@ function fetchMessages() {
                 const hasText = m.content && m.content.trim();
                 const hasImage = m.filename && m.filename.trim();
                 if (!hasText && !hasImage) {
+                    lastTs = Math.max(lastTs, m.ts);
+                    return;
+                }
+
+                if (m.content_type === "system") {
+                    if (!existing) {
+                        const d = document.createElement("div");
+                        d.className = "system-msg";
+                        d.id = msgId;
+                        d.textContent = m.content;
+                        chat.appendChild(d);
+                        appended = true;
+                    }
                     lastTs = Math.max(lastTs, m.ts);
                     return;
                 }
@@ -1303,6 +1457,381 @@ document.getElementById("dm-start").onclick = () => {
     switchChannel(dmChannel);
 
     focusMessageInput();
+};
+
+// ── Private Channel Tooltip ────────────────────────────────────��──────────────
+
+let _pcTooltipHideTimer = null;
+
+function _cancelPCTooltipHide() {
+    if (_pcTooltipHideTimer) {
+        clearTimeout(_pcTooltipHideTimer);
+        _pcTooltipHideTimer = null;
+    }
+}
+
+function _schedulePCTooltipHide() {
+    _cancelPCTooltipHide();
+    _pcTooltipHideTimer = setTimeout(() => {
+        const tooltip = document.getElementById("pc-member-tooltip");
+        if (tooltip) tooltip.style.display = "none";
+    }, 120);
+}
+
+function showPCTooltip(el) {
+    _cancelPCTooltipHide();
+    const tooltip = document.getElementById("pc-member-tooltip");
+    if (!tooltip) return;
+    const ch = el.dataset.channel;
+    const members = privateChannelMembers[ch] || [];
+    if (!members.length) return;
+
+    tooltip.innerHTML = "";
+    members.forEach(username => {
+        const row = document.createElement("div");
+        row.className = "tooltip-member";
+        const dot = document.createElement("span");
+        dot.className = "presence-inline";
+        setPresence(dot, presenceMapCache[username] || "offline");
+        const name = document.createElement("span");
+        name.textContent = username;
+        row.appendChild(dot);
+        row.appendChild(name);
+        tooltip.appendChild(row);
+    });
+
+    const rect = el.getBoundingClientRect();
+    tooltip.style.top = rect.top + "px";
+    tooltip.style.left = rect.right + 6 + "px";
+    tooltip.style.display = "block";
+}
+
+function hidePCTooltip() {
+    const tooltip = document.getElementById("pc-member-tooltip");
+    if (tooltip) tooltip.style.display = "none";
+}
+
+function bindPCTooltip(el) {
+    el.onmouseenter = () => showPCTooltip(el);
+    el.onmouseleave = _schedulePCTooltipHide;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const tooltip = document.getElementById("pc-member-tooltip");
+    if (tooltip) {
+        tooltip.addEventListener("mouseenter", _cancelPCTooltipHide);
+        tooltip.addEventListener("mouseleave", _schedulePCTooltipHide);
+    }
+});
+
+// ── Private Channels ──────────────────────────────────────────────────────────
+
+const createPrivateChModal = document.getElementById("create-private-ch-modal");
+const renamePrivateChModal = document.getElementById("rename-private-ch-modal");
+const privateMembersModal  = document.getElementById("private-ch-members-modal");
+
+const privateChNameInput    = document.getElementById("private-ch-name");
+const privateChMembersInput = document.getElementById("private-ch-members-input");
+const privateChSuggestions  = document.getElementById("private-ch-suggestions");
+const addMemberInput        = document.getElementById("add-member-input");
+const addMemberSuggestions  = document.getElementById("add-member-suggestions");
+
+let pcSuggestionIndex = -1;
+let pcCurrentSuggestions = [];
+let addMemberSuggIndex = -1;
+let addMemberCurrentSuggestions = [];
+
+function openCreatePrivateChannel() {
+    createPrivateChModal.style.display = "block";
+    privateChNameInput.value = "";
+    privateChMembersInput.value = "";
+    privateChSuggestions.style.display = "none";
+    if (!usersLoaded) {
+        fetch("/users").then(r => r.json()).then(u => { allUsers = u; usersLoaded = true; });
+    }
+    privateChNameInput.focus();
+}
+
+document.getElementById("private-ch-create-cancel").onclick = () => {
+    createPrivateChModal.style.display = "none";
+};
+
+document.getElementById("private-ch-create-btn").onclick = async () => {
+    const name = privateChNameInput.value.trim();
+    if (!name) { privateChNameInput.focus(); return; }
+
+    const raw = privateChMembersInput.value;
+    const members = raw.split(",").map(u => u.trim()).filter(Boolean);
+
+    const resp = await fetch("/private_channels/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, members })
+    });
+
+    if (!resp.ok) {
+        alert("Failed to create channel: " + await resp.text());
+        return;
+    }
+
+    const data = await resp.json();
+    createPrivateChModal.style.display = "none";
+    privateChannelMap[data.channel] = data.name;
+    loadSidebar();
+    switchChannel(data.channel);
+    focusMessageInput();
+};
+
+privateChMembersInput.addEventListener("input", () => {
+    if (!usersLoaded) return;
+    const raw = privateChMembersInput.value;
+    const parts = raw.split(",").map(p => p.trim());
+    const lastPart = parts[parts.length - 1].toLowerCase();
+    pcSuggestionIndex = -1;
+    if (!lastPart) { privateChSuggestions.style.display = "none"; return; }
+    const already = parts.slice(0, -1);
+    const matches = allUsers
+        .filter(u => !already.includes(u))
+        .map(u => ({ user: u, result: fuzzySearch(lastPart, u) }))
+        .filter(({ result }) => result !== null)
+        .sort((a, b) => b.result.score - a.result.score);
+    pcCurrentSuggestions = matches.map(m => m.user);
+    if (!pcCurrentSuggestions.length) { privateChSuggestions.style.display = "none"; return; }
+    privateChSuggestions.innerHTML = "";
+    matches.forEach(({ user, result }, idx) => {
+        const div = document.createElement("div");
+        div.className = "autocomplete-suggestion";
+        div.innerHTML = highlightFuzzyMatch(user, result.indices);
+        div.onclick = () => selectPCSuggestion(idx);
+        privateChSuggestions.appendChild(div);
+    });
+    privateChSuggestions.style.display = "block";
+});
+
+function selectPCSuggestion(idx) {
+    const raw = privateChMembersInput.value;
+    const parts = raw.split(",").map(p => p.trim());
+    parts[parts.length - 1] = pcCurrentSuggestions[idx];
+    privateChMembersInput.value = parts.join(", ") + ", ";
+    privateChSuggestions.style.display = "none";
+    pcSuggestionIndex = -1;
+    privateChMembersInput.focus();
+}
+
+privateChMembersInput.addEventListener("keydown", e => {
+    const items = privateChSuggestions.children;
+    const visible = privateChSuggestions.style.display === "block";
+    if (e.key === "Tab" && visible && items.length) {
+        e.preventDefault();
+        selectPCSuggestion(Math.max(pcSuggestionIndex, 0));
+        return;
+    }
+    if (e.key === "Enter") {
+        e.preventDefault();
+        if (visible && items.length) { selectPCSuggestion(Math.max(pcSuggestionIndex, 0)); return; }
+        document.getElementById("private-ch-create-btn").click();
+        return;
+    }
+    if (!visible) return;
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
+        pcSuggestionIndex = (pcSuggestionIndex + 1) % items.length;
+        Array.from(items).forEach((el, i) => el.classList.toggle("active", i === pcSuggestionIndex));
+    } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        pcSuggestionIndex = (pcSuggestionIndex - 1 + items.length) % items.length;
+        Array.from(items).forEach((el, i) => el.classList.toggle("active", i === pcSuggestionIndex));
+    } else if (e.key === "Escape") {
+        privateChSuggestions.style.display = "none";
+        pcSuggestionIndex = -1;
+    }
+});
+
+document.addEventListener("click", e => {
+    if (!privateChMembersInput.contains(e.target) && !privateChSuggestions.contains(e.target)) {
+        privateChSuggestions.style.display = "none";
+    }
+});
+
+// Rename channel
+function openRenameChannel() {
+    if (!channel.startsWith("private:")) return;
+    renamePrivateChModal.style.display = "block";
+    const renameInput = document.getElementById("rename-ch-input");
+    renameInput.value = privateChannelMap[channel] || "";
+    renameInput.focus();
+    renameInput.select();
+}
+
+document.getElementById("rename-ch-cancel-btn").onclick = () => {
+    renamePrivateChModal.style.display = "none";
+};
+
+document.getElementById("rename-ch-submit-btn").onclick = async () => {
+    if (!channel.startsWith("private:")) return;
+    const channelId = channel.split(":")[1];
+    const name = document.getElementById("rename-ch-input").value.trim();
+    if (!name) return;
+
+    const resp = await fetch(`/private_channels/${channelId}/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+    });
+
+    if (!resp.ok) {
+        alert("Failed to rename channel: " + await resp.text());
+        return;
+    }
+
+    privateChannelMap[channel] = name;
+    document.getElementById("chan").innerText = name;
+    renamePrivateChModal.style.display = "none";
+    refreshPrivateChannels();
+};
+
+document.getElementById("rename-ch-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") document.getElementById("rename-ch-submit-btn").click();
+    if (e.key === "Escape") renamePrivateChModal.style.display = "none";
+});
+
+// Members modal
+function openChannelMembers() {
+    if (!channel.startsWith("private:")) return;
+    privateMembersModal.style.display = "block";
+    const channelId = channel.split(":")[1];
+    document.getElementById("members-modal-title").textContent =
+        "Members: " + (privateChannelMap[channel] || channel);
+    document.getElementById("add-member-input").value = "";
+    addMemberSuggestions.style.display = "none";
+    if (!usersLoaded) {
+        fetch("/users").then(r => r.json()).then(u => { allUsers = u; usersLoaded = true; });
+    }
+    loadChannelMembers(channelId);
+}
+
+function loadChannelMembers(channelId) {
+    fetch(`/private_channels/${channelId}/members`)
+        .then(r => r.json())
+        .then(members => {
+            const list = document.getElementById("members-list");
+            list.innerHTML = "";
+            members.forEach(m => {
+                const div = document.createElement("div");
+                div.className = "members-list-item";
+                div.style.display = "flex";
+                div.style.alignItems = "center";
+                div.style.gap = "6px";
+                const dot = document.createElement("span");
+                dot.className = "presence-inline";
+                setPresence(dot, presenceMapCache[m.username] || "offline");
+                const label = document.createElement("span");
+                label.textContent = m.username + (m.username === CURRENT_USER ? " (you)" : "");
+                div.appendChild(dot);
+                div.appendChild(label);
+                list.appendChild(div);
+            });
+        });
+}
+
+document.getElementById("members-modal-close-btn").onclick = () => {
+    privateMembersModal.style.display = "none";
+};
+
+
+addMemberInput.addEventListener("input", () => {
+    if (!usersLoaded) return;
+    const q = addMemberInput.value.trim().toLowerCase();
+    addMemberSuggIndex = -1;
+    if (!q) { addMemberSuggestions.style.display = "none"; return; }
+    const matches = allUsers
+        .map(u => ({ user: u, result: fuzzySearch(q, u) }))
+        .filter(({ result }) => result !== null)
+        .sort((a, b) => b.result.score - a.result.score);
+    addMemberCurrentSuggestions = matches.map(m => m.user);
+    if (!addMemberCurrentSuggestions.length) { addMemberSuggestions.style.display = "none"; return; }
+    addMemberSuggestions.innerHTML = "";
+    matches.forEach(({ user, result }, idx) => {
+        const div = document.createElement("div");
+        div.className = "autocomplete-suggestion";
+        div.style.display = "flex";
+        div.style.alignItems = "center";
+        div.style.gap = "6px";
+        const dot = document.createElement("span");
+        dot.className = "presence-inline";
+        setPresence(dot, presenceMapCache[user] || "offline");
+        const label = document.createElement("span");
+        label.innerHTML = highlightFuzzyMatch(user, result.indices);
+        div.appendChild(dot);
+        div.appendChild(label);
+        div.onclick = () => selectAddMemberSuggestion(idx);
+        addMemberSuggestions.appendChild(div);
+    });
+    addMemberSuggestions.style.display = "block";
+});
+
+function selectAddMemberSuggestion(idx) {
+    addMemberInput.value = addMemberCurrentSuggestions[idx];
+    addMemberSuggestions.style.display = "none";
+    addMemberSuggIndex = -1;
+    addMemberInput.focus();
+}
+
+addMemberInput.addEventListener("keydown", e => {
+    const items = addMemberSuggestions.children;
+    const visible = addMemberSuggestions.style.display === "block";
+    if (e.key === "Tab" && visible && items.length) {
+        e.preventDefault();
+        selectAddMemberSuggestion(Math.max(addMemberSuggIndex, 0));
+        return;
+    }
+    if (e.key === "Enter") {
+        e.preventDefault();
+        if (visible && items.length) { selectAddMemberSuggestion(Math.max(addMemberSuggIndex, 0)); return; }
+        document.getElementById("add-member-submit-btn").click();
+        return;
+    }
+    if (!visible) return;
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
+        addMemberSuggIndex = (addMemberSuggIndex + 1) % items.length;
+        Array.from(items).forEach((el, i) => el.classList.toggle("active", i === addMemberSuggIndex));
+    } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        addMemberSuggIndex = (addMemberSuggIndex - 1 + items.length) % items.length;
+        Array.from(items).forEach((el, i) => el.classList.toggle("active", i === addMemberSuggIndex));
+    } else if (e.key === "Escape") {
+        addMemberSuggestions.style.display = "none";
+        addMemberSuggIndex = -1;
+    }
+});
+
+document.addEventListener("click", e => {
+    if (!addMemberInput.contains(e.target) && !addMemberSuggestions.contains(e.target)) {
+        addMemberSuggestions.style.display = "none";
+    }
+});
+
+document.getElementById("add-member-submit-btn").onclick = async () => {
+    if (!channel.startsWith("private:")) return;
+    const channelId = channel.split(":")[1];
+    const username = addMemberInput.value.trim();
+    if (!username) { addMemberInput.focus(); return; }
+
+    const resp = await fetch(`/private_channels/${channelId}/add_member`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username })
+    });
+
+    if (!resp.ok) {
+        const msg = await resp.text();
+        alert("Failed to add member: " + msg);
+        return;
+    }
+
+    addMemberInput.value = "";
+    loadChannelMembers(channelId);
 };
 
 // Edit Messages
@@ -2463,6 +2992,11 @@ function closeAllModalsAndFocusChat() {
         searchModal.style.display = "none";
     }
 
+    // Close private channel modals
+    if (createPrivateChModal) createPrivateChModal.style.display = "none";
+    if (renamePrivateChModal) renamePrivateChModal.style.display = "none";
+    if (privateMembersModal)  privateMembersModal.style.display  = "none";
+
     closeHelp();
 
     // Reset DM input state
@@ -2587,6 +3121,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(fetchTyping, 1000);
     setInterval(refreshDMs, 1000);
     setInterval(refreshChannels, 1000);
+    setInterval(refreshPrivateChannels, 1000);
     setInterval(fetchReadReceipts, 3000);
     setInterval(refreshTotalUnreadCount, 5000);
     setInterval(() => {
@@ -3024,5 +3559,6 @@ async function attachPreview(msgEl) {
 }());
 
 </script>
+<div id="pc-member-tooltip"></div>
 </body>
 </html>

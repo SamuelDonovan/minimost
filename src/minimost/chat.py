@@ -8,7 +8,8 @@ serving uploaded files.
 This is the largest module in MiniMost and contains all business logic for
 the chat interface, including:
 
-* **Channel management helpers** — resolving participants, validating access.
+* **Channel management helpers** — resolving participants, validating access
+  for public channels, DMs, and private channels.
 * **Message CRUD** — sending, fetching (with polling support), editing, and
   soft-deleting messages across every recipient's database simultaneously.
 * **Reactions** — toggle emoji reactions stored atomically in the shared
@@ -17,6 +18,12 @@ the chat interface, including:
 * **File serving** — authenticated delivery of image attachments.
 * **Search** — full-text ``LIKE`` search across a user's message history.
 * **Link previews** — delegate to :mod:`minimost.preview`.
+* **Private channels** — create invite-only channels, manage membership, and
+  rename channels.  Private channel state (membership, channel metadata) is
+  stored in the shared ``presence.db`` so every member sees the same view.
+  Private channels are identified throughout the app as ``"private:<id>"``
+  where ``<id>`` is the auto-increment primary key from the
+  ``private_channels`` table.
 
 Module-level attributes
 -----------------------
@@ -105,6 +112,43 @@ def _load_channels() -> List[str]:
 CHANNELS = _load_channels()
 
 
+def _get_private_db():
+    """Return an open WAL connection to the shared ``presence.db``.
+
+    Configures the connection with WAL journal mode and ``sqlite3.Row``
+    row factory so columns are accessible by name.  The caller is
+    responsible for closing the returned connection.
+
+    :returns: An open SQLite connection to ``presence.db``.
+    :rtype: sqlite3.Connection
+    """
+    pdb = sqlite3.connect(presence.PRESENCE_DB)
+    pdb.execute(_WAL)
+    pdb.row_factory = sqlite3.Row
+    return pdb
+
+
+def get_private_channel_members(channel_id: int) -> List[str]:
+    """Return the list of usernames that are members of a private channel.
+
+    Queries the ``private_channel_members`` table in ``presence.db`` for
+    all rows matching *channel_id* and returns the corresponding usernames.
+    Returns an empty list if the channel does not exist or has no members.
+
+    :param channel_id: The integer primary key of the private channel.
+    :type channel_id: int
+    :returns: Usernames of all current members, in insertion order.
+    :rtype: list of str
+    """
+    pdb = _get_private_db()
+    rows = pdb.execute(
+        "SELECT username FROM private_channel_members WHERE channel_id = ?",
+        (channel_id,),
+    ).fetchall()
+    pdb.close()
+    return [r[0] for r in rows]
+
+
 def get_db(username: str):
     """Open and return a SQLite connection to a user's message database.
 
@@ -184,41 +228,57 @@ def channel_users(channel: str) -> List[str]:
 
     * For **DM channels** (``"dm:user1:user2:..."``): the participants are
       parsed directly from the channel string.
+    * For **private channels** (``"private:<id>"``): the member list is
+      fetched from the ``private_channel_members`` table in ``presence.db``
+      via :func:`get_private_channel_members`.  Returns ``[]`` if the
+      channel ID is invalid.
     * For **public channels**: every registered user is a recipient, so
       :func:`all_users` is called.
 
     This list is used by the send, edit, delete, and react routes to
     determine which per-user databases must be updated.
 
-    :param channel: The channel name or DM identifier.
+    :param channel: The channel name, DM identifier, or private channel
+        identifier (``"private:<id>"``).
     :type channel: str
     :returns: List of usernames that are members of *channel*.
     :rtype: list of str
 
     Example::
 
-        channel_users("dm:alice:bob")   # ["alice", "bob"]
-        channel_users("general")        # all registered users
+        channel_users("dm:alice:bob")     # ["alice", "bob"]
+        channel_users("private:3")        # members of private channel 3
+        channel_users("general")          # all registered users
     """
     if channel.startswith("dm:"):
         return channel.split(":")[1:]
+    if channel.startswith("private:"):
+        try:
+            return get_private_channel_members(int(channel.split(":")[1]))
+        except (ValueError, IndexError):
+            return []
     return all_users()
 
 
 def is_valid_channel(channel: str, user: str) -> bool:
     """Return ``True`` only if *user* is permitted to access *channel*.
 
-    Two access rules apply:
+    Three access rules apply:
 
     * **DM channels** — the channel string must have at least two
       participants (``len(parts) >= 3``) and *user* must be one of them.
+    * **Private channels** — *user* must appear in the
+      ``private_channel_members`` table for the given channel ID (looked up
+      via :func:`get_private_channel_members`).  Returns ``False`` if the
+      ID is malformed or the channel does not exist.
     * **Public channels** — *channel* must appear in the :data:`CHANNELS`
       list loaded from ``channels.json``.
 
     This function is called by the :func:`send` route before writing any
     data, and is the primary authorization check for channel access.
 
-    :param channel: The channel name or DM identifier.
+    :param channel: The channel name, DM identifier, or private channel
+        identifier (``"private:<id>"``).
     :type channel: str
     :param user: The username attempting to access the channel.
     :type user: str
@@ -227,14 +287,20 @@ def is_valid_channel(channel: str, user: str) -> bool:
 
     Example::
 
-        is_valid_channel("dm:alice:bob", "alice")  # True
+        is_valid_channel("dm:alice:bob", "alice")    # True
         is_valid_channel("dm:alice:bob", "charlie")  # False
-        is_valid_channel("general", "alice")  # True (if "general" in CHANNELS)
-        is_valid_channel("secret", "alice")  # False (not in CHANNELS)
+        is_valid_channel("private:3", "alice")       # True if alice is a member
+        is_valid_channel("general", "alice")         # True (if "general" in CHANNELS)
+        is_valid_channel("secret", "alice")          # False (not in CHANNELS)
     """
     if channel.startswith("dm:"):
         parts = channel.split(":")
         return len(parts) >= 3 and user in parts[1:]
+    if channel.startswith("private:"):
+        try:
+            return user in get_private_channel_members(int(channel.split(":")[1]))
+        except (ValueError, IndexError):
+            return False
     return channel in CHANNELS
 
 
@@ -1686,6 +1752,194 @@ def link_preview():
     if not url:
         return jsonify({})
     return jsonify(preview_mod.fetch_preview(url))
+
+
+@chat_bp.route("/private_channels/create", methods=["POST"])
+@auth.login_required
+def create_private_channel():
+    """Create a new private channel.
+
+    Route: ``POST /private_channels/create``
+
+    JSON body: ``{"name": str, "members": [str]}``.  The creator is always
+    included as a member regardless of the list provided.
+
+    :returns: JSON ``{"id": int, "channel": str, "name": str}`` on success.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    members = [m.strip() for m in (data.get("members") or []) if str(m).strip()]
+
+    if not name:
+        return "name required", 400
+
+    if user not in members:
+        members.append(user)
+
+    now = time()
+    pdb = _get_private_db()
+    cur = pdb.execute(
+        "INSERT INTO private_channels (name, created_by, created_ts) VALUES (?, ?, ?)",
+        (name, user, now),
+    )
+    channel_id = cur.lastrowid
+    pdb.executemany(
+        "INSERT INTO private_channel_members (channel_id, username, joined_ts, history_start_ts) VALUES (?, ?, ?, NULL)",
+        [(channel_id, m, now) for m in members],
+    )
+    pdb.commit()
+    pdb.close()
+
+    return jsonify({"id": channel_id, "channel": f"private:{channel_id}", "name": name})
+
+
+@chat_bp.route("/private_channels", methods=["GET"])
+@auth.login_required
+def list_private_channels():
+    """List private channels the current user is a member of.
+
+    Route: ``GET /private_channels``
+
+    :returns: JSON array of ``{"id", "channel", "name", "unread"}`` objects.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+
+    pdb = _get_private_db()
+    rows = pdb.execute(
+        """
+        SELECT pc.id, pc.name
+        FROM private_channels pc
+        JOIN private_channel_members pcm ON pc.id = pcm.channel_id
+        WHERE pcm.username = ?
+        ORDER BY pc.id
+        """,
+        (user,),
+    ).fetchall()
+    pdb.close()
+
+    result = []
+    db = get_db(user)
+    for row in rows:
+        ch = f"private:{row['id']}"
+        count = db.execute(
+            "SELECT COUNT(*) AS c FROM messages WHERE channel = ? AND sender != ? AND read = 0 AND deleted = 0",
+            (ch, user),
+        ).fetchone()["c"]
+        result.append(
+            {
+                "id": row["id"],
+                "channel": ch,
+                "name": row["name"],
+                "unread": count,
+                "members": get_private_channel_members(row["id"]),
+            }
+        )
+    db.close()
+
+    return jsonify(result)
+
+
+@chat_bp.route("/private_channels/<int:channel_id>/rename", methods=["POST"])
+@auth.login_required
+def rename_private_channel(channel_id):
+    """Rename a private channel. Any member may rename.
+
+    Route: ``POST /private_channels/<channel_id>/rename``
+
+    JSON body: ``{"name": str}``.
+
+    :returns: ``"ok"`` on success.
+    :rtype: flask.Response
+    """
+    user = session["user"]
+    if user not in get_private_channel_members(channel_id):
+        return "forbidden", 403
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return "name required", 400
+
+    pdb = _get_private_db()
+    pdb.execute("UPDATE private_channels SET name = ? WHERE id = ?", (name, channel_id))
+    pdb.commit()
+    pdb.close()
+
+    return "ok"
+
+
+@chat_bp.route("/private_channels/<int:channel_id>/add_member", methods=["POST"])
+@auth.login_required
+def add_private_channel_member(channel_id):
+    """Add a user to a private channel. Any existing member may add.
+
+    Route: ``POST /private_channels/<channel_id>/add_member``
+
+    JSON body: ``{"username": str}``.  The new member starts fresh — no
+    prior message history is shared.  A system message is inserted into
+    every member's database announcing the addition.
+
+    :returns: ``"ok"`` on success.
+    :rtype: flask.Response
+    """
+    user = session["user"]
+    members = get_private_channel_members(channel_id)
+    if user not in members:
+        return "forbidden", 403
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+
+    if not username:
+        return "username required", 400
+    if username not in all_users():
+        return "user not found", 404
+    if username in members:
+        return "already a member", 409
+
+    now = time()
+    ch = f"private:{channel_id}"
+
+    pdb = _get_private_db()
+    pdb.execute(
+        "INSERT OR IGNORE INTO private_channel_members (channel_id, username, joined_ts, history_start_ts) VALUES (?, ?, ?, ?)",
+        (channel_id, username, now, now),
+    )
+    pdb.commit()
+    pdb.close()
+
+    sys_content = f"{user} added {username} to this channel"
+    all_members = members + [username]
+    for recipient in all_members:
+        db = get_db(recipient)
+        db.execute(
+            "INSERT INTO messages (channel, sender, content, content_type, ts, read) VALUES (?, ?, ?, ?, ?, ?)",
+            (ch, "system", sys_content, "system", now, 1),
+        )
+        db.commit()
+        db.close()
+
+    return "ok"
+
+
+@chat_bp.route("/private_channels/<int:channel_id>/members", methods=["GET"])
+@auth.login_required
+def private_channel_members_route(channel_id):
+    """List members of a private channel.
+
+    Route: ``GET /private_channels/<channel_id>/members``
+
+    :returns: JSON array of ``{"username": str}`` objects.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    members = get_private_channel_members(channel_id)
+    if user not in members:
+        return "forbidden", 403
+    return jsonify([{"username": m} for m in members])
 
 
 @chat_bp.route("/", methods=["GET"])

@@ -2,14 +2,16 @@
 minimost.presence
 =================
 
-Real-time presence tracking, typing indicators, read receipts, and message
-reactions — all backed by the shared ``presence.db`` SQLite database.
+Real-time presence tracking, typing indicators, read receipts, message
+reactions, and private channel membership — all backed by the shared
+``presence.db`` SQLite database.
 
 This module manages all **transient shared state** in MiniMost.  Because
 MiniMost stores per-user message history in individual SQLite files, a
 separate shared database is needed for data that all users must see
-simultaneously: who is typing, who is online, who has read a message, and
-what reactions a message has received.
+simultaneously: who is typing, who is online, who has read a message,
+what reactions a message has received, and which users belong to each
+private channel.
 
 **``presence.db`` tables:**
 
@@ -31,6 +33,14 @@ what reactions a message has received.
    * - ``message_reactions``
      - One row per (channel, msg_ts, emoji, reactor) combination.  Toggled
        atomically by ``/react/<msg_id>``.
+   * - ``private_channels``
+     - One row per private channel: ``name``, ``created_by``, and
+       ``created_ts``.  The auto-increment ``id`` forms the channel
+       identifier used throughout the app (``"private:<id>"``).
+   * - ``private_channel_members``
+     - One row per (channel_id, username) pair.  Records ``joined_ts`` and
+       ``history_start_ts`` (the timestamp from which a member can see
+       messages; ``NULL`` means from the beginning of the channel).
 
 The tables are created at module import time by :func:`_init_tables`.
 
@@ -79,6 +89,10 @@ def _init_tables():
       messages.
     * ``message_reactions`` — stores each (channel, message, emoji, user)
       reaction tuple.
+    * ``private_channels`` — one row per private channel with name, creator,
+      and creation timestamp.
+    * ``private_channel_members`` — one row per (channel_id, username) pair
+      recording membership and join timestamp.
 
     :returns: None
     """
@@ -114,6 +128,24 @@ def _init_tables():
             emoji   TEXT NOT NULL,
             reactor TEXT NOT NULL,
             PRIMARY KEY (channel, msg_ts, emoji, reactor)
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS private_channels (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_ts REAL NOT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS private_channel_members (
+            channel_id       INTEGER NOT NULL,
+            username         TEXT NOT NULL,
+            joined_ts        REAL NOT NULL,
+            history_start_ts REAL,
+            PRIMARY KEY (channel_id, username),
+            FOREIGN KEY (channel_id) REFERENCES private_channels(id)
         )
     """)
     db.commit()

@@ -99,6 +99,13 @@ body {
     margin-top: -50px;
     margin-bottom: -50px;
 }
+.presence-inline {
+    font-size: 1.6em;
+    line-height: 1;
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
 @-moz-document url-prefix() {
     .presence {
         font-size: 1.0em;   /* Firefox size */
@@ -432,6 +439,64 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
+}
+#sidebar .sidebar-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: default;
+    padding: 4px 6px;
+}
+.sidebar-section-header b {
+    flex: 1;
+}
+.sidebar-new-btn {
+    font-size: 16px;
+    padding: 0 4px;
+    line-height: 1;
+    cursor: pointer;
+}
+#private-ch-controls {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+}
+#members-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+.members-list-item {
+    padding: 4px 0;
+    color: #ccc;
+}
+#pc-member-tooltip {
+    display: none;
+    position: fixed;
+    z-index: 200;
+    background: #2d2d2d;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 6px 10px;
+    min-width: 130px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+.tooltip-member {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 13px;
+    color: #ddd;
+}
+.system-msg {
+    text-align: center;
+    color: #777;
+    font-size: 12px;
+    font-style: italic;
+    padding: 6px 0;
+    pointer-events: none;
 }
 
 .unread-badge {
