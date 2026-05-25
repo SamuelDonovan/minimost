@@ -209,19 +209,20 @@ implementation details:
 Reactions
 ---------
 
-The emoji reaction system uses SVG files from ``static/reactions/``. The
-workflow:
+The emoji reaction system uses 477 reactions defined in the ``REACTIONS``
+array inside ``chat.html``. Each entry carries a ``name``, ``label``, and
+``emoji`` (Unicode character). The ``REACTION_EMOJI`` lookup map (built
+from the array) provides O(1) name-to-character access. The workflow:
 
 1. User clicks the ``😊`` button on a message (or hovers to reveal it).
-2. ``openReactionPicker(msgId)`` renders a modal grid of all available SVG
-   emoji.
+2. ``openReactionPicker(msgId)`` renders a modal grid of all available emoji.
 3. User clicks an emoji in the picker; ``pickerReact(name)`` is called.
 4. ``toggleReaction(msgId, name)`` POSTs to ``/react/<msgId>``.
 5. The server response contains the updated reactions map.
 6. ``buildReactionsHtml(msgId, reactions)`` re-renders the reaction chips
    below the message.
 
-Each reaction chip shows the emoji SVG and a count. Hovering reveals a
+Each reaction chip shows the emoji character and a count. Hovering reveals a
 tooltip with the list of reactor usernames.
 
 Search

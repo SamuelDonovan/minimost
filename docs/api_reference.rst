@@ -233,8 +233,8 @@ Reactions
    **Requires authentication.**
 
    :param int msg_id: Message ID in the current user's database.
-   :form reaction: Emoji name (SVG filename without extension). Must be a
-       valid reaction name.
+   :form reaction: Emoji name (e.g. ``thumbsup``, ``heart``). Must be a
+       valid reaction name from the ``VALID_REACTIONS`` set.
    :>json object: Current reactions map after the toggle, e.g.
        ``{"thumbs_up": ["alice", "bob"]}``
    :status 400: Invalid reaction name.

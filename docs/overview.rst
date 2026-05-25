@@ -61,7 +61,7 @@ Messaging
 Real-time Interaction
 ~~~~~~~~~~~~~~~~~~~~~
 
-- **Emoji reactions** — react to any message with one of 150+ emoji; reactions
+- **Emoji reactions** — react to any message with one of 477 emoji; reactions
   are toggled atomically and sync instantly across all users.
 - **Typing indicators** — see when other users are composing a message.
 - **Read receipts** — checkmark indicators showing who has read each message.
@@ -162,7 +162,7 @@ Project Structure
         └── static/
             ├── auth.css
             ├── styles.css
-            └── reactions/          # 150+ reaction SVG files
+            └── styles.css          # (reactions are now inline emoji — no SVG files)
 
 Limitations and Non-goals
 --------------------------
