@@ -2174,24 +2174,24 @@ function _handleCtrlKey(e, isInput) {
     else if (e.key === "s") { e.preventDefault(); wrapSelection(e.target, "~~"); }
 }
 
-function _handleVimKey(e) {
-    if (visualMode) {
-        if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); _visualMoveDown(); }
-        else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); _visualMoveUp(); }
-        else if (e.key === "d") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) deleteMsg(id); }
-        else if (e.key === "c") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) startEdit(id); }
-        else if (e.key === "o") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) startReply(id); }
-        else if (e.key === "y") {
-            e.preventDefault();
-            if (visualMsgId) {
-                const el = document.getElementById(`msg-text-${visualMsgId}`);
-                if (el) navigator.clipboard.writeText(el.innerText).catch(() => {});
-            }
-        }
-        else if (e.key === "e") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) document.querySelector(`#msg-${id} .react-btn`)?.click(); }
-        return;
+function _handleVisualKey(e) {
+    const key = e.key;
+    if (key === "j" || key === "ArrowDown") { e.preventDefault(); _visualMoveDown(); return; }
+    if (key === "k" || key === "ArrowUp")   { e.preventDefault(); _visualMoveUp();   return; }
+    const id = visualMsgId;
+    if (!id) return;
+    e.preventDefault();
+    if (key === "d") { exitVisualMode(); deleteMsg(id); }
+    else if (key === "c") { exitVisualMode(); startEdit(id); }
+    else if (key === "o") { exitVisualMode(); startReply(id); }
+    else if (key === "e") { exitVisualMode(); document.querySelector(`#msg-${id} .react-btn`)?.click(); }
+    else if (key === "y") {
+        const el = document.getElementById(`msg-text-${id}`);
+        if (el) navigator.clipboard.writeText(el.innerText).catch(() => {});
     }
+}
 
+function _handleNormalKey(e) {
     const scrollContainer = document.getElementById("chat");
     const scrollRate = 200;
     if (e.key === "v") { e.preventDefault(); enterVisualMode(); }
@@ -2204,6 +2204,10 @@ function _handleVimKey(e) {
     else if (e.key === "i") { e.preventDefault(); focusMessageInput(); }
     else if (e.key === "o") { e.preventDefault(); openDmModal(); }
     else if (e.key === "/" || e.key === "f") { e.preventDefault(); startSearch(); }
+}
+
+function _handleVimKey(e) {
+    if (visualMode) { _handleVisualKey(e); } else { _handleNormalKey(e); }
 }
 
 function userInput(e) {
