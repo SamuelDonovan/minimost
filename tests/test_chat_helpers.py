@@ -1,9 +1,6 @@
 """Tests for chat module helper functions."""
 
-import json
-import os
 import sqlite3
-from unittest.mock import patch
 
 import minimost.auth as auth_mod
 import minimost.chat as chat_mod
@@ -142,25 +139,20 @@ def test_load_channels_fallback_on_invalid_json(tmp_path, monkeypatch):
 # ── _load_valid_reactions ─────────────────────────────────────────────────────
 
 
-def test_load_valid_reactions_with_svgs(tmp_path, monkeypatch):
-    reactions_dir = tmp_path / "reactions"
-    reactions_dir.mkdir()
-    (reactions_dir / "thumbs_up.svg").write_text("<svg/>")
-    (reactions_dir / "heart.svg").write_text("<svg/>")
-    (reactions_dir / "readme.txt").write_text("ignore me")
-
-    with patch("os.listdir", return_value=["thumbs_up.svg", "heart.svg", "readme.txt"]):
-        with patch("minimost.chat._HERE", tmp_path):
-            result = chat_mod._load_valid_reactions()
-    assert "thumbs_up" in result
-    assert "heart" in result
-    assert "readme" not in result
+def test_valid_reactions_contains_expected():
+    assert "thumbsup" in chat_mod.VALID_REACTIONS
+    assert "heart" in chat_mod.VALID_REACTIONS
+    assert "fire" in chat_mod.VALID_REACTIONS
 
 
-def test_load_valid_reactions_oserror():
-    with patch("os.listdir", side_effect=OSError("no dir")):
-        result = chat_mod._load_valid_reactions()
-    assert result == set()
+def test_valid_reactions_rejects_unknown():
+    assert "readme" not in chat_mod.VALID_REACTIONS
+    assert "unknown_emoji" not in chat_mod.VALID_REACTIONS
+
+
+def test_valid_reactions_is_nonempty_set():
+    assert isinstance(chat_mod.VALID_REACTIONS, set)
+    assert len(chat_mod.VALID_REACTIONS) > 0
 
 
 # ── _save_uploaded_files ──────────────────────────────────────────────────────
