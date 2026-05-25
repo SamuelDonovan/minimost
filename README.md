@@ -142,6 +142,22 @@ Edit `channels.json` in the project root to define your public channels:
 | `Ctrl + J` / `Ctrl + K` | Next / previous channel |
 | `?` | Open help menu |
 
+### Visual Mode
+
+Press `v` in normal mode (input unfocused) to enter visual mode, which highlights a single message for direct keyboard actions. The topbar shows `-- visual --` while active.
+
+| Key | Action |
+|-----|--------|
+| `v` | Enter visual mode (selects most recent message) |
+| `j` / `↓` | Move selection to next (newer) message |
+| `k` / `↑` | Move selection to previous (older) message |
+| `d` | Delete highlighted message |
+| `c` | Edit highlighted message |
+| `o` | Reply to highlighted message |
+| `y` | Copy highlighted message text to clipboard |
+| `e` | React to highlighted message with emoji |
+| `Esc` | Exit visual mode |
+
 ### Text Formatting
 
 | Key | Action |

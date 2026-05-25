@@ -102,6 +102,38 @@ Help
    * - ``?``
      - Open the help overlay (shows a quick-reference shortcut list).
 
+Visual Mode
+-----------
+
+Press ``v`` in normal mode (message input not focused) to enter **visual
+mode**. The topbar displays ``-- visual --`` while active. In visual mode,
+one message is highlighted and the following keys act on it directly.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Key
+     - Action
+   * - ``v``
+     - Enter visual mode; the most recent message is selected.
+   * - ``j`` / ``↓``
+     - Move the selection to the next (newer) message.
+   * - ``k`` / ``↑``
+     - Move the selection to the previous (older) message.
+   * - ``d``
+     - Delete the highlighted message.
+   * - ``c``
+     - Edit the highlighted message inline.
+   * - ``o``
+     - Reply to the highlighted message.
+   * - ``y``
+     - Copy the highlighted message text to the clipboard.
+   * - ``e``
+     - Open the emoji reaction picker for the highlighted message.
+   * - ``Esc``
+     - Exit visual mode without taking any action.
+
 Tips
 ----
 

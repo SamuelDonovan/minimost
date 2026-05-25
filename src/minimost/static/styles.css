@@ -278,6 +278,24 @@ body {
     font-family: system-ui, sans-serif;
     margin-bottom: 4px;
 }
+.msg.visual-selected {
+    background: rgba(0, 122, 204, 0.18);
+    border-left: 3px solid #007acc;
+    padding-left: 4px;
+    border-radius: 2px;
+}
+#vim-mode-indicator {
+    display: none;
+    font-size: 0.75em;
+    color: #007acc;
+    font-weight: bold;
+    margin-left: 12px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+#vim-mode-indicator.active {
+    display: inline;
+}
 .chat-image {
     display: block;
     max-width: 400px;

@@ -71,6 +71,7 @@
 
         <div id="topbar-channel">
             <span class="chan-hash">#</span><span id="chan"></span>
+            <span id="vim-mode-indicator">-- visual --</span>
         </div>
     </div>
 
@@ -160,7 +161,7 @@
     <dialog id="help-modal" open aria-label="Keyboard shortcuts and help">
         <button id="help-close" aria-label="Close help">&times;</button>
 
-        <h2>Mini<span style="color:#007acc">Most</span></h2>
+        <h2><span style="color:#FFFFFF">Mini</span><span style="color:#007acc">Most</span></h2>
 
         <h3 class="help-section">Messaging</h3>
         <ul>
@@ -180,6 +181,19 @@
             <li><kbd>Ctrl J</kbd> / <kbd>Ctrl K</kbd> – Next / previous channel</li>
             <li><kbd>Esc</kbd> – Close menus / unfocus input</li>
             <li><kbd>?</kbd> – Open this help</li>
+        </ul>
+
+        <h3 class="help-section">Visual Mode</h3>
+        <ul>
+            <li><kbd>v</kbd> – Enter visual mode (highlights most recent message)</li>
+            <li><kbd>j</kbd> / <kbd>↓</kbd> – Move selection to next message</li>
+            <li><kbd>k</kbd> / <kbd>↑</kbd> – Move selection to previous message</li>
+            <li><kbd>d</kbd> – Delete highlighted message</li>
+            <li><kbd>c</kbd> – Edit highlighted message</li>
+            <li><kbd>o</kbd> – Reply to highlighted message</li>
+            <li><kbd>y</kbd> – Copy highlighted message text to clipboard</li>
+            <li><kbd>e</kbd> – React to highlighted message with emoji</li>
+            <li><kbd>Esc</kbd> – Exit visual mode</li>
         </ul>
 
         <h3 class="help-section">Text Formatting</h3>
@@ -355,6 +369,10 @@ let pendingFiles = [];
 let fetchController = null;
 let readReceiptsMap = {};
 let hasUnreadChannels = false;
+
+// Visual mode state
+let visualMode = false;
+let visualMsgId = null;
 
 let notifMuted = localStorage.getItem('notifMuted') === 'true';
 
@@ -1725,7 +1743,12 @@ const REACTIONS = [
     search.addEventListener("input", function() { filterReactions(this.value); });
     search.addEventListener("click", function(e) { e.stopPropagation(); });
     search.addEventListener("keydown", function(e) {
-        if (e.key === "Escape") closeReactionPicker();
+        if (e.key === "Escape") { closeReactionPicker(); }
+        else if (e.key === "Enter") {
+            e.preventDefault();
+            const first = Array.from(document.querySelectorAll(".reaction-picker-item")).find(el => el.style.display !== "none");
+            if (first) first.click();
+        }
     });
 })();
 
@@ -2079,6 +2102,55 @@ function wrapSelection(el, wrapper) {
     }
 }
 
+function _getVisualMsgs() {
+    return Array.from(document.querySelectorAll("#chat .msg"));
+}
+
+function _visualSelectMsg(msgId) {
+    if (visualMsgId) {
+        const prev = document.getElementById(`msg-${visualMsgId}`);
+        if (prev) prev.classList.remove("visual-selected");
+    }
+    visualMsgId = msgId;
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return;
+    el.classList.add("visual-selected");
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function enterVisualMode() {
+    const msgs = _getVisualMsgs();
+    if (!msgs.length) return;
+    const last = msgs[msgs.length - 1];
+    visualMode = true;
+    document.getElementById("vim-mode-indicator").classList.add("active");
+    _visualSelectMsg(last.id.replace("msg-", ""));
+}
+
+function exitVisualMode() {
+    visualMode = false;
+    if (visualMsgId) {
+        const el = document.getElementById(`msg-${visualMsgId}`);
+        if (el) el.classList.remove("visual-selected");
+        visualMsgId = null;
+    }
+    document.getElementById("vim-mode-indicator").classList.remove("active");
+}
+
+function _visualMoveDown() {
+    const msgs = _getVisualMsgs();
+    const idx = msgs.findIndex(m => m.id === `msg-${visualMsgId}`);
+    if (idx === -1 || idx >= msgs.length - 1) return;
+    _visualSelectMsg(msgs[idx + 1].id.replace("msg-", ""));
+}
+
+function _visualMoveUp() {
+    const msgs = _getVisualMsgs();
+    const idx = msgs.findIndex(m => m.id === `msg-${visualMsgId}`);
+    if (idx <= 0) return;
+    _visualSelectMsg(msgs[idx - 1].id.replace("msg-", ""));
+}
+
 function _handleCtrlKey(e, isInput) {
     if (!isInput) {
         const items = Array.from(
@@ -2103,9 +2175,27 @@ function _handleCtrlKey(e, isInput) {
 }
 
 function _handleVimKey(e) {
+    if (visualMode) {
+        if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); _visualMoveDown(); }
+        else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); _visualMoveUp(); }
+        else if (e.key === "d") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) deleteMsg(id); }
+        else if (e.key === "c") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) startEdit(id); }
+        else if (e.key === "o") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) startReply(id); }
+        else if (e.key === "y") {
+            e.preventDefault();
+            if (visualMsgId) {
+                const el = document.getElementById(`msg-text-${visualMsgId}`);
+                if (el) navigator.clipboard.writeText(el.innerText).catch(() => {});
+            }
+        }
+        else if (e.key === "e") { e.preventDefault(); const id = visualMsgId; exitVisualMode(); if (id) document.querySelector(`#msg-${id} .react-btn`)?.click(); }
+        return;
+    }
+
     const scrollContainer = document.getElementById("chat");
     const scrollRate = 200;
-    if (e.key === "j") { scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' }); }
+    if (e.key === "v") { e.preventDefault(); enterVisualMode(); }
+    else if (e.key === "j") { scrollContainer.scrollBy({ top: scrollRate, behavior: 'smooth' }); }
     else if (e.key === "k") { scrollContainer.scrollBy({ top: -scrollRate, behavior: 'smooth' }); }
     else if (e.key === "d") { scrollContainer.scrollBy({ top: 2 * scrollRate, behavior: 'smooth' }); }
     else if (e.key === "u") { scrollContainer.scrollBy({ top: -2 * scrollRate, behavior: 'smooth' }); }
@@ -2120,6 +2210,10 @@ function userInput(e) {
     const isInput = e.target.matches("input, textarea");
 
     if (e.key === "Escape") {
+        if (visualMode) {
+            exitVisualMode();
+            return;
+        }
         document.activeElement?.blur();
         closeAllModalsAndFocusChat();
     } else if (e.key === "?" && !isInput) {
