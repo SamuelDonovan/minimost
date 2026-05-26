@@ -251,6 +251,28 @@ Users and Presence
 
    :>json array: List of username strings.
 
+.. http:get:: /user_colors
+
+   Return the display name colour for every user that has set one.
+
+   **Requires authentication.**
+
+   :>json object: Mapping of username to CSS hex colour string.
+
+   **Example response:**
+
+   .. code-block:: json
+
+      {"alice": "#e06c75", "bob": "#61afef"}
+
+.. http:get:: /user_avatars
+
+   Return the set of usernames that have a custom avatar.
+
+   **Requires authentication.**
+
+   :>json array: List of username strings that have uploaded an avatar.
+
 .. http:get:: /online_users
 
    Return presence states for recently active users.
@@ -299,9 +321,12 @@ Direct Messages
 
 .. http:get:: /dms
 
-   Return a summary of all DM conversations.
+   Return a summary of all visible DM conversations.
 
    **Requires authentication.**
+
+   Hidden conversations (closed by the user) are excluded unless a new
+   message has arrived after the conversation was hidden.
 
    :>json array: List of conversation objects, sorted by most recent
        activity. Each object has:
@@ -309,6 +334,19 @@ Direct Messages
        - ``channel`` (string): DM channel identifier.
        - ``users`` (array): Other participant usernames.
        - ``unread`` (integer): Unread message count.
+
+.. http:post:: /dms/close
+
+   Hide a DM conversation from the sidebar.
+
+   **Requires authentication.**
+
+   The conversation is not deleted. It reappears automatically when a new
+   message is received after the hidden timestamp.
+
+   :<json string channel: DM channel identifier to hide.
+   :status 204: Conversation hidden.
+   :status 400: Missing or invalid channel.
 
 .. http:get:: /unread_count
 
@@ -348,6 +386,84 @@ Read Receipts
           "1716000000.123": ["alice", "bob"],
           "1716000001.456": ["alice"]
       }
+
+User Settings
+-------------
+
+.. http:get:: /settings
+
+   Return the current user's settings.
+
+   **Requires authentication.**
+
+   :>json string name_color: CSS hex colour string, or ``null`` if not set.
+   :>json string avatar_file: Avatar filename, or ``null`` if not set.
+
+.. http:post:: /settings
+
+   Update the current user's settings.
+
+   **Requires authentication.**
+
+   :form name_color: CSS hex colour in ``#rrggbb`` format (optional). Pass an
+       empty string to clear the colour.
+   :status 204: Settings saved.
+   :status 400: Invalid colour format.
+
+Avatars
+-------
+
+.. http:get:: /avatar/(username)
+
+   Serve a user's profile avatar image.
+
+   **Requires authentication.**
+
+   :param username: Account username.
+   :resheader Content-Type: ``image/jpeg``
+   :status 404: User has no avatar.
+
+.. http:post:: /avatar
+
+   Upload or replace the current user's avatar.
+
+   **Requires authentication.**
+
+   The image should be pre-resized to 128 × 128 px by the client before
+   upload (the frontend uses the Canvas API for this). The server stores the
+   file as-is.
+
+   :form avatar: Image file (``multipart/form-data``). Accepted extensions:
+       ``.jpg``, ``.jpeg``, ``.png``, ``.gif``, ``.webp``.
+   :status 204: Avatar saved.
+   :status 400: No file provided or invalid file type.
+
+.. http:delete:: /avatar
+
+   Delete the current user's avatar. The default initials avatar is shown
+   to other users after removal.
+
+   **Requires authentication.**
+
+   :status 204: Avatar removed.
+
+Private Channels
+----------------
+
+.. http:post:: /private_channels/(channel_id)/leave
+
+   Leave a private channel.
+
+   **Requires authentication.**
+
+   A system message is posted to the channel notifying remaining members.
+   If the leaving user is the last member, the channel is not automatically
+   deleted — it becomes an empty room.
+
+   :param channel_id: Private channel identifier (``private:<name>`` form).
+   :status 204: User removed from channel.
+   :status 403: User is not a member of the channel.
+   :status 404: Channel not found.
 
 Files
 -----

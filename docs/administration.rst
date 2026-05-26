@@ -73,15 +73,21 @@ Then apply it:
 
 **Delete a user:**
 
-1. Remove the user's record from ``auth.db``::
+1. Remove the user's record and settings from ``auth.db``::
 
     sqlite3 auth.db "DELETE FROM users WHERE username = 'alice';"
+    sqlite3 auth.db "DELETE FROM user_settings WHERE username = 'alice';"
 
 2. Delete the user's database file::
 
     rm users/alice.db
 
-3. Remove the user's presence records (optional)::
+3. Remove the user's avatar image (if one exists)::
+
+    # The filename is stored in user_settings.avatar_file; delete it from avatars/
+    rm -f avatars/alice_*.jpg   # or check auth.db for the exact filename
+
+4. Remove the user's presence records (optional)::
 
     sqlite3 presence.db "DELETE FROM presence WHERE user = 'alice';"
     sqlite3 presence.db "DELETE FROM typing WHERE user = 'alice';"
@@ -162,7 +168,8 @@ All state lives in these locations:
         secret.key \
         channels.json \
         users/ \
-        uploads/
+        uploads/ \
+        avatars/
 
 **Restore:**
 
@@ -223,6 +230,7 @@ Migrating to a New Server
         channels.json \
         users/ \
         uploads/ \
+        avatars/ \
         newserver:/srv/minimost/
 
 4. Start the new server.

@@ -68,6 +68,15 @@ Key JavaScript variables maintained in the module scope:
      - Boolean flag — prevents sending repeated ``"idle"`` presence updates.
    * - ``ggTimer``
      - Timeout handle for the ``gg`` (go-to-top) keyboard chord.
+   * - ``userColorOverrides``
+     - Object mapping username → hex colour string, populated from
+       ``GET /user_colors`` on sidebar load.
+   * - ``usersWithAvatars``
+     - ``Set`` of usernames that have a custom avatar, populated from
+       ``GET /user_avatars`` on sidebar load.
+   * - ``presenceMapCache``
+     - Most recent result of ``GET /online_users``; used to initialise
+       presence dots on newly created avatar elements.
 
 Polling Loops
 -------------
@@ -311,6 +320,73 @@ called asynchronously:
 ``_syntaxHighlight`` uses regex-based rules for these languages:
 ``python``, ``js``, ``c``, ``sh``, ``make``, ``cmake``, ``vhdl``,
 ``verilog``, ``java``, ``go``, ``rust``.
+
+Avatar System
+-------------
+
+Every user has a circular avatar shown in three places: the DM sidebar entry,
+the private channel hover tooltip, and the channel member list modal.
+
+``makeAvatarWrap(username, size, channelKey)`` creates the DOM structure:
+
+.. code-block:: text
+
+    div.avatar-wrap  (position: relative; width/height set inline)
+    ├── div.avatar   (border-radius: 50%; overflow: hidden)
+    │   ├── img.avatar-img     (if the user has a custom avatar)
+    │   └── div.avatar-initials (fallback — first two letters of username)
+    └── span.avatar-presence   (presence dot, position: absolute, bottom-right)
+
+The presence dot carries a ``data-username`` attribute. ``refreshPresence()``
+queries ``document.querySelectorAll(".avatar-presence[data-username]")`` once
+and updates every dot from the cached presence map in a single pass.
+
+When a user uploads a custom avatar the image is resized **client-side** using
+the Canvas API before the upload request is sent:
+
+1. The selected file is drawn into a ``<canvas>`` element.
+2. The canvas is centre-cropped to a square and scaled to 128 × 128 px.
+3. ``canvas.toBlob("image/jpeg", 0.88)`` produces the compressed image.
+4. The blob is sent to ``POST /avatar`` as ``multipart/form-data``.
+
+This means no server-side image library is required — the server stores
+whatever JPEG the client sends.
+
+Settings Modal
+--------------
+
+The settings cog button (top-right, next to Logout) opens a modal with two
+sections:
+
+**Name colour** — a row of colour swatches plus a hex preview chip. Clicking a
+swatch immediately updates ``userColorOverrides[CURRENT_USER]`` in memory and
+re-renders the current user's name in the sidebar so the change is visible
+before saving. The chosen colour is written to ``POST /settings`` on save.
+
+**Avatar** — shows a 64 × 64 preview of the current avatar (initials or
+uploaded image). The user can pick a new image file; ``_resizeImage()`` runs
+the Canvas resize pipeline and stores the resulting blob in
+``_pendingAvatarBlob``. A "Remove" button sets the ``_removeAvatar`` flag.
+On save, the pending upload/delete is executed before the colour setting is
+saved.
+
+DM Sidebar Close Button
+-----------------------
+
+Each DM entry in the sidebar has a ``×`` close button that appears on hover.
+Clicking it calls ``closeDm(channelName)``, which posts to ``POST /dms/close``
+and removes the entry from the DOM. The conversation is not deleted — it
+reappears as soon as a new message arrives in that thread.
+
+Private Channel Leave
+---------------------
+
+The private channel controls bar (shown when a private channel is active)
+includes a **Leave** button. Clicking it calls ``leaveChannel()``, which posts
+to ``POST /private_channels/<id>/leave``. On success the channel is removed
+from the sidebar and the client switches to the first available channel. A
+system message is written to the channel informing remaining members that the
+user has left.
 
 DM Modal
 --------

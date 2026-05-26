@@ -69,10 +69,15 @@ def init_auth_db():
     """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
-            username  TEXT PRIMARY KEY,
-            name_color TEXT
+            username    TEXT PRIMARY KEY,
+            name_color  TEXT,
+            avatar_file TEXT
         )
     """)
+    try:
+        db.execute("ALTER TABLE user_settings ADD COLUMN avatar_file TEXT")
+    except sqlite3.OperationalError:
+        pass
     db.commit()
     db.close()
 

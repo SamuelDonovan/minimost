@@ -79,6 +79,11 @@ body {
     padding: 6px;
     cursor: pointer;
 }
+#sidebar .avatar-wrap,
+#sidebar .avatar-wrap .avatar,
+#sidebar .avatar-wrap .avatar-initials {
+    padding: 0;
+}
 #sidebar div.active {
     background: #007acc;
 }
@@ -1016,6 +1021,55 @@ a { color: #9cdcfe; }
 
 }
 .reaction-chip:hover .reaction-tooltip { display: block; }
+
+/* Avatars */
+.avatar-wrap {
+    position: relative;
+    flex-shrink: 0;
+    align-self: center;
+}
+.avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.avatar-initials {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    user-select: none;
+}
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.avatar-presence {
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid #1e1e1e;
+    background: #555;
+    pointer-events: none;
+}
+.avatar-presence.active { background: #6cf; }
+.avatar-presence.idle   { background: #fc6; }
+.avatar-presence.hidden { background: #888; }
+#settings-avatar-preview .avatar-wrap { cursor: default; }
 
 /* Settings modal */
 .settings-section-title {

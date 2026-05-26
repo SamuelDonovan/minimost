@@ -29,13 +29,17 @@
 
 ## Features
 
-- **Channels & Direct Messages** — public channels (configurable) and private one-on-one DMs
+- **Channels & Direct Messages** — public channels (configurable), private channels, and one-on-one or group DMs
+- **Private channels** — invite-only rooms; members can be added or removed, the channel can be renamed, and any member can leave
 - **Message history** — persistent, searchable, and visible to new users from day one
 - **Replies & threading** — quote any message to reply in context
 - **Editing & deletion** — edit or delete your own messages; changes propagate in real time
 - **Emoji reactions** — react to any message; reactions sync across all users instantly
 - **Read receipts** — see who has read your messages
-- **Presence indicators** — active, idle, away, and offline states updated automatically
+- **Presence indicators** — active, idle, away, and offline states updated automatically; overlaid on user avatars
+- **User avatars** — default initials avatar for every account; upload a custom image via Settings; displayed in the DM sidebar, private channel tooltips, and the member list
+- **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
+- **Close DM conversations** — hide a DM thread from the sidebar with one click; it reappears automatically if a new message arrives
 - **Image attachments** — paste, drag-and-drop, or use the paperclip button; images auto-delete after 30 days
 - **Desktop & sound notifications** — configurable per session, mutable with one click
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing

@@ -51,15 +51,15 @@
                     <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
                 </svg>
             </button>
-        </div>
-
-        <div id="topbar-actions">
             <button class="icon-btn" title="Settings" onclick="openSettings()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
                     <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.474l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/>
                 </svg>
             </button>
+        </div>
+
+        <div id="topbar-actions">
             <button id="msg-search-btn" class="icon-btn" title="Search messages">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242 1.106a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
@@ -204,6 +204,18 @@
 <div id="settings-modal" class="modal">
     <div class="modal-content" style="max-width:420px">
         <h3 style="margin-top:0">Settings</h3>
+
+        <p class="settings-section-title">Avatar</p>
+        <div class="settings-row" style="display:flex;align-items:center;gap:16px">
+            <div id="settings-avatar-preview" style="flex-shrink:0"></div>
+            <div>
+                <input type="file" id="settings-avatar-file" accept="image/*" hidden>
+                <button type="button" class="icon-btn" id="settings-avatar-btn">Upload Image</button>
+                <div style="margin-top:6px">
+                    <button type="button" class="settings-reset-btn" id="settings-avatar-remove">Remove avatar</button>
+                </div>
+            </div>
+        </div>
 
         <p class="settings-section-title">Appearance</p>
 
@@ -508,21 +520,91 @@ function defaultUserColor(name) {
     return `hsl(${Math.abs(h) % 360}, 65%, 55%)`;
 }
 
-fetch("/user_colors").then(r => r.json()).then(colors => {
-    userColorOverrides = colors;
-});
+let usersWithAvatars = new Set();
+
+function _setInitials(el, username, size) {
+    const div = document.createElement("div");
+    div.className = "avatar-initials";
+    div.textContent = username.slice(0, 2).toUpperCase();
+    div.style.background = userColor(username);
+    div.style.fontSize = Math.round(size * 0.38) + "px";
+    el.appendChild(div);
+}
+
+function applyPresenceDot(dot, state) {
+    dot.className = "avatar-presence";
+    if (state === "active" || state === "idle" || state === "hidden") {
+        dot.classList.add(state);
+    }
+}
+
+function makeAvatarWrap(username, size = 28, channelKey = null) {
+    const wrap = document.createElement("div");
+    wrap.className = "avatar-wrap";
+    wrap.dataset.username = username;
+    wrap.style.cssText = `width:${size}px;height:${size}px`;
+
+    const inner = document.createElement("div");
+    inner.className = "avatar";
+    if (usersWithAvatars.has(username)) {
+        const img = document.createElement("img");
+        img.className = "avatar-img";
+        img.src = `/avatar/${username}`;
+        img.alt = username;
+        img.onerror = () => { img.remove(); _setInitials(inner, username, size); };
+        inner.appendChild(img);
+    } else {
+        _setInitials(inner, username, size);
+    }
+    wrap.appendChild(inner);
+
+    const dot = document.createElement("span");
+    if (channelKey) {
+        dot.dataset.channel = channelKey;
+    } else {
+        dot.dataset.username = username;
+    }
+    applyPresenceDot(dot, presenceMapCache[username] || "offline");
+    wrap.appendChild(dot);
+
+    return wrap;
+}
+
+function _refreshUserAvatar(username) {
+    document.querySelectorAll(`.avatar-wrap[data-username="${username}"]`).forEach(wrap => {
+        const inner = wrap.querySelector(".avatar");
+        if (!inner) return;
+        const size = wrap.offsetWidth || 28;
+        inner.innerHTML = "";
+        if (usersWithAvatars.has(username)) {
+            const img = document.createElement("img");
+            img.className = "avatar-img";
+            img.src = `/avatar/${username}?v=${Date.now()}`;
+            img.alt = username;
+            img.onerror = () => { img.remove(); _setInitials(inner, username, size); };
+            inner.appendChild(img);
+        } else {
+            _setInitials(inner, username, size);
+        }
+    });
+}
 
 // Sidebar loading
-function loadSidebar() {
+async function loadSidebar() {
     const sb = document.getElementById("sidebar-dynamic");
     sb.innerHTML = "";
 
-    Promise.all([
+    const [chs, privateChannels, dms, online, colors, avatars] = await Promise.all([
         fetch("/channels").then(r => r.json()),
         fetch("/private_channels").then(r => r.json()),
         fetch("/dms").then(r => r.json()),
-        fetch("/online_users").then(r => r.json())
-    ]).then(([chs, privateChannels, dms, online]) => {
+        fetch("/online_users").then(r => r.json()),
+        fetch("/user_colors").then(r => r.json()),
+        fetch("/user_avatars").then(r => r.json()),
+    ]);
+    {
+        userColorOverrides = colors;
+        usersWithAvatars = new Set(avatars);
 
         // Public channels
         const chTitle = document.createElement("b");
@@ -582,7 +664,7 @@ function loadSidebar() {
 
         // ensure highlight is correct after rebuild
         updateSidebarActive();
-    });
+    }
 }
 
 function refreshChannels() {
@@ -762,34 +844,9 @@ function refreshPresence() {
         .then(r => r.json())
         .then(presenceMap => {
             presenceMapCache = presenceMap;
-            document.querySelectorAll(".sidebar-dm").forEach(el => {
-                const channel = el.dataset.channel;
-                const users = channel
-                    .split(":")
-                    .slice(1)
-                    .filter(u => u !== CURRENT_USER);
 
-                // Determine highest-priority presence
-                let state = "offline";
-
-                for (const u of users) {
-                    const s = presenceMap[u];
-                    if (s === "active") {
-                        state = "active";
-                        break;
-                    }
-                    if (s === "idle" && state !== "active") {
-                        state = "idle";
-                    }
-                    if (s === "hidden" && state === "offline") {
-                        state = "hidden";
-                    }
-                }
-
-                const presenceEl = el.querySelector(".presence");
-                if (!presenceEl) return;
-
-                setPresence(presenceEl, state);
+            document.querySelectorAll(".avatar-presence[data-username]").forEach(dot => {
+                applyPresenceDot(dot, presenceMap[dot.dataset.username] || "offline");
             });
         });
 }
@@ -918,30 +975,19 @@ function sidebarEntry(label, channelName, unread = 0) {
         sb.appendChild(d);
     }
 
-    // 🔑 Capture existing presence BEFORE clearing
-    const existingPresence = d.querySelector(".presence");
-
-    // Now safe to rebuild
     d.innerHTML = "";
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "label";
     labelSpan.textContent = label;
-    d.appendChild(labelSpan);
 
     if (channelName.startsWith("dm:")) {
         d.classList.add("sidebar-dm");
 
-        // Reuse or create presence dot
-        let presence = existingPresence;
-        if (!presence) {
-            presence = document.createElement("span");
-            presence.className = "presence";
-            presence.textContent = " ○";
-            presence.style.color = "#444";
-        }
-
-        d.appendChild(presence);
+        const dmUsers = channelName.split(":").slice(1).filter(u => u !== CURRENT_USER);
+        const avatarUser = dmUsers[0] || CURRENT_USER;
+        d.appendChild(makeAvatarWrap(avatarUser, 28));
+        d.appendChild(labelSpan);
 
         const closeBtn = document.createElement("button");
         closeBtn.className = "dm-close-btn";
@@ -952,6 +998,8 @@ function sidebarEntry(label, channelName, unread = 0) {
             closeDm(channelName);
         });
         d.appendChild(closeBtn);
+    } else {
+        d.appendChild(labelSpan);
     }
 
     if (channelName.startsWith("private:")) {
@@ -1555,12 +1603,9 @@ function showPCTooltip(el) {
     members.forEach(username => {
         const row = document.createElement("div");
         row.className = "tooltip-member";
-        const dot = document.createElement("span");
-        dot.className = "presence-inline";
-        setPresence(dot, presenceMapCache[username] || "offline");
+        row.appendChild(makeAvatarWrap(username, 22));
         const name = document.createElement("span");
         name.textContent = username;
-        row.appendChild(dot);
         row.appendChild(name);
         tooltip.appendChild(row);
     });
@@ -1608,6 +1653,73 @@ const COLOR_PRESETS = [
 
 const settingsModal = document.getElementById("settings-modal");
 let _settingsUseDefault = false;
+let _pendingAvatarBlob = null;
+let _removeAvatar = false;
+
+function _resizeImage(file, size, onDone) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const srcMin = Math.min(img.width, img.height);
+        const sx = (img.width - srcMin) / 2;
+        const sy = (img.height - srcMin) / 2;
+        ctx.drawImage(img, sx, sy, srcMin, srcMin, 0, 0, size, size);
+        canvas.toBlob(blob => onDone(blob), "image/jpeg", 0.88);
+    };
+    img.src = url;
+}
+
+function _populateAvatarPreview(srcBlob) {
+    const previewDiv = document.getElementById("settings-avatar-preview");
+    previewDiv.innerHTML = "";
+    const wrap = makeAvatarWrap(CURRENT_USER, 64);
+    wrap.querySelector(".avatar-presence")?.remove();
+    if (srcBlob) {
+        const inner = wrap.querySelector(".avatar");
+        inner.innerHTML = "";
+        const img = document.createElement("img");
+        img.className = "avatar-img";
+        img.src = URL.createObjectURL(srcBlob);
+        inner.appendChild(img);
+    }
+    previewDiv.appendChild(wrap);
+}
+
+document.getElementById("settings-avatar-btn").addEventListener("click", () => {
+    document.getElementById("settings-avatar-file").click();
+});
+
+document.getElementById("settings-avatar-file").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    _removeAvatar = false;
+    _resizeImage(file, 128, blob => {
+        _pendingAvatarBlob = blob;
+        _populateAvatarPreview(blob);
+    });
+    e.target.value = "";
+});
+
+document.getElementById("settings-avatar-remove").addEventListener("click", () => {
+    _pendingAvatarBlob = null;
+    _removeAvatar = true;
+    // Show initials preview (force, ignoring current avatar)
+    const previewDiv = document.getElementById("settings-avatar-preview");
+    previewDiv.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "avatar-wrap";
+    wrap.style.cssText = "width:64px;height:64px";
+    const inner = document.createElement("div");
+    inner.className = "avatar";
+    _setInitials(inner, CURRENT_USER, 64);
+    wrap.appendChild(inner);
+    previewDiv.appendChild(wrap);
+});
 
 function _buildColorSwatches(currentColor) {
     const container = document.getElementById("color-swatches");
@@ -1641,10 +1753,13 @@ async function openSettings() {
     const currentColor = cfg.name_color || defaultUserColor(CURRENT_USER);
 
     _settingsUseDefault = !cfg.name_color;
+    _pendingAvatarBlob = null;
+    _removeAvatar = false;
     document.getElementById("settings-name-color").value =
         cfg.name_color || defaultUserColor(CURRENT_USER);
     _updateColorPreview(currentColor);
     _buildColorSwatches(cfg.name_color);
+    _populateAvatarPreview(null);
     settingsModal.style.display = "block";
 }
 
@@ -1669,8 +1784,27 @@ document.getElementById("settings-cancel-btn").addEventListener("click", () => {
 });
 
 document.getElementById("settings-save-btn").addEventListener("click", async () => {
-    const color = _settingsUseDefault ? null : document.getElementById("settings-name-color").value;
+    // Avatar
+    if (_pendingAvatarBlob) {
+        const fd = new FormData();
+        fd.append("avatar", _pendingAvatarBlob, "avatar.jpg");
+        const r = await fetch("/avatar", { method: "POST", body: fd });
+        if (r.ok) {
+            usersWithAvatars.add(CURRENT_USER);
+            _refreshUserAvatar(CURRENT_USER);
+        }
+        _pendingAvatarBlob = null;
+    } else if (_removeAvatar) {
+        const r = await fetch("/avatar", { method: "DELETE" });
+        if (r.ok) {
+            usersWithAvatars.delete(CURRENT_USER);
+            _refreshUserAvatar(CURRENT_USER);
+        }
+        _removeAvatar = false;
+    }
 
+    // Name color
+    const color = _settingsUseDefault ? null : document.getElementById("settings-name-color").value;
     const resp = await fetch("/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1897,13 +2031,10 @@ function loadChannelMembers(channelId) {
                 div.className = "members-list-item";
                 div.style.display = "flex";
                 div.style.alignItems = "center";
-                div.style.gap = "6px";
-                const dot = document.createElement("span");
-                dot.className = "presence-inline";
-                setPresence(dot, presenceMapCache[m.username] || "offline");
+                div.style.gap = "8px";
+                div.appendChild(makeAvatarWrap(m.username, 28));
                 const label = document.createElement("span");
                 label.textContent = m.username + (m.username === CURRENT_USER ? " (you)" : "");
-                div.appendChild(dot);
                 div.appendChild(label);
                 list.appendChild(div);
             });

@@ -48,7 +48,12 @@ Messaging
 
 - **Public channels** — configurable via ``channels.json``; visible to all
   users.
-- **Direct messages** — private one-on-one or group conversations.
+- **Private channels** — invite-only rooms; members can be added or removed,
+  the channel can be renamed (with a system message recording each rename),
+  and any member can leave at any time.
+- **Direct messages** — private one-on-one or group conversations. DM threads
+  can be closed (hidden from the sidebar) with a single click; they
+  reappear automatically when a new message arrives.
 - **Message history** — persistent and searchable; new users see the full
   public channel history from their first login.
 - **Replies & threading** — quote any message to reply in context; the parent
@@ -66,7 +71,8 @@ Real-time Interaction
 - **Typing indicators** — see when other users are composing a message.
 - **Read receipts** — checkmark indicators showing who has read each message.
 - **Presence indicators** — active, idle, hidden, and offline states updated
-  automatically based on tab visibility and user activity.
+  automatically based on tab visibility and user activity; overlaid as a
+  small dot on each user's avatar.
 
 Media
 ~~~~~
@@ -84,6 +90,14 @@ Interface
 
 - **Single-page application** — the entire chat interface is a zero-framework
   vanilla JavaScript SPA that loads once and polls for updates.
+- **User avatars** — every account has a circular avatar showing the user's
+  first two initials by default. Users can upload a custom image via the
+  Settings menu; images are resized client-side to 128 × 128 px before
+  upload. Avatars appear in the DM sidebar, private channel hover tooltips,
+  and the member list modal.
+- **User settings** — the settings cog (top-right, next to Logout) opens a
+  modal for choosing a display name colour from a palette of presets and for
+  managing the profile avatar.
 - **Dark theme** — easy on the eyes by default.
 - **Keyboard shortcuts** — Vim-inspired navigation, formatting shortcuts,
   and quick-access commands; see :doc:`keyboard_shortcuts`.
@@ -143,6 +157,7 @@ Project Structure
     ├── auth.db                     # Shared authentication database
     ├── presence.db                 # Shared real-time state database
     ├── uploads/                    # Image attachment storage
+    ├── avatars/                    # User avatar image storage
     ├── users/                      # Per-user SQLite message databases
     │   └── {username}.db
     └── src/minimost/
@@ -161,8 +176,7 @@ Project Structure
         │   └── chat.html           # Main SPA template (~2800 lines)
         └── static/
             ├── auth.css
-            ├── styles.css
-            └── styles.css          # (reactions are now inline emoji — no SVG files)
+            └── styles.css
 
 Limitations and Non-goals
 --------------------------
@@ -209,9 +223,10 @@ preview cache (``preview.py``).
 
 Yes. The entire state of the application lives in:
 
-- ``auth.db`` — credentials
+- ``auth.db`` — credentials and user settings (name colour, avatar filename)
 - ``presence.db`` — reactions and read receipts (transient state)
 - ``users/*.db`` — all message history
 - ``uploads/`` — image attachments
+- ``avatars/`` — user profile avatar images
 
 A simple filesystem backup of the project directory is sufficient.

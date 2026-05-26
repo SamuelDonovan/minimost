@@ -23,6 +23,7 @@ of JSON endpoints at fixed intervals to pick up new data.
          │
          ├── auth.db          (shared, WAL mode)
          ├── presence.db      (shared, WAL mode)
+         ├── avatars/         (user profile images)
          └── users/
              ├── alice.db     (per-user, WAL mode)
              ├── bob.db       (per-user, WAL mode)
@@ -98,11 +99,21 @@ across all recipients. This shared timestamp is used as the cross-user
 identity token for edits, deletes, and reactions — since row ``id`` values
 differ between per-user databases.
 
-Shared State: presence.db
---------------------------
+Shared State: auth.db and presence.db
+--------------------------------------
 
 Some state cannot live in per-user databases because it needs to be visible
-to all users simultaneously:
+to all users simultaneously.
+
+``auth.db`` holds two tables:
+
+- **users** — credentials (``username``, ``password_hash``).
+- **user_settings** — per-user display preferences (``name_color``,
+  ``avatar_file``). Stored here rather than in per-user databases so that
+  every client can read another user's colour and avatar without needing
+  access to that user's private database.
+
+``presence.db`` holds:
 
 - **Presence** (active/idle/hidden/offline) — shown to all users in sidebar.
 - **Typing indicators** — shown to channel members in real time.
@@ -206,6 +217,30 @@ joining them with colons::
 ensures that the same conversation always has the same identifier regardless of
 who initiates it. Channel access is enforced by checking that the authenticated
 user's username appears in the channel string.
+
+DM Visibility (dm_hidden)
+--------------------------
+
+Users can close (hide) a DM thread from the sidebar without deleting any
+messages. The per-user database includes a ``dm_hidden`` table with columns
+``channel`` (primary key) and ``hidden_ts`` (Unix timestamp of when the
+conversation was hidden).
+
+The ``GET /dms`` query uses a ``HAVING`` clause to filter out hidden
+conversations unless a message has arrived after ``hidden_ts``::
+
+    HAVING MAX(ts) > COALESCE(hidden_ts, 0)
+
+This means the DM reappears automatically the next time a new message is
+received — no manual "reopen" action is required.
+
+Avatar Storage
+--------------
+
+User profile avatars are stored in the ``avatars/`` directory at the project
+root. The filename is stored in ``auth.db`` → ``user_settings.avatar_file``.
+Images are resized client-side (Canvas API, centre-crop to a 128 × 128 JPEG)
+before upload, so no server-side image library is required.
 
 Link Preview Pipeline
 ---------------------

@@ -91,6 +91,9 @@ _PROJECT_ROOT = _HERE.parent.parent
 UPLOAD_DIR = _PROJECT_ROOT / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+AVATAR_DIR = _PROJECT_ROOT / "avatars"
+AVATAR_DIR.mkdir(exist_ok=True)
+
 _CHANNELS_FILE = _PROJECT_ROOT / "channels.json"
 
 
@@ -533,7 +536,7 @@ def user_colors():
     :rtype: flask.Response (application/json)
     """
     db = sqlite3.connect(auth.AUTH_DB)
-    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(_WAL)
     rows = db.execute(
         "SELECT username, name_color FROM user_settings WHERE name_color IS NOT NULL"
     ).fetchall()
@@ -553,7 +556,7 @@ def get_settings():
     """
     user = session["user"]
     db = sqlite3.connect(auth.AUTH_DB)
-    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(_WAL)
     db.row_factory = sqlite3.Row
     row = db.execute(
         "SELECT name_color FROM user_settings WHERE username = ?", (user,)
@@ -585,11 +588,125 @@ def save_settings():
             return "invalid color", 400
 
     db = sqlite3.connect(auth.AUTH_DB)
-    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(_WAL)
     db.execute(
         "INSERT INTO user_settings (username, name_color) VALUES (?, ?)"
         " ON CONFLICT(username) DO UPDATE SET name_color = excluded.name_color",
         (user, name_color),
+    )
+    db.commit()
+    db.close()
+    return "ok"
+
+
+@chat_bp.route("/user_avatars", methods=["GET"])
+@auth.login_required
+def user_avatars():
+    """Return usernames of all users who have a custom avatar.
+
+    Route: ``GET /user_avatars``
+
+    :returns: JSON array of usernames.
+    :rtype: flask.Response (application/json)
+    """
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute(_WAL)
+    rows = db.execute(
+        "SELECT username FROM user_settings WHERE avatar_file IS NOT NULL"
+    ).fetchall()
+    db.close()
+    return jsonify([r[0] for r in rows])
+
+
+@chat_bp.route("/avatar/<username>", methods=["GET"])
+@auth.login_required
+def get_avatar(username):
+    """Serve a user's avatar image.
+
+    Route: ``GET /avatar/<username>``
+
+    Returns 404 if the user has no custom avatar.
+
+    :returns: Image file response or 404.
+    :rtype: flask.Response
+    """
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute(_WAL)
+    row = db.execute(
+        "SELECT avatar_file FROM user_settings WHERE username = ?", (username,)
+    ).fetchone()
+    db.close()
+    if not row or not row[0]:
+        return "", 404
+    return send_from_directory(AVATAR_DIR, row[0])
+
+
+@chat_bp.route("/avatar", methods=["POST"])
+@auth.login_required
+def upload_avatar():
+    """Upload and store the current user's avatar.
+
+    Route: ``POST /avatar``
+
+    Expects a multipart file named ``avatar`` (pre-resized client-side).
+    Deletes the previous avatar file if one existed.
+
+    :returns: ``"ok"`` on success.
+    :rtype: flask.Response
+    """
+    user = session["user"]
+    f = request.files.get("avatar")
+    if not f or not f.filename:
+        return "no file", 400
+
+    filename = f"{uuid.uuid4().hex}.jpg"
+    f.save(AVATAR_DIR / filename)
+
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute(_WAL)
+    row = db.execute(
+        "SELECT avatar_file FROM user_settings WHERE username = ?", (user,)
+    ).fetchone()
+    if row and row[0]:
+        try:
+            (AVATAR_DIR / row[0]).unlink()
+        except FileNotFoundError:
+            pass
+    db.execute(
+        "INSERT INTO user_settings (username, avatar_file) VALUES (?, ?)"
+        " ON CONFLICT(username) DO UPDATE SET avatar_file = excluded.avatar_file",
+        (user, filename),
+    )
+    db.commit()
+    db.close()
+    return "ok"
+
+
+@chat_bp.route("/avatar", methods=["DELETE"])
+@auth.login_required
+def delete_avatar():
+    """Remove the current user's custom avatar.
+
+    Route: ``DELETE /avatar``
+
+    :returns: ``"ok"`` on success.
+    :rtype: flask.Response
+    """
+    user = session["user"]
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute(_WAL)
+    row = db.execute(
+        "SELECT avatar_file FROM user_settings WHERE username = ?", (user,)
+    ).fetchone()
+    if row and row[0]:
+        try:
+            (AVATAR_DIR / row[0]).unlink()
+        except FileNotFoundError:
+            pass
+    db.execute(
+        "INSERT INTO user_settings (username, avatar_file) VALUES (?, NULL)"
+        " ON CONFLICT(username) DO UPDATE SET avatar_file = NULL",
+        (user,),
     )
     db.commit()
     db.close()
@@ -830,7 +947,7 @@ def send(channel):
     if sender not in recipients:
         recipients.append(sender)
 
-    if not recipients:
+    if not recipients:  # pragma: no cover
         return "no recipients", 400
 
     for r in recipients:
