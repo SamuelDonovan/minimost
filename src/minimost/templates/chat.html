@@ -359,6 +359,8 @@
     </div>
     <!-- Video elements: hidden until a user shares their camera -->
     <video id="call-remote-video" autoplay playsinline style="display:none;"></video>
+    <!-- Screen share: shown via .screen-share-active on #call-panel -->
+    <video id="call-screen-video" autoplay playsinline></video>
     <video id="call-local-video" autoplay playsinline muted style="display:none;"></video>
     <div id="call-controls">
         <span id="call-timer">0:00</span>
@@ -372,6 +374,11 @@
         <button id="call-camera-btn" class="call-ctrl-btn muted" onclick="toggleCamera()" title="Share camera">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                 <path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2V5z"/>
+            </svg>
+        </button>
+        <button id="call-screen-btn" class="call-ctrl-btn muted" onclick="toggleScreenShare()" title="Share screen">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4c0 .667.083 1.167.25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75c.167-.333.25-.833.25-1.5H2s-2 0-2-2V4zm1.398 0a1 1 0 0 1 .202 0h12.8a1 1 0 0 1 .6.4V10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4.5l.398-.5z"/>
             </svg>
         </button>
         <button id="call-end-btn" class="call-ctrl-btn" onclick="endCall()" title="End call">
@@ -3995,6 +4002,20 @@ let audioCaptureCleaner = null;   // tears down the sender-side capture graph
 let vadAnalyser         = null;   // AnalyserNode for voice activity detection
 let vadPollId           = null;   // interval for VAD ring updates
 
+// HTTP media relay — screen share (sender side)
+let screenStream         = null;
+let screenRecorder       = null;
+let screenEnabled        = false;
+// HTTP media relay — screen share (receiver side)
+let screenPollId         = null;
+let lastScreenSeq        = -1;
+let screenInitReceived   = false;
+let screenPollingActive  = false;
+let screenMediaSource    = null;
+let screenSourceBuffer   = null;
+let screenPendingChunks  = [];
+let screenMediaAbortCtrl = null;
+
 function updateCallButton() {
     const btn = document.getElementById("call-btn");
     if (!btn) return;
@@ -4054,8 +4075,12 @@ function closeActiveCallUI() {
     ab.title = "Mute";
     audioMuted = false;
     cameraEnabled = false;
+    screenEnabled = false;
     const cb = document.getElementById("call-camera-btn");
     if (cb) { cb.classList.add("muted"); cb.title = "Share camera"; }
+    const sb = document.getElementById("call-screen-btn");
+    if (sb) { sb.classList.remove("active"); sb.classList.add("muted"); sb.title = "Share screen"; }
+    document.getElementById("call-panel").classList.remove("screen-share-active");
     const ring = document.getElementById("call-speaking-ring");
     if (ring) ring.classList.remove("speaking");
 }
@@ -4548,6 +4573,14 @@ function _startRelayPolling(remoteUser) {
     audioPollId = setInterval(_pollAudioMedia, 100);
     // voice activity detection
     vadPollId = setInterval(_checkVAD, 100);
+    // screen share (receive side)
+    lastScreenSeq       = -1;
+    screenInitReceived  = false;
+    screenPollingActive = false;
+    screenPendingChunks = [];
+    screenMediaSource   = null;
+    screenSourceBuffer  = null;
+    screenPollId = setInterval(_pollScreenMedia, 500);
 }
 
 function _stopRelayPolling() {
@@ -4557,26 +4590,249 @@ function _stopRelayPolling() {
     audioPollId        = null;
     clearInterval(vadPollId);
     vadPollId          = null;
+    clearInterval(screenPollId);
+    screenPollId       = null;
     relayRemoteUser    = null;
     relayPollingActive = false;
     audioPollingActive = false;
+    screenPollingActive = false;
     vadAnalyser        = null;
     const ring = document.getElementById("call-speaking-ring");
     if (ring) ring.classList.remove("speaking");
     if (mediaAbortCtrl) { mediaAbortCtrl.abort(); mediaAbortCtrl = null; }
     if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+    _stopScreenReceiving();
+}
+
+// ── Screen share ──────────────────────────────────────────────────────────────
+
+function _appendNextScreenChunk() {
+    if (!screenSourceBuffer || screenSourceBuffer.updating || screenPendingChunks.length === 0) return;
+    const buf = screenPendingChunks.shift();
+    try {
+        screenSourceBuffer.appendBuffer(buf);
+    } catch (e) {
+        if (e.name === "QuotaExceededError" && screenSourceBuffer.buffered.length > 0) {
+            screenPendingChunks.unshift(buf);
+            try {
+                const start = screenSourceBuffer.buffered.start(0);
+                const end   = screenSourceBuffer.buffered.end(0);
+                if (end - start > 10) screenSourceBuffer.remove(start, end - 5);
+            } catch { /* ignore */ }
+        } else {
+            setTimeout(_appendNextScreenChunk, 0);
+        }
+    }
+}
+
+function _enqueueScreenChunk(buf) {
+    screenPendingChunks.push(buf);
+    if (screenSourceBuffer && !screenSourceBuffer.updating) _appendNextScreenChunk();
+}
+
+function _initScreenMediaSource(mimeType) {
+    if (screenMediaAbortCtrl) screenMediaAbortCtrl.abort();
+    screenMediaAbortCtrl = new AbortController();
+    const { signal } = screenMediaAbortCtrl;
+
+    const videoEl = document.getElementById("call-screen-video");
+    screenMediaSource = new MediaSource();
+    videoEl.src = URL.createObjectURL(screenMediaSource);
+    videoEl.play().catch(() => {});
+
+    videoEl.addEventListener("waiting", () => {
+        if (screenSourceBuffer && !screenSourceBuffer.updating && screenPendingChunks.length > 0) {
+            _appendNextScreenChunk();
+        }
+        videoEl.play().catch(() => {});
+    }, { signal });
+
+    screenMediaSource.addEventListener("sourceopen", () => {
+        try {
+            screenSourceBuffer = screenMediaSource.addSourceBuffer(mimeType);
+            screenSourceBuffer.addEventListener("updateend", () => {
+                _appendNextScreenChunk();
+                videoEl.play().catch(() => {});
+            }, { signal });
+            _appendNextScreenChunk();
+        } catch (e) {
+            console.warn("Screen MediaSource setup failed:", e);
+        }
+    }, { once: true, signal });
+}
+
+function _stopScreenReceiving() {
+    if (screenMediaAbortCtrl) { screenMediaAbortCtrl.abort(); screenMediaAbortCtrl = null; }
+    screenMediaSource   = null;
+    screenSourceBuffer  = null;
+    screenPendingChunks = [];
+    screenInitReceived  = false;
+    const sv = document.getElementById("call-screen-video");
+    if (sv && sv.src && sv.src.startsWith("blob:")) {
+        URL.revokeObjectURL(sv.src);
+        sv.removeAttribute("src");
+        sv.load();
+    }
+    document.getElementById("call-panel").classList.remove("screen-share-active");
+}
+
+async function _pollScreenMedia() {
+    if (!activeCallId || !relayRemoteUser || screenPollingActive) return;
+    screenPollingActive = true;
+    try {
+        const sender = encodeURIComponent(relayRemoteUser + ":screen");
+        const resp = await fetch(
+            `/calls/${activeCallId}/media?sender=${sender}&after=${lastScreenSeq}`
+        );
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (data.init) {
+            if (data.mime_type === "screen/off" && screenInitReceived) {
+                _stopScreenReceiving();
+            } else if (!screenInitReceived && data.mime_type !== "screen/off") {
+                screenInitReceived = true;
+                _initScreenMediaSource(data.mime_type || "video/webm");
+                document.getElementById("call-panel").classList.add("screen-share-active");
+                _enqueueScreenChunk(_b64ToBuffer(data.init));
+            }
+        }
+
+        for (const chunk of (data.chunks || [])) {
+            lastScreenSeq = Math.max(lastScreenSeq, chunk.seq);
+            if (screenInitReceived) _enqueueScreenChunk(_b64ToBuffer(chunk.data));
+        }
+    } catch { /* ignore transient errors */ }
+    finally {
+        screenPollingActive = false;
+    }
+}
+
+function _startScreenCapture(callId, displayStream) {
+    const videoTracks = displayStream.getVideoTracks();
+    if (videoTracks.length === 0) {
+        console.error("Screen share stream has no video tracks.");
+        displayStream.getTracks().forEach(t => t.stop());
+        return false;
+    }
+
+    screenStream = displayStream;
+    const videoMime = _pickVideoMimeType();
+    let screenFirstChunk = true;
+    let screenChain = Promise.resolve();
+    try {
+        screenRecorder = new MediaRecorder(displayStream, videoMime ? { mimeType: videoMime } : {});
+    } catch {
+        try {
+            screenRecorder = new MediaRecorder(displayStream);
+        } catch (e) {
+            console.error("MediaRecorder unavailable for screen stream:", e);
+            displayStream.getTracks().forEach(t => t.stop());
+            screenStream = null;
+            return false;
+        }
+    }
+    screenRecorder.ondataavailable = (evt) => {
+        if (!evt.data || evt.data.size === 0 || !activeCallId) return;
+        const blobPromise = evt.data.arrayBuffer();
+        screenChain = screenChain.then(async () => {
+            try {
+                const buf = await blobPromise;
+                if (screenFirstChunk) {
+                    screenFirstChunk = false;
+                    const mime = screenRecorder.mimeType || "video/webm";
+                    await fetch(`/calls/${callId}/media`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/octet-stream",
+                            "X-Track": "screen",
+                            "X-Init": "1",
+                            "X-Mime": mime,
+                        },
+                        body: buf,
+                    });
+                } else {
+                    await fetch(`/calls/${callId}/media`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/octet-stream", "X-Track": "screen" },
+                        body: buf,
+                    });
+                }
+            } catch { /* ignore network errors */ }
+        });
+    };
+    // Handle the user clicking the browser's native "Stop sharing" button
+    videoTracks[0].addEventListener("ended", () => {
+        if (screenEnabled) toggleScreenShare();
+    });
+    screenRecorder.start(500);
+    return true;
+}
+
+function _stopScreenCapture() {
+    if (screenRecorder && screenRecorder.state !== "inactive") screenRecorder.stop();
+    screenRecorder = null;
+    if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
+    // Signal to the remote side that screen sharing has stopped
+    if (activeCallId) {
+        fetch(`/calls/${activeCallId}/media`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/octet-stream",
+                "X-Track": "screen",
+                "X-Init": "1",
+                "X-Mime": "screen/off",
+            },
+            body: new Uint8Array([0]),
+        }).catch(() => {});
+    }
+}
+
+async function toggleScreenShare() {
+    if (!localStream || !activeCallId) return;
+    const btn = document.getElementById("call-screen-btn");
+    if (screenEnabled) {
+        screenEnabled = false;
+        _stopScreenCapture();
+        btn.classList.remove("active");
+        btn.classList.add("muted");
+        btn.title = "Share screen";
+    } else {
+        // getDisplayMedia must be called directly in the user-gesture handler —
+        // calling it from a nested async function drops the activation token in
+        // some browsers, causing a NotAllowedError.
+        if (!navigator.mediaDevices?.getDisplayMedia) {
+            alert("Your browser does not support screen sharing.");
+            return;
+        }
+        let displayStream;
+        try {
+            displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        } catch (e) {
+            console.warn("Screen share failed:", e);
+            return;
+        }
+        if (!displayStream) return;
+        let ok = false;
+        try {
+            ok = _startScreenCapture(activeCallId, displayStream);
+        } catch (e) {
+            console.error("Screen capture setup failed:", e);
+            displayStream.getTracks().forEach(t => t.stop());
+        }
+        if (!ok) return;
+        screenEnabled = true;
+        btn.classList.add("active");
+        btn.classList.remove("muted");
+        btn.title = "Stop sharing screen";
+    }
 }
 
 // ── Call actions ──────────────────────────────────────────────────────────────
 
 function _requireSecureContext() {
     if (globalThis.isSecureContext && navigator.mediaDevices) return true;
-    alert(
-        "Calling requires a secure connection (HTTPS).\n\n" +
-        "Generate a self-signed certificate and enable TLS:\n" +
-        "  python -m minimost generate-cert\n" +
-        "Then uncomment the keyfile/certfile lines in gunicorn.conf.py and restart."
-    );
+    alert("Calling requires a secure connection (HTTPS). MiniMost generates a self-signed certificate automatically on first run — check that you are connecting via https://.");
     return false;
 }
 
@@ -4676,6 +4932,7 @@ function _cleanupCall() {
     clearInterval(callStatePollId); callStatePollId = null;
     _stopRelayPolling();
     _stopMediaCapture();
+    if (screenEnabled) { _stopScreenCapture(); screenEnabled = false; }
     closeActiveCallUI();
     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
     pendingChunks = [];
@@ -4705,6 +4962,10 @@ async function _pollCallState() {
         const resp = await fetch(`/calls/${activeCallId}/state`);
         if (!resp.ok) return;
         const data = await resp.json();
+        if (data.state === "active" && ringTimeoutId) {
+            clearTimeout(ringTimeoutId);
+            ringTimeoutId = null;
+        }
         if (data.state === "ended" || data.state === "rejected") {
             activeCallId = null;
             _cleanupCall();

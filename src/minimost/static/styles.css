@@ -1296,6 +1296,31 @@ a { color: #9cdcfe; }
 .call-ctrl-btn.muted { background: #222; color: #aaa; }
 #call-end-btn { background: #c62828; }
 #call-end-btn:hover { background: #d32f2f; }
+#call-screen-btn.active { background: #1565c0; }
+#call-screen-btn.active:hover { background: #1976d2; }
+#call-screen-video {
+    display: none;
+    width: 100%;
+    object-fit: contain;
+    background: #111;
+}
+#call-panel.screen-share-active #call-screen-video {
+    display: block;
+    flex: 1;
+}
+#call-panel.screen-share-active #call-avatar-view { display: none !important; }
+#call-panel.screen-share-active #call-remote-video {
+    flex: none;
+    position: absolute;
+    bottom: 90px;
+    left: 16px;
+    width: 160px;
+    height: 120px;
+    object-fit: cover;
+    border: 2px solid #555;
+    border-radius: 8px;
+    z-index: 10;
+}
 #call-mute-audio-btn { position: relative; overflow: hidden; }
 #call-mic-level {
     position: absolute;
