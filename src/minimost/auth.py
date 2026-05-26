@@ -300,6 +300,18 @@ def _validate_signup(username: str, password: str, confirm: str):
     return None
 
 
+@auth_bp.route("/forgot-password", methods=["GET"])
+def forgot_password():
+    """Render the forgot-password information page.
+
+    Route: ``GET /forgot-password``
+
+    :returns: A rendered ``forgot_password.html`` template.
+    :rtype: flask.Response
+    """
+    return render_template("forgot_password.html")
+
+
 @auth_bp.route("/signup", methods=["GET"])
 def signup():
     """Render the registration page.
