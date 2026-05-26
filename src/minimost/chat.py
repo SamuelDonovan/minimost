@@ -410,6 +410,7 @@ def unread_count():
     ).fetchone()
 
     count = row["unread"]
+    db.close()
     return {"count": count}
 
 

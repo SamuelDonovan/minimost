@@ -22,8 +22,11 @@ def test_is_safe_url_parse_exception():
 
 
 def test_clean_main_guard(tmp_path, monkeypatch):
+    import sys
+
     monkeypatch.chdir(tmp_path)
     (tmp_path / "uploads").mkdir()
+    monkeypatch.delitem(sys.modules, "minimost.clean", raising=False)
     runpy.run_module("minimost.clean", run_name="__main__", alter_sys=False)
 
 
