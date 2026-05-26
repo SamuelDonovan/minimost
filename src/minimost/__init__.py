@@ -34,7 +34,7 @@ from pathlib import Path
 
 from flask import Flask, abort, request, session
 
-from . import common, database
+from . import common, database, presence
 from .auth import auth_bp
 from .calls import calls_bp
 from .chat import chat_bp
@@ -159,5 +159,7 @@ def create_app():
     app.register_blueprint(calls_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(presence_bp)
+
+    presence.reset_all_offline()
 
     return app

@@ -1068,7 +1068,7 @@ a { color: #9cdcfe; }
 }
 .avatar-presence.active { background: #6cf; }
 .avatar-presence.idle   { background: #fc6; }
-.avatar-presence.hidden { background: #888; }
+.avatar-presence.away { background: #888; }
 #settings-avatar-preview .avatar-wrap { cursor: default; }
 
 /* Settings modal */

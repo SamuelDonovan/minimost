@@ -597,8 +597,10 @@ function _setInitials(el, username, size) {
 
 function applyPresenceDot(dot, state) {
     dot.className = "avatar-presence";
-    if (state === "active" || state === "idle" || state === "hidden") {
+    if (state === "active" || state === "idle") {
         dot.classList.add(state);
+    } else if (state === "hidden") {
+        dot.classList.add("away");
     }
 }
 
@@ -658,16 +660,18 @@ async function loadSidebar() {
     const sb = document.getElementById("sidebar-dynamic");
     sb.innerHTML = "";
 
-    const [chs, privateChannels, dms, colors, avatars] = await Promise.all([
+    const [chs, privateChannels, dms, colors, avatars, onlineUsers] = await Promise.all([
         fetch("/channels").then(r => r.json()),
         fetch("/private_channels").then(r => r.json()),
         fetch("/dms").then(r => r.json()),
         fetch("/user_colors").then(r => r.json()),
         fetch("/user_avatars").then(r => r.json()),
+        fetch("/online_users").then(r => r.json()),
     ]);
     {
         userColorOverrides = colors;
         usersWithAvatars = new Set(avatars);
+        presenceMapCache = onlineUsers;
 
         // Public channels
         const chTitle = document.createElement("b");
@@ -718,7 +722,6 @@ async function loadSidebar() {
         dmHeader.appendChild(newDmBtn);
         sb.appendChild(dmHeader);
 
-        refreshPresence();
         refreshChannels();
         dms.forEach(dm => {
             const label = "@ " + dm.users.join(", ");
@@ -865,6 +868,13 @@ document.addEventListener("visibilitychange", () => {
             new Blob([JSON.stringify({ state: "hidden" })], { type: "application/json" })
         );
     }
+});
+
+window.addEventListener("pagehide", () => {
+    navigator.sendBeacon(
+        "/presence",
+        new Blob([JSON.stringify({ state: "offline" })], { type: "application/json" })
+    );
 });
 
 let lastActivity = Date.now();
@@ -4146,7 +4156,7 @@ async function _startMediaCapture(callId) {
                 if (!activeCallId || !micLevelEl) return;
                 micAnalyser.getByteTimeDomainData(micLevelBuf);
                 let sum = 0;
-                for (let i = 0; i < micLevelBuf.length; i++) sum += Math.abs(micLevelBuf[i] - 128);
+                for (const s of micLevelBuf) sum += Math.abs(s - 128);
                 micLevelEl.style.height = Math.min(100, (sum / micLevelBuf.length) * 5) + "%";
             }, 50);
 
@@ -4415,7 +4425,7 @@ function _checkVAD() {
     const data = new Uint8Array(vadAnalyser.frequencyBinCount);
     vadAnalyser.getByteFrequencyData(data);
     let sum = 0;
-    for (let i = 0; i < data.length; i++) sum += data[i];
+    for (const v of data) sum += v;
     ring.classList.toggle("speaking", (sum / data.length) > 8);
 }
 

@@ -309,6 +309,22 @@ def presence():
     return "", 204
 
 
+def reset_all_offline() -> None:
+    """Set every user's presence state to ``"offline"`` in ``presence.db``.
+
+    Called once at application startup so that stale presence records from a
+    previous server run (e.g. users who were ``"active"`` or ``"hidden"`` when
+    the server was stopped) do not mislead other users.
+
+    :returns: None
+    """
+    db = sqlite3.connect(PRESENCE_DB)
+    db.execute(_WAL)
+    db.execute("UPDATE presence SET state = 'offline'")
+    db.commit()
+    db.close()
+
+
 def update_presence(user: str, state) -> None:
     """Write a presence record directly to ``presence.db``.
 

@@ -250,6 +250,7 @@ def login_post():
 
     session["user"] = username
     common.init_user_db(username)
+    presence.update_presence(username, "active")
     return redirect("/")
 
 
@@ -373,6 +374,7 @@ def signup_post():
     _seed_channel_history(username)
 
     session["user"] = username
+    presence.update_presence(username, "active")
     return redirect("/")
 
 
