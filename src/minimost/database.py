@@ -67,6 +67,12 @@ def init_auth_db():
             password_hash TEXT NOT NULL
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            username  TEXT PRIMARY KEY,
+            name_color TEXT
+        )
+    """)
     db.commit()
     db.close()
 

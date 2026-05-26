@@ -54,6 +54,12 @@
         </div>
 
         <div id="topbar-actions">
+            <button class="icon-btn" title="Settings" onclick="openSettings()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.474l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/>
+                </svg>
+            </button>
             <button id="msg-search-btn" class="icon-btn" title="Search messages">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242 1.106a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
@@ -190,6 +196,32 @@
         <div class="modal-actions">
             <button id="add-member-submit-btn">Add</button>
             <button id="members-modal-close-btn">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="modal">
+    <div class="modal-content" style="max-width:420px">
+        <h3 style="margin-top:0">Settings</h3>
+
+        <p class="settings-section-title">Appearance</p>
+
+        <div class="settings-row">
+            <label for="settings-name-color">Name Color</label>
+            <div class="settings-color-preview">
+                <span id="settings-color-preview-name"></span>
+            </div>
+            <div class="settings-color-controls">
+                <input type="color" id="settings-name-color">
+                <button class="settings-reset-btn" id="settings-color-reset">Reset to default</button>
+            </div>
+            <div class="color-swatches" id="color-swatches"></div>
+        </div>
+
+        <div class="modal-actions">
+            <button id="settings-save-btn">Save</button>
+            <button id="settings-cancel-btn">Cancel</button>
         </div>
     </div>
 </div>
@@ -461,11 +493,24 @@ function addFiles(files) {
 }
 
 // User color
+let userColorOverrides = {};
+
 function userColor(name) {
+    if (userColorOverrides[name]) return userColorOverrides[name];
     let h = 0;
     for (let c of name) h = c.codePointAt(0) + ((h << 5) - h);
     return `hsl(${Math.abs(h) % 360}, 65%, 55%)`;
 }
+
+function defaultUserColor(name) {
+    let h = 0;
+    for (let c of name) h = c.codePointAt(0) + ((h << 5) - h);
+    return `hsl(${Math.abs(h) % 360}, 65%, 55%)`;
+}
+
+fetch("/user_colors").then(r => r.json()).then(colors => {
+    userColorOverrides = colors;
+});
 
 // Sidebar loading
 function loadSidebar() {
@@ -1542,6 +1587,117 @@ document.addEventListener("DOMContentLoaded", () => {
         tooltip.addEventListener("mouseenter", _cancelPCTooltipHide);
         tooltip.addEventListener("mouseleave", _schedulePCTooltipHide);
     }
+});
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+const COLOR_PRESETS = [
+    // Reds & pinks
+    "#ff4d4d", "#e06c75", "#ff6b9d", "#f72585", "#c9184a", "#ff8fa3",
+    // Oranges & yellows
+    "#fb5607", "#ff7f2a", "#d19a66", "#e5c07b", "#ffd93d", "#ffb703",
+    // Greens
+    "#98c379", "#6bcb77", "#52b788", "#2dc653", "#80ed99", "#b7e4c7",
+    // Blues & cyans
+    "#61afef", "#4d96ff", "#3a86ff", "#0096c7", "#56b6c2", "#00b4d8",
+    // Purples & violets
+    "#c678dd", "#7209b7", "#9d4edd", "#b5179e", "#d0a0f0", "#7b2ff7",
+    // Neutrals & whites
+    "#ffffff", "#cccccc", "#aaaaaa", "#e2d9f3", "#ffddd2", "#d8f3dc",
+];
+
+const settingsModal = document.getElementById("settings-modal");
+let _settingsUseDefault = false;
+
+function _buildColorSwatches(currentColor) {
+    const container = document.getElementById("color-swatches");
+    container.innerHTML = "";
+    COLOR_PRESETS.forEach(hex => {
+        const sw = document.createElement("button");
+        sw.className = "color-swatch" + (hex.toLowerCase() === currentColor?.toLowerCase() ? " selected" : "");
+        sw.style.background = hex;
+        sw.title = hex;
+        sw.addEventListener("click", () => {
+            document.getElementById("settings-name-color").value = hex;
+            _settingsUseDefault = false;
+            _updateColorPreview(hex);
+            container.querySelectorAll(".color-swatch").forEach(s =>
+                s.classList.toggle("selected", s.title.toLowerCase() === hex.toLowerCase())
+            );
+        });
+        container.appendChild(sw);
+    });
+}
+
+function _updateColorPreview(color) {
+    const preview = document.getElementById("settings-color-preview-name");
+    preview.textContent = CURRENT_USER;
+    preview.style.color = color;
+}
+
+async function openSettings() {
+    const resp = await fetch("/settings");
+    const cfg = await resp.json();
+    const currentColor = cfg.name_color || defaultUserColor(CURRENT_USER);
+
+    _settingsUseDefault = !cfg.name_color;
+    document.getElementById("settings-name-color").value =
+        cfg.name_color || defaultUserColor(CURRENT_USER);
+    _updateColorPreview(currentColor);
+    _buildColorSwatches(cfg.name_color);
+    settingsModal.style.display = "block";
+}
+
+document.getElementById("settings-name-color").addEventListener("input", e => {
+    _settingsUseDefault = false;
+    _updateColorPreview(e.target.value);
+    document.querySelectorAll(".color-swatch").forEach(s =>
+        s.classList.toggle("selected", s.title.toLowerCase() === e.target.value.toLowerCase())
+    );
+});
+
+document.getElementById("settings-color-reset").addEventListener("click", () => {
+    _settingsUseDefault = true;
+    const def = defaultUserColor(CURRENT_USER);
+    document.getElementById("settings-name-color").value = def;
+    _updateColorPreview(def);
+    document.querySelectorAll(".color-swatch").forEach(s => s.classList.remove("selected"));
+});
+
+document.getElementById("settings-cancel-btn").addEventListener("click", () => {
+    settingsModal.style.display = "none";
+});
+
+document.getElementById("settings-save-btn").addEventListener("click", async () => {
+    const color = _settingsUseDefault ? null : document.getElementById("settings-name-color").value;
+
+    const resp = await fetch("/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name_color: color })
+    });
+
+    if (!resp.ok) {
+        alert("Failed to save settings.");
+        return;
+    }
+
+    if (color) {
+        userColorOverrides[CURRENT_USER] = color;
+    } else {
+        delete userColorOverrides[CURRENT_USER];
+    }
+
+    const applied = color || defaultUserColor(CURRENT_USER);
+    document.querySelectorAll(".user").forEach(el => {
+        if (el.textContent === CURRENT_USER) el.style.color = applied;
+    });
+
+    settingsModal.style.display = "none";
+});
+
+settingsModal.addEventListener("click", e => {
+    if (e.target === settingsModal) settingsModal.style.display = "none";
 });
 
 // ── Private Channels ──────────────────────────────────────────────────────────

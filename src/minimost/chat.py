@@ -53,6 +53,7 @@ VALID_REACTIONS : set of str
 from time import time
 import sqlite3
 import os
+import re
 import uuid
 import json
 from pathlib import Path
@@ -508,6 +509,83 @@ def close_dm():
     db.execute(
         "INSERT OR REPLACE INTO dm_hidden (channel, hidden_ts) VALUES (?, ?)",
         (dm_channel, time()),
+    )
+    db.commit()
+    db.close()
+    return "ok"
+
+
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+@chat_bp.route("/user_colors", methods=["GET"])
+@auth.login_required
+def user_colors():
+    """Return custom name colors for all users who have set one.
+
+    Route: ``GET /user_colors``
+
+    :returns: JSON object mapping username to hex color string.
+    :rtype: flask.Response (application/json)
+    """
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute("PRAGMA journal_mode=WAL")
+    rows = db.execute(
+        "SELECT username, name_color FROM user_settings WHERE name_color IS NOT NULL"
+    ).fetchall()
+    db.close()
+    return jsonify({r[0]: r[1] for r in rows})
+
+
+@chat_bp.route("/settings", methods=["GET"])
+@auth.login_required
+def get_settings():
+    """Return the current user's settings.
+
+    Route: ``GET /settings``
+
+    :returns: JSON object with user settings keys.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.row_factory = sqlite3.Row
+    row = db.execute(
+        "SELECT name_color FROM user_settings WHERE username = ?", (user,)
+    ).fetchone()
+    db.close()
+    return jsonify({"name_color": row["name_color"] if row else None})
+
+
+@chat_bp.route("/settings", methods=["POST"])
+@auth.login_required
+def save_settings():
+    """Save the current user's settings.
+
+    Route: ``POST /settings``
+
+    JSON body: ``{"name_color": str | null}``.  Pass ``null`` to reset to the
+    default hash-derived color.
+
+    :returns: ``"ok"`` on success.
+    :rtype: flask.Response
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+
+    name_color = data.get("name_color")
+    if name_color is not None:
+        name_color = name_color.strip()
+        if not _COLOR_RE.match(name_color):
+            return "invalid color", 400
+
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute(
+        "INSERT INTO user_settings (username, name_color) VALUES (?, ?)"
+        " ON CONFLICT(username) DO UPDATE SET name_color = excluded.name_color",
+        (user, name_color),
     )
     db.commit()
     db.close()
