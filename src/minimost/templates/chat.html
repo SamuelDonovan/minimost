@@ -149,9 +149,9 @@
 <div id="create-private-ch-modal" class="modal">
     <div class="modal-content">
         <h3>New Private Channel</h3>
-        <label>Channel name</label><br>
+        <label for="private-ch-name">Channel name</label><br>
         <input type="text" id="private-ch-name" placeholder="e.g. miniost-enjoyers" style="width:90%; margin-bottom:10px">
-        <label>Members</label>
+        <label for="private-ch-members-input">Members</label>
         <div class="input-suggest-wrap">
             <input id="private-ch-members-input" placeholder="Enter usernames (comma separated)" autocomplete="off">
             <div id="private-ch-suggestions" class="autocomplete-suggestions"></div>
@@ -1131,9 +1131,7 @@ function fetchMessages() {
                     return;
                 }
 
-                const hasText = m.content && m.content.trim();
-                const hasImage = m.filename && m.filename.trim();
-                if (!hasText && !hasImage) {
+                if (!m.content?.trim() && !m.filename?.trim()) {
                     lastTs = Math.max(lastTs, m.ts);
                     return;
                 }
