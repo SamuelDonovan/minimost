@@ -80,6 +80,10 @@ chat_bp = Blueprint("chat", __name__)
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _WAL = "PRAGMA journal_mode=WAL"
 _MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
+_INSERT_MSG_SQL = (
+    "INSERT INTO messages (channel, sender, content, content_type, ts, read)"
+    " VALUES (?, ?, ?, ?, ?, ?)"
+)
 
 _HERE = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent.parent
@@ -1992,7 +1996,7 @@ def rename_private_channel(channel_id):
     for recipient in get_private_channel_members(channel_id):
         db = get_db(recipient)
         db.execute(
-            "INSERT INTO messages (channel, sender, content, content_type, ts, read) VALUES (?, ?, ?, ?, ?, ?)",
+            _INSERT_MSG_SQL,
             (ch, "system", sys_content, "system", now, 1),
         )
         db.commit()
@@ -2046,7 +2050,7 @@ def add_private_channel_member(channel_id):
     for recipient in all_members:
         db = get_db(recipient)
         db.execute(
-            "INSERT INTO messages (channel, sender, content, content_type, ts, read) VALUES (?, ?, ?, ?, ?, ?)",
+            _INSERT_MSG_SQL,
             (ch, "system", sys_content, "system", now, 1),
         )
         db.commit()
@@ -2089,7 +2093,7 @@ def leave_private_channel(channel_id):
         for recipient in remaining:
             db = get_db(recipient)
             db.execute(
-                "INSERT INTO messages (channel, sender, content, content_type, ts, read) VALUES (?, ?, ?, ?, ?, ?)",
+                _INSERT_MSG_SQL,
                 (ch, "system", sys_content, "system", now, 1),
             )
             db.commit()
