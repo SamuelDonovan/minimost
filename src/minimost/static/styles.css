@@ -456,6 +456,23 @@ body {
     line-height: 1;
     cursor: pointer;
 }
+.dm-close-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    line-height: 1;
+    opacity: 0;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+.sidebar-item:hover .dm-close-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
 #private-ch-controls {
     display: none;
     align-items: center;

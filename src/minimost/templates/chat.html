@@ -897,6 +897,16 @@ function sidebarEntry(label, channelName, unread = 0) {
         }
 
         d.appendChild(presence);
+
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "dm-close-btn";
+        closeBtn.title = "Close conversation";
+        closeBtn.textContent = "×";
+        closeBtn.addEventListener("pointerup", e => {
+            e.stopPropagation();
+            closeDm(channelName);
+        });
+        d.appendChild(closeBtn);
     }
 
     if (channelName.startsWith("private:")) {
@@ -1457,6 +1467,17 @@ document.getElementById("dm-start").onclick = () => {
 
     focusMessageInput();
 };
+
+async function closeDm(dmChannel) {
+    const resp = await fetch("/dms/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: dmChannel })
+    });
+    if (!resp.ok) return;
+    if (channel === dmChannel) switchChannel("general");
+    document.querySelector(`[data-channel="${dmChannel}"]`)?.remove();
+}
 
 // ── Private Channel Tooltip ────────────────────────────────────��──────────────
 

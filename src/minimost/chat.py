@@ -432,26 +432,31 @@ def dms():
     """
     user = session["user"]
     db = get_db(user)
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS dm_hidden (channel TEXT PRIMARY KEY, hidden_ts REAL NOT NULL)"
+    )
 
     rows = db.execute(
         """
         SELECT
-            channel,
-            MAX(ts) AS last_ts,
+            m.channel,
+            MAX(m.ts) AS last_ts,
             COALESCE(SUM(
                 CASE
-                    WHEN read = 0 AND sender != ?
+                    WHEN m.read = 0 AND m.sender != ?
                     THEN 1 ELSE 0
                 END
             ), 0) AS unread
-        FROM messages
-        WHERE channel LIKE 'dm:%'
+        FROM messages m
+        LEFT JOIN dm_hidden dh ON dh.channel = m.channel
+        WHERE m.channel LIKE 'dm:%'
           AND (
-                channel LIKE 'dm:' || ? || ':%'
-             OR channel LIKE 'dm:%:' || ?
-             OR channel LIKE 'dm:%:' || ? || ':%'
+                m.channel LIKE 'dm:' || ? || ':%'
+             OR m.channel LIKE 'dm:%:' || ?
+             OR m.channel LIKE 'dm:%:' || ? || ':%'
           )
-        GROUP BY channel
+        GROUP BY m.channel
+        HAVING dh.hidden_ts IS NULL OR MAX(m.ts) > dh.hidden_ts
         ORDER BY last_ts DESC
     """,
         (user, user, user, user),
@@ -472,6 +477,41 @@ def dms():
         )
 
     return jsonify(result)
+
+
+@chat_bp.route("/dms/close", methods=["POST"])
+@auth.login_required
+def close_dm():
+    """Hide a DM conversation from the current user's sidebar.
+
+    Route: ``POST /dms/close``
+
+    JSON body: ``{"channel": str}``.  Records a ``hidden_ts`` timestamp for the
+    channel; the ``/dms`` endpoint will exclude this conversation until a new
+    message arrives after that timestamp.
+
+    :returns: ``"ok"`` on success.
+    :rtype: flask.Response
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+    dm_channel = (data.get("channel") or "").strip()
+    if not dm_channel.startswith("dm:"):
+        return "invalid channel", 400
+    if user not in dm_channel.split(":")[1:]:
+        return "forbidden", 403
+
+    db = get_db(user)
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS dm_hidden (channel TEXT PRIMARY KEY, hidden_ts REAL NOT NULL)"
+    )
+    db.execute(
+        "INSERT OR REPLACE INTO dm_hidden (channel, hidden_ts) VALUES (?, ?)",
+        (dm_channel, time()),
+    )
+    db.commit()
+    db.close()
+    return "ok"
 
 
 @chat_bp.route("/online_users", methods=["GET"])

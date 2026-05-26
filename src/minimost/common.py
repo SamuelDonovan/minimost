@@ -161,6 +161,13 @@ def init_user_db(username: str):
     cur = db.cursor()
 
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS dm_hidden (
+        channel  TEXT PRIMARY KEY,
+        hidden_ts REAL NOT NULL
+    )
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
