@@ -373,3 +373,92 @@ def signup_post():
 
     session["user"] = username
     return redirect("/")
+
+
+def _validate_password_reset(password: str, confirm: str):
+    """Return an error string if the new password fails validation, else None."""
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if not re.search(r"\d", password):
+        return "Password must contain at least one number"
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
+        return "Password must contain at least one special character"
+    if password != confirm:
+        return "Passwords do not match"
+    return None
+
+
+@auth_bp.route("/reset-password/<token>", methods=["GET"])
+def reset_password_form(token):
+    """Render the password reset form if the token is valid and unexpired.
+
+    Route: ``GET /reset-password/<token>``
+
+    :returns: Rendered ``reset_password.html`` with the form or an error.
+    :rtype: flask.Response
+    """
+    db = sqlite3.connect(AUTH_DB)
+    db.execute(_WAL)
+    row = db.execute(
+        "SELECT username, expires_ts, used FROM password_reset_tokens WHERE token = ?",
+        (token,),
+    ).fetchone()
+    db.close()
+
+    if not row or row[2] or time.time() > row[1]:
+        return render_template(
+            "reset_password.html", token=None, error="invalid", username=None
+        )
+    return render_template(
+        "reset_password.html", token=token, error=None, username=row[0]
+    )
+
+
+@auth_bp.route("/reset-password/<token>", methods=["POST"])
+def reset_password_post(token):
+    """Process a password reset form submission.
+
+    Validates the token is still active, applies password rules, updates the
+    stored hash in ``auth.db``, and marks the token as used.
+
+    Route: ``POST /reset-password/<token>``
+
+    :returns: Rendered ``reset_password.html`` (success or error).
+    :rtype: flask.Response
+    """
+    db = sqlite3.connect(AUTH_DB)
+    db.execute(_WAL)
+    row = db.execute(
+        "SELECT username, expires_ts, used FROM password_reset_tokens WHERE token = ?",
+        (token,),
+    ).fetchone()
+
+    if not row or row[2] or time.time() > row[1]:
+        db.close()
+        return render_template(
+            "reset_password.html", token=None, error="invalid", username=None
+        )
+
+    username = row[0]
+    password = request.form.get("password", "")
+    confirm = request.form.get("confirm_password", "")
+
+    error = _validate_password_reset(password, confirm)
+    if error:
+        db.close()
+        return render_template(
+            "reset_password.html", token=token, error=error, username=username
+        )
+
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE username = ?",
+        (hash_password(password), username),
+    )
+    db.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = ?", (token,))
+    db.commit()
+    db.close()
+    return render_template(
+        "reset_password.html", token=None, error=None, success=True, username=username
+    )

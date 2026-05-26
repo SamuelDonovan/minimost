@@ -45,6 +45,7 @@
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing
 - **Dark theme** — easy on the eyes
 - **Password security** — salted hashes (PBKDF2), enforced complexity requirements
+- **Admin password reset** — generate a one-time, time-limited reset URL from the CLI; the user receives an in-app notification when a reset is requested
 
 ---
 
@@ -200,7 +201,13 @@ Messages are not end-to-end encrypted. Each user's data lives in a SQLite file o
 
 **What if a user forgets their password?**
 
-There is no self-service password reset. An administrator would need to update the password hash directly in `auth.db`.
+An administrator can generate a one-time reset link from the command line:
+
+```bash
+minimost reset-password <username>
+```
+
+This prints a URL valid for 60 minutes (configurable with `--expires`) and sends the user an in-app notification via a system DM. Share the URL with the user through another channel (email, phone, etc.). When they open it, they can set a new password. The link expires after use or when the timer runs out — whichever comes first. Run `minimost reset-password --help` for all options.
 
 **Does it have feature X from Slack/Discord/Mattermost?**
 

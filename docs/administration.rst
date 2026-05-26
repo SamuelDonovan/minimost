@@ -57,19 +57,41 @@ MiniMost has no admin UI. User management is done directly via SQLite.
 
 **Reset a forgotten password:**
 
-Generate a new hash in Python:
-
-.. code-block:: python
-
-    from werkzeug.security import generate_password_hash
-    print(generate_password_hash("NewSecurePassword1!"))
-
-Then apply it:
+Use the built-in CLI command to generate a one-time, time-limited reset URL:
 
 .. code-block:: bash
 
-    sqlite3 auth.db \
-        "UPDATE users SET password_hash = '<hash>' WHERE username = 'alice';"
+    minimost reset-password alice
+
+This stores a secure token in ``auth.db``, sends the user a system DM notifying
+them that a reset was requested, and prints a URL to stdout. Share that URL with
+the user through a side-channel (email, phone, etc.). When they open it they can
+set a new password; the link is invalidated immediately after use.
+
+By default the link expires in 60 minutes. Adjust with ``--expires``:
+
+.. code-block:: bash
+
+    minimost reset-password alice --expires 30
+
+If the server is not on ``127.0.0.1:5000``, provide the public base URL so the
+printed link is correct:
+
+.. code-block:: bash
+
+    minimost reset-password alice --base-url https://chat.example.com
+
+Run ``minimost reset-password --help`` for the full list of options.
+
+.. note::
+
+   Reset tokens are single-use and stored in the ``password_reset_tokens`` table
+   in ``auth.db``. Expired tokens are never automatically purged, but they are
+   harmless — they are rejected at validation time. To clean them up manually:
+
+   .. code-block:: bash
+
+       sqlite3 auth.db "DELETE FROM password_reset_tokens WHERE used = 1 OR expires_ts < unixepoch();"
 
 **Delete a user:**
 

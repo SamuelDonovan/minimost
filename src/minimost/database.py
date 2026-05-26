@@ -74,6 +74,14 @@ def init_auth_db():
             avatar_file TEXT
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            token      TEXT PRIMARY KEY,
+            username   TEXT NOT NULL,
+            expires_ts REAL NOT NULL,
+            used       INTEGER NOT NULL DEFAULT 0
+        )
+    """)
     try:
         db.execute("ALTER TABLE user_settings ADD COLUMN avatar_file TEXT")
     except sqlite3.OperationalError:

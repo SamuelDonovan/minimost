@@ -31,6 +31,23 @@ limits brute-force attacks to approximately 20 attempts per minute per
 connection. For stronger protection, use a reverse proxy with rate limiting
 (e.g. Nginx's ``limit_req_zone``).
 
+**Password reset tokens**
+
+Password reset links are generated only by administrators via the
+``minimost reset-password`` CLI command (never through the web UI). Each token
+is a 256-bit cryptographically random value produced by
+:func:`python:secrets.token_urlsafe`. Tokens are:
+
+- **Single-use** — marked ``used = 1`` in ``auth.db`` immediately after the
+  password is changed; any replay attempt is rejected.
+- **Time-limited** — expire after a configurable duration (default: 60 minutes).
+- **Out-of-band** — the URL is printed to the administrator's terminal and never
+  transmitted by MiniMost itself; the administrator shares it through a separate
+  channel.
+
+The user receives a system DM when a reset is requested, so they are aware if a
+reset was initiated without their knowledge and can contact an administrator.
+
 **Session security**
 
 Flask signs session cookies with the ``SECRET_KEY`` loaded from
@@ -154,11 +171,12 @@ files are ephemeral and not preserved across checkpoints.
 
 **CSRF protection scope**
 
-CSRF tokens are enforced on the HTML form routes (``/login`` and ``/signup``)
-via a session-stored token rendered as a hidden ``<input>`` in each form and
-validated in a ``before_request`` hook. The chat and presence API endpoints
-rely on Flask's signed session cookie for authentication; these endpoints do
-not require CSRF tokens as they are not reachable via cross-origin HTML forms.
+CSRF tokens are enforced on the HTML form routes (``/login``, ``/signup``, and
+``/reset-password/<token>``) via a session-stored token rendered as a hidden
+``<input>`` in each form and validated in a ``before_request`` hook. The chat
+and presence API endpoints rely on Flask's signed session cookie for
+authentication; these endpoints do not require CSRF tokens as they are not
+reachable via cross-origin HTML forms.
 
 **No rate limiting on signup**
 
