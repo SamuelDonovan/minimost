@@ -60,6 +60,12 @@
         </div>
 
         <div id="topbar-actions">
+            <button id="call-btn" class="icon-btn" style="display:none" title="Start call" onclick="startCall()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
+                </svg>
+                <span class="icon-text">Call</span>
+            </button>
             <button id="msg-search-btn" class="icon-btn" title="Search messages">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242 1.106a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
@@ -316,6 +322,54 @@
             <li><span class="help-presence offline"></span> <b>Offline</b> – Not connected</li>
         </ul>
     </dialog>
+</div>
+
+<!-- Incoming Call Notification -->
+<div id="call-incoming" style="display:none;">
+    <svg class="call-ring-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
+        <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
+    </svg>
+    <div class="call-incoming-info">
+        <div class="call-incoming-label">Incoming call</div>
+        <div class="call-incoming-caller" id="call-caller-name"></div>
+    </div>
+    <div class="call-incoming-actions">
+        <button class="call-btn-accept" onclick="acceptCall()" title="Accept">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
+            </svg>
+        </button>
+        <button class="call-btn-reject" onclick="rejectCall()" title="Reject">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854z"/>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<!-- Active Call Panel -->
+<div id="call-panel" style="display:none;">
+    <video id="call-remote-video" autoplay playsinline></video>
+    <video id="call-local-video" autoplay playsinline muted></video>
+    <div id="call-controls">
+        <span id="call-timer">0:00</span>
+        <button id="call-mute-audio-btn" class="call-ctrl-btn" onclick="toggleAudioMute()" title="Mute">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
+                <path d="M7 3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v4a2 2 0 0 1-2 2A2 2 0 0 1 7 7V3z"/>
+            </svg>
+        </button>
+        <button id="call-mute-video-btn" class="call-ctrl-btn" onclick="toggleVideoMute()" title="Disable camera">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2V5z"/>
+            </svg>
+        </button>
+        <button id="call-end-btn" class="call-ctrl-btn" onclick="endCall()" title="End call">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854z"/>
+            </svg>
+        </button>
+    </div>
 </div>
 
 <!-- keyboard handling -->
@@ -1079,6 +1133,7 @@ function switchChannel(c) {
 
     fetch(`/mark_read/${channel}`, { method: "POST" });
 
+    updateCallButton();
     fetchMessages();
     fetchReadReceipts();
     refreshDMs();
@@ -3450,6 +3505,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(refreshPrivateChannels, 1000);
     setInterval(fetchReadReceipts, 3000);
     setInterval(refreshTotalUnreadCount, 5000);
+    setInterval(pollIncomingCalls, 1000);
     setInterval(() => {
         if (
             document.visibilityState === "visible" &&
@@ -3883,6 +3939,592 @@ async function attachPreview(msgEl) {
         localStorage.setItem("chatFontSize", fontSize);
     }, { passive: false });
 }());
+
+// ── Calling ───────────────────────────────────────────────────────────────────
+
+let activeCallId      = null;
+let incomingCallData  = null;
+let localStream       = null;
+let callTimerInterval = null;
+let callStartTime     = null;
+let callStatePollId   = null;
+let audioMuted        = false;
+let videoMuted        = false;
+let ringAudio         = null;
+
+// HTTP media relay — video
+let mediaRecorder      = null;
+let relayPollId        = null;
+let relayPollingActive = false;
+let lastMediaSeq       = -1;
+let mediaSource        = null;
+let sourceBuffer       = null;
+let pendingChunks      = [];
+let relayInitReceived  = false;
+let relayRemoteUser    = null;
+let mediaAbortCtrl     = null;
+
+// HTTP media relay — audio (Web Audio API for gapless, near-real-time playback)
+let audioPollId         = null;
+let audioPollingActive  = false;
+let lastAudioSeq        = -1;
+let audioCtx            = null;   // AudioContext for playback scheduling
+let audioNextPlayTime   = 0;      // next scheduled play position in audioCtx time
+let audioCaptureCleaner = null;   // tears down the sender-side capture graph
+
+function updateCallButton() {
+    const btn = document.getElementById("call-btn");
+    if (!btn) return;
+    btn.style.display = channel.startsWith("dm:") ? "inline-flex" : "none";
+}
+
+// ── Incoming call UI ──────────────────────────────────────────────────────────
+
+function openIncomingCallUI(callData) {
+    incomingCallData = callData;
+    document.getElementById("call-caller-name").textContent = callData.initiator;
+    document.getElementById("call-incoming").style.display = "flex";
+    if (!notifMuted) {
+        const a = new Audio("/static/notification.mp3");
+        a.loop = true;
+        a.play().catch(() => {});
+        ringAudio = a;
+    }
+}
+
+function closeIncomingCallUI() {
+    document.getElementById("call-incoming").style.display = "none";
+    if (ringAudio) { ringAudio.pause(); ringAudio = null; }
+    incomingCallData = null;
+}
+
+// ── Active call UI ────────────────────────────────────────────────────────────
+
+function openActiveCallUI() {
+    document.getElementById("call-panel").style.display = "flex";
+}
+
+function closeActiveCallUI() {
+    document.getElementById("call-panel").style.display = "none";
+    const rv = document.getElementById("call-remote-video");
+    if (rv.src && rv.src.startsWith("blob:")) {
+        URL.revokeObjectURL(rv.src);
+        rv.removeAttribute("src");
+        rv.load();
+    }
+    rv.srcObject = null;
+    document.getElementById("call-local-video").srcObject = null;
+    document.getElementById("call-timer").textContent = "0:00";
+    const ab = document.getElementById("call-mute-audio-btn");
+    const vb = document.getElementById("call-mute-video-btn");
+    ab.classList.remove("muted");
+    vb.classList.remove("muted");
+    ab.title = "Mute";
+    vb.title = "Disable camera";
+    audioMuted = false;
+    videoMuted = false;
+}
+
+function _startCallTimer() {
+    callStartTime = Date.now();
+    callTimerInterval = setInterval(() => {
+        const s = Math.floor((Date.now() - callStartTime) / 1000);
+        const m = Math.floor(s / 60);
+        document.getElementById("call-timer").textContent =
+            `${m}:${(s % 60).toString().padStart(2, "0")}`;
+    }, 1000);
+}
+
+function _stopCallTimer() {
+    clearInterval(callTimerInterval);
+    callTimerInterval = null;
+}
+
+// ── Media helpers ─────────────────────────────────────────────────────────────
+
+async function _getLocalMedia() {
+    try {
+        return await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    } catch {
+        return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
+}
+
+function _pickVideoMimeType() {
+    const candidates = [
+        "video/webm;codecs=vp9",
+        "video/webm;codecs=vp8",
+        "video/webm",
+    ];
+    for (const t of candidates) {
+        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) return t;
+    }
+    return "";
+}
+
+async function _startMediaCapture(callId) {
+    if (!localStream) return;
+
+    // ── Video-only recorder (500 ms slices for stability) ──────────────────────
+    const videoTracks = localStream.getVideoTracks();
+    if (videoTracks.length > 0) {
+        const videoStream = new MediaStream(videoTracks);
+        const videoMime = _pickVideoMimeType();
+        try {
+            mediaRecorder = new MediaRecorder(videoStream, videoMime ? { mimeType: videoMime } : {});
+        } catch {
+            mediaRecorder = new MediaRecorder(videoStream);
+        }
+        let videoFirstChunk = true;
+        let videoChain = Promise.resolve();
+        mediaRecorder.ondataavailable = (evt) => {
+            if (!evt.data || evt.data.size === 0 || !activeCallId) return;
+            const blobPromise = evt.data.arrayBuffer();
+            videoChain = videoChain.then(async () => {
+                try {
+                    const buf = await blobPromise;
+                    if (videoFirstChunk) {
+                        videoFirstChunk = false;
+                        const mime = mediaRecorder.mimeType || "video/webm";
+                        await fetch(
+                            `/calls/${callId}/media?init=1&mime=${encodeURIComponent(mime)}`,
+                            { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: buf }
+                        );
+                    } else {
+                        await fetch(`/calls/${callId}/media`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/octet-stream" },
+                            body: buf,
+                        });
+                    }
+                } catch { /* ignore network errors */ }
+            });
+        };
+        mediaRecorder.start(500);
+    }
+
+    // ── Audio capture via ScriptProcessorNode → raw Int16 PCM ──────────────────
+    // ScriptProcessorNode fires every ~85 ms (4096 samples @ 48 kHz) and runs on
+    // the main thread, so fetch() is safe to call directly inside the handler.
+    // A muted GainNode is required to keep the audio graph active without
+    // playing the local microphone through the speaker.
+    const audioTracks = localStream.getAudioTracks();
+    if (audioTracks.length > 0) {
+        try {
+            const captureCtx = new AudioContext();
+            const audioStream = new MediaStream(audioTracks);
+            const source    = captureCtx.createMediaStreamSource(audioStream);
+            const processor = captureCtx.createScriptProcessor(4096, 1, 1);
+            const sink      = captureCtx.createGain();
+            sink.gain.value = 0;
+            source.connect(processor);
+            processor.connect(sink);
+            sink.connect(captureCtx.destination);
+
+            let firstChunk  = true;
+            let uploadChain = Promise.resolve();
+            const rate      = captureCtx.sampleRate;
+
+            processor.onaudioprocess = (evt) => {
+                if (!activeCallId) return;
+                const float32 = evt.inputBuffer.getChannelData(0);
+                const int16   = new Int16Array(float32.length);
+                for (let i = 0; i < float32.length; i++) {
+                    int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+                }
+                const buf     = int16.buffer.slice(0);
+                const isFirst = firstChunk;
+                if (firstChunk) firstChunk = false;
+
+                uploadChain = uploadChain.then(async () => {
+                    try {
+                        if (isFirst) {
+                            await fetch(
+                                `/calls/${callId}/media?track=audio&init=1&mime=pcm16%2F${rate}`,
+                                { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: buf }
+                            );
+                        } else {
+                            await fetch(`/calls/${callId}/media?track=audio`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/octet-stream" },
+                                body: buf,
+                            });
+                        }
+                    } catch { /* ignore network errors */ }
+                });
+            };
+
+            audioCaptureCleaner = () => {
+                source.disconnect();
+                processor.disconnect();
+                sink.disconnect();
+                captureCtx.close().catch(() => {});
+            };
+        } catch (e) {
+            console.warn("Audio capture setup failed:", e);
+        }
+    }
+}
+
+function _stopMediaCapture() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    mediaRecorder = null;
+    if (audioCaptureCleaner) { audioCaptureCleaner(); audioCaptureCleaner = null; }
+}
+
+function _b64ToBuffer(b64) {
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr.buffer;
+}
+
+function _appendNextChunk() {
+    if (!sourceBuffer || sourceBuffer.updating || pendingChunks.length === 0) return;
+    const buf = pendingChunks.shift();
+    try {
+        sourceBuffer.appendBuffer(buf);
+    } catch (e) {
+        if (e.name === "QuotaExceededError" && sourceBuffer.buffered.length > 0) {
+            // Put the chunk back so it is retried after eviction completes
+            pendingChunks.unshift(buf);
+            try {
+                const start = sourceBuffer.buffered.start(0);
+                const end   = sourceBuffer.buffered.end(0);
+                if (end - start > 10) sourceBuffer.remove(start, end - 5);
+            } catch { /* ignore */ }
+        } else {
+            // Drop the bad chunk but keep the chain alive for subsequent chunks
+            setTimeout(_appendNextChunk, 0);
+        }
+    }
+}
+
+function _enqueueChunk(buf) {
+    pendingChunks.push(buf);
+    if (sourceBuffer && !sourceBuffer.updating) _appendNextChunk();
+}
+
+function _initMediaSource(mimeType) {
+    // Abort any listeners from a previous call's MediaSource
+    if (mediaAbortCtrl) mediaAbortCtrl.abort();
+    mediaAbortCtrl = new AbortController();
+    const { signal } = mediaAbortCtrl;
+
+    const videoEl = document.getElementById("call-remote-video");
+    mediaSource = new MediaSource();
+    videoEl.src = URL.createObjectURL(mediaSource);
+    videoEl.play().catch(() => {});
+
+    // When the video stalls waiting for data, try to trigger an append and resume
+    videoEl.addEventListener("waiting", () => {
+        if (sourceBuffer && !sourceBuffer.updating && pendingChunks.length > 0) {
+            _appendNextChunk();
+        }
+        videoEl.play().catch(() => {});
+    }, { signal });
+
+    mediaSource.addEventListener("sourceopen", () => {
+        try {
+            sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+            // Do NOT set mode="sequence": WebM byte streams require the default
+            // "segments" mode so that MediaRecorder's cluster timestamps are used
+            // as-is. Forcing "sequence" causes all post-init appends to be rejected
+            // in Chrome/Chromium.
+            sourceBuffer.addEventListener("updateend", () => {
+                _appendNextChunk();
+                // Unconditional play(): "waiting" state has paused=false but still
+                // needs a nudge; calling play() on an already-playing element is safe
+                videoEl.play().catch(() => {});
+            }, { signal });
+            _appendNextChunk();
+        } catch (e) {
+            console.warn("MediaSource setup failed:", e);
+        }
+    }, { once: true, signal });
+}
+
+async function _pollRelayMedia() {
+    if (!activeCallId || !relayRemoteUser || relayPollingActive) return;
+    relayPollingActive = true;
+    try {
+        const resp = await fetch(
+            `/calls/${activeCallId}/media?sender=${encodeURIComponent(relayRemoteUser)}&after=${lastMediaSeq}`
+        );
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (data.init && !relayInitReceived) {
+            relayInitReceived = true;
+            _initMediaSource(data.mime_type || "video/webm");
+            _enqueueChunk(_b64ToBuffer(data.init));
+        }
+
+        for (const chunk of (data.chunks || [])) {
+            lastMediaSeq = Math.max(lastMediaSeq, chunk.seq);
+            if (relayInitReceived) _enqueueChunk(_b64ToBuffer(chunk.data));
+        }
+    } catch { /* ignore transient errors */ }
+    finally {
+        relayPollingActive = false;
+    }
+}
+
+// ── Web Audio API receiver ─────────────────────────────────────────────────────
+// Schedules each PCM chunk to start exactly when the previous one ends.
+// This gives gapless playback with no drift — delay cannot accumulate because
+// we reset audioNextPlayTime whenever we fall more than 300 ms behind the
+// audio clock.
+
+function _playPcmChunk(arrayBuffer) {
+    if (!audioCtx) return;
+    const samples = Math.floor(arrayBuffer.byteLength / 2);
+    if (samples === 0) return;
+
+    const int16   = new Int16Array(arrayBuffer, 0, samples);
+    const float32 = new Float32Array(samples);
+    for (let i = 0; i < samples; i++) float32[i] = int16[i] / 32768;
+
+    const buf = audioCtx.createBuffer(1, samples, audioCtx.sampleRate);
+    buf.getChannelData(0).set(float32);
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+    // Reset if behind (gap/silence) OR too far ahead (backlog catch-up case)
+    if (audioNextPlayTime < now - 0.3 || audioNextPlayTime > now + 0.5) {
+        audioNextPlayTime = now + 0.05;
+    }
+    src.start(audioNextPlayTime);
+    audioNextPlayTime += buf.duration;
+}
+
+async function _pollAudioMedia() {
+    if (!activeCallId || !relayRemoteUser || audioPollingActive) return;
+    audioPollingActive = true;
+    try {
+        const audioSender = encodeURIComponent(relayRemoteUser + ":audio");
+        const resp = await fetch(
+            `/calls/${activeCallId}/media?sender=${audioSender}&after=${lastAudioSeq}`
+        );
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        // First response with an init chunk carries the sample rate in mime_type
+        // ("pcm16/<rate>"). Use it only to set up the AudioContext — the init
+        // data itself may be stale so we don't play it.
+        if (data.init && !audioCtx) {
+            const rate = parseInt((data.mime_type || "pcm16/48000").split("/")[1]) || 48000;
+            try { audioCtx = new AudioContext({ sampleRate: rate }); }
+            catch { audioCtx = new AudioContext(); }
+            audioNextPlayTime = 0;
+        }
+
+        const chunks = data.chunks || [];
+        if (chunks.length > 0) {
+            // Always advance lastAudioSeq past everything we received so that
+            // stale chunks are discarded on the next poll instead of replayed.
+            lastAudioSeq = chunks[chunks.length - 1].seq;
+            // If we received more chunks than expected for one poll interval
+            // we're behind — skip to the most recent ones to stay near real-time.
+            const toPlay = chunks.length > 2 ? chunks.slice(-2) : chunks;
+            for (const chunk of toPlay) {
+                _playPcmChunk(_b64ToBuffer(chunk.data));
+            }
+        }
+    } catch { /* ignore transient errors */ }
+    finally {
+        audioPollingActive = false;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _startRelayPolling(remoteUser) {
+    relayRemoteUser    = remoteUser;
+    // video
+    lastMediaSeq       = -1;
+    relayInitReceived  = false;
+    relayPollingActive = false;
+    pendingChunks      = [];
+    mediaSource        = null;
+    sourceBuffer       = null;
+    relayPollId = setInterval(_pollRelayMedia, 500);
+    // audio
+    lastAudioSeq       = -1;
+    audioPollingActive = false;
+    audioNextPlayTime  = 0;
+    audioPollId = setInterval(_pollAudioMedia, 100);
+}
+
+function _stopRelayPolling() {
+    clearInterval(relayPollId);
+    relayPollId        = null;
+    clearInterval(audioPollId);
+    audioPollId        = null;
+    relayRemoteUser    = null;
+    relayPollingActive = false;
+    audioPollingActive = false;
+    if (mediaAbortCtrl) { mediaAbortCtrl.abort(); mediaAbortCtrl = null; }
+    if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+}
+
+// ── Call actions ──────────────────────────────────────────────────────────────
+
+function _requireSecureContext() {
+    if (window.isSecureContext && navigator.mediaDevices) return true;
+    alert(
+        "Calling requires a secure connection (HTTPS).\n\n" +
+        "Generate a self-signed certificate and enable TLS:\n" +
+        "  python -m minimost generate-cert\n" +
+        "Then uncomment the keyfile/certfile lines in gunicorn.conf.py and restart."
+    );
+    return false;
+}
+
+async function startCall() {
+    if (activeCallId) return;
+    if (!_requireSecureContext()) return;
+
+    const resp = await fetch("/calls/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel }),
+    });
+    if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert(err.error || "Could not start call");
+        return;
+    }
+
+    const data = await resp.json();
+    activeCallId = data.call_id;
+    const peers = data.participants.filter(p => p !== CURRENT_USER);
+
+    try {
+        localStream = await _getLocalMedia();
+        document.getElementById("call-local-video").srcObject = localStream;
+        openActiveCallUI();
+        _startCallTimer();
+        await _startMediaCapture(activeCallId);
+        _startRelayPolling(peers[0]);
+        _startCallStatePolling();
+    } catch (err) {
+        console.error("Call setup failed:", err);
+        const callId = activeCallId;
+        activeCallId = null;
+        await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
+        _cleanupCall();
+    }
+}
+
+async function acceptCall() {
+    if (!incomingCallData) return;
+    if (!_requireSecureContext()) { closeIncomingCallUI(); return; }
+
+    const { call_id, initiator } = incomingCallData;
+
+    const resp = await fetch(`/calls/${call_id}/accept`, { method: "POST" });
+    closeIncomingCallUI();
+    if (!resp.ok) return;
+    activeCallId = call_id;
+
+    try {
+        localStream = await _getLocalMedia();
+        document.getElementById("call-local-video").srcObject = localStream;
+        openActiveCallUI();
+        _startCallTimer();
+        await _startMediaCapture(activeCallId);
+        _startRelayPolling(initiator);
+        _startCallStatePolling();
+    } catch (err) {
+        console.error("Call accept failed:", err);
+        const callId = activeCallId;
+        activeCallId = null;
+        await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
+        _cleanupCall();
+    }
+}
+
+async function rejectCall() {
+    if (!incomingCallData) return;
+    const { call_id } = incomingCallData;
+    closeIncomingCallUI();
+    await fetch(`/calls/${call_id}/reject`, { method: "POST" }).catch(() => {});
+}
+
+async function endCall() {
+    if (!activeCallId) return;
+    const callId = activeCallId;
+    activeCallId = null;
+    await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
+    _cleanupCall();
+}
+
+function _cleanupCall() {
+    _stopCallTimer();
+    clearInterval(callStatePollId); callStatePollId = null;
+    _stopRelayPolling();
+    _stopMediaCapture();
+    closeActiveCallUI();
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    pendingChunks = [];
+    mediaSource   = null;
+    sourceBuffer  = null;
+}
+
+function toggleAudioMute() {
+    if (!localStream) return;
+    audioMuted = !audioMuted;
+    localStream.getAudioTracks().forEach(t => { t.enabled = !audioMuted; });
+    const btn = document.getElementById("call-mute-audio-btn");
+    btn.classList.toggle("muted", audioMuted);
+    btn.title = audioMuted ? "Unmute" : "Mute";
+}
+
+function toggleVideoMute() {
+    if (!localStream) return;
+    videoMuted = !videoMuted;
+    localStream.getVideoTracks().forEach(t => { t.enabled = !videoMuted; });
+    const btn = document.getElementById("call-mute-video-btn");
+    btn.classList.toggle("muted", videoMuted);
+    btn.title = videoMuted ? "Enable camera" : "Disable camera";
+}
+
+// ── Call-state polling (3 s) — detects remote hang-up ────────────────────────
+
+function _startCallStatePolling() {
+    callStatePollId = setInterval(_pollCallState, 3000);
+}
+
+async function _pollCallState() {
+    if (!activeCallId) return;
+    try {
+        const resp = await fetch(`/calls/${activeCallId}/state`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.state === "ended" || data.state === "rejected") {
+            activeCallId = null;
+            _cleanupCall();
+        }
+    } catch { /* ignore transient errors */ }
+}
+
+// ── Incoming call polling (1 s) ───────────────────────────────────────────────
+
+function pollIncomingCalls() {
+    if (activeCallId || incomingCallData) return;
+    fetch("/calls/incoming")
+        .then(r => r.ok ? r.json() : [])
+        .then(calls => {
+            if (calls.length > 0 && !activeCallId && !incomingCallData) {
+                openIncomingCallUI(calls[0]);
+            }
+        })
+        .catch(() => {});
+}
 
 </script>
 <div id="pc-member-tooltip"></div>

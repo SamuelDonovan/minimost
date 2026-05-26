@@ -43,7 +43,8 @@ def test_only_flask_dependency():
         f: pkgs - _ALLOWED_THIRD_PARTY for f, pkgs in imports.items()
     }
     violations = {f: pkgs for f, pkgs in violations.items() if pkgs}
-    assert not violations, (
-        "Unexpected third-party imports found (only 'flask' is allowed):\n"
-        + "\n".join(f"  {f}: {sorted(pkgs)}" for f, pkgs in sorted(violations.items()))
+    assert (
+        not violations
+    ), "Unexpected third-party imports found (only 'flask' is allowed):\n" + "\n".join(
+        f"  {f}: {sorted(pkgs)}" for f, pkgs in sorted(violations.items())
     )

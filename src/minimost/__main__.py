@@ -30,6 +30,7 @@ Usage::
 """
 
 import argparse
+import os
 import secrets
 import sqlite3
 import sys
@@ -59,6 +60,10 @@ def main():
     """
     if len(sys.argv) > 1 and sys.argv[1] == "reset-password":
         _cmd_reset_password(sys.argv[2:])
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "generate-cert":
+        _cmd_generate_cert()
         return
 
     parser = argparse.ArgumentParser(
@@ -176,6 +181,97 @@ def _cmd_reset_password(argv):
         f" (expires in {args.expires} {minutes_word}):"
     )
     print(url)
+
+
+def _cmd_generate_cert():
+    """Generate a self-signed TLS certificate for HTTPS support.
+
+    Creates ``cert.pem`` and ``key.pem`` in the current working directory
+    using the system ``openssl`` utility.  The certificate includes a
+    Subject Alternative Name (SAN) for ``localhost`` and the current
+    machine's hostname so that modern browsers accept it without a hard
+    error.  Users must still click through the untrusted-issuer warning
+    the first time they visit the site.
+
+    After running this command, uncomment the ``keyfile`` / ``certfile``
+    lines in ``gunicorn.conf.py`` and restart gunicorn.  WebRTC (and
+    therefore calling) requires HTTPS; it will not work over plain HTTP
+    even on a local network.
+    """
+    import socket
+    import subprocess
+    import tempfile
+
+    cert_path = "cert.pem"
+    key_path = "key.pem"
+
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        print("cert.pem and key.pem already exist. Delete them first to regenerate.")
+        sys.exit(0)
+
+    hostname = socket.gethostname()
+    try:
+        local_ip = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        local_ip = None
+
+    san_parts = [f"DNS:localhost", f"DNS:{hostname}", "IP:127.0.0.1"]
+    if local_ip and local_ip != "127.0.0.1":
+        san_parts.append(f"IP:{local_ip}")
+    san = ",".join(san_parts)
+
+    openssl_conf = f"""[req]
+distinguished_name = req_dn
+x509_extensions   = v3_req
+prompt            = no
+
+[req_dn]
+CN = minimost
+
+[v3_req]
+subjectAltName = {san}
+"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".cnf", delete=False) as tmp:
+        tmp.write(openssl_conf)
+        conf_path = tmp.name
+
+    try:
+        result = subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                key_path,
+                "-out",
+                cert_path,
+                "-days",
+                "3650",
+                "-nodes",
+                "-config",
+                conf_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(conf_path)
+
+    if result.returncode != 0:
+        print("openssl failed:", result.stderr, file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Generated {cert_path} and {key_path}.")
+    print(f"  Hostname : {hostname}")
+    print(f"  SANs     : {san}")
+    print()
+    print("Next steps:")
+    print("  1. Uncomment 'keyfile' and 'certfile' in gunicorn.conf.py")
+    print("  2. Restart gunicorn")
+    print("  3. Access MiniMost via https:// — click through the cert warning once")
 
 
 if __name__ == "__main__":

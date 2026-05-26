@@ -148,6 +148,55 @@ def _init_tables():
             FOREIGN KEY (channel_id) REFERENCES private_channels(id)
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS calls (
+            call_id     TEXT PRIMARY KEY,
+            channel     TEXT NOT NULL,
+            initiator   TEXT NOT NULL,
+            state       TEXT NOT NULL DEFAULT 'ringing',
+            started_ts  REAL NOT NULL,
+            answered_ts REAL,
+            ended_ts    REAL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS call_participants (
+            call_id   TEXT NOT NULL,
+            username  TEXT NOT NULL,
+            role      TEXT NOT NULL DEFAULT 'participant',
+            state     TEXT NOT NULL DEFAULT 'pending',
+            joined_ts REAL,
+            left_ts   REAL,
+            PRIMARY KEY (call_id, username),
+            FOREIGN KEY (call_id) REFERENCES calls(call_id)
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS call_signals (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            call_id     TEXT NOT NULL,
+            from_user   TEXT NOT NULL,
+            to_user     TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            payload     TEXT NOT NULL,
+            ts          REAL NOT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS call_media (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            call_id   TEXT NOT NULL,
+            sender    TEXT NOT NULL,
+            is_init   INTEGER NOT NULL DEFAULT 0,
+            mime_type TEXT,
+            data      BLOB NOT NULL,
+            ts        REAL NOT NULL
+        )
+    """)
+    db.execute("""
+        CREATE INDEX IF NOT EXISTS call_media_idx
+            ON call_media (call_id, sender, is_init, id)
+    """)
     db.commit()
     db.close()
 

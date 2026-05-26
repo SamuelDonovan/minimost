@@ -76,8 +76,6 @@ Download the Flask wheel and its dependencies, then:
 pip install --user *.whl
 ```
 
-> On Windows, use `py` instead of `python3` / `pip`.
-
 ---
 
 ## Running

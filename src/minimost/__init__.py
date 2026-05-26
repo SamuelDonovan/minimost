@@ -36,6 +36,7 @@ from flask import Flask, abort, request, session
 
 from . import common, database
 from .auth import auth_bp
+from .calls import calls_bp
 from .chat import chat_bp
 from .presence import presence_bp
 
@@ -155,6 +156,7 @@ def create_app():
         return {"app_version": _APP_VERSION}
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(calls_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(presence_bp)
 

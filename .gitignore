@@ -216,3 +216,5 @@ avatars/*
 
 # Secrets
 secret.key
+cert.pem
+key.pem

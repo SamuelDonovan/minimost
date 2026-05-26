@@ -48,5 +48,19 @@ max_requests_jitter = 50
 pythonpath = "src"
 
 # --------------------------------------------------------------------
+# TLS / HTTPS  (required for WebRTC calling)
+# --------------------------------------------------------------------
+# Generate a self-signed certificate first (no external packages needed):
+#   python -m minimost generate-cert
+#
+# Then uncomment the two lines below and restart gunicorn.
+# Browsers will show an "untrusted certificate" warning the first time;
+# accept it once and calling will work.  navigator.mediaDevices is only
+# exposed by browsers in a secure context (HTTPS or localhost).
+#
+keyfile = "key.pem"
+certfile = "cert.pem"
+
+# --------------------------------------------------------------------
 # Environment variables (optional)
 # --------------------------------------------------------------------
