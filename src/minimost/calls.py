@@ -44,6 +44,12 @@ calls_bp = Blueprint("calls", __name__)
 _WAL = "PRAGMA journal_mode=WAL"
 _RINGING_TIMEOUT = 30
 
+_SQL_CALL_STATE = "SELECT state FROM calls WHERE call_id = ?"
+_SQL_PARTICIPANT = (
+    "SELECT state FROM call_participants WHERE call_id = ? AND username = ?"
+)
+_ERR_NOT_FOUND = "call not found"
+
 
 def _db():
     db = sqlite3.connect(presence_mod.PRESENCE_DB)
@@ -217,16 +223,14 @@ def accept_call(call_id):
 
     db = _db()
     try:
-        call = db.execute(
-            "SELECT state FROM calls WHERE call_id = ?", (call_id,)
-        ).fetchone()
+        call = db.execute(_SQL_CALL_STATE, (call_id,)).fetchone()
         if not call:
-            return jsonify({"error": "call not found"}), 404
+            return jsonify({"error": _ERR_NOT_FOUND}), 404
         if call["state"] not in ("ringing", "active"):
             return jsonify({"error": "call is no longer available"}), 409
 
         participant = db.execute(
-            "SELECT state FROM call_participants WHERE call_id = ? AND username = ?",
+            _SQL_PARTICIPANT,
             (call_id, user),
         ).fetchone()
         if not participant:
@@ -278,7 +282,7 @@ def reject_call(call_id):
             "SELECT state, initiator FROM calls WHERE call_id = ?", (call_id,)
         ).fetchone()
         if not call:
-            return jsonify({"error": "call not found"}), 404
+            return jsonify({"error": _ERR_NOT_FOUND}), 404
 
         db.execute(
             "UPDATE call_participants SET state = 'rejected', left_ts = ?"
@@ -332,11 +336,9 @@ def end_call(call_id):
 
     db = _db()
     try:
-        call = db.execute(
-            "SELECT state FROM calls WHERE call_id = ?", (call_id,)
-        ).fetchone()
+        call = db.execute(_SQL_CALL_STATE, (call_id,)).fetchone()
         if not call:
-            return jsonify({"error": "call not found"}), 404
+            return jsonify({"error": _ERR_NOT_FOUND}), 404
 
         db.execute(
             "UPDATE call_participants SET state = 'left', left_ts = ?"
@@ -400,11 +402,9 @@ def send_signal(call_id):
 
     db = _db()
     try:
-        call = db.execute(
-            "SELECT state FROM calls WHERE call_id = ?", (call_id,)
-        ).fetchone()
+        call = db.execute(_SQL_CALL_STATE, (call_id,)).fetchone()
         if not call:
-            return jsonify({"error": "call not found"}), 404
+            return jsonify({"error": _ERR_NOT_FOUND}), 404
         if call["state"] == "ended":
             return jsonify({"error": "call has ended"}), 409
 
@@ -494,7 +494,7 @@ def call_state(call_id):
     ).fetchone()
     if not call:
         db.close()
-        return jsonify({"error": "call not found"}), 404
+        return jsonify({"error": _ERR_NOT_FOUND}), 404
 
     participants = db.execute(
         "SELECT username, role, state, joined_ts, left_ts"
@@ -556,9 +556,9 @@ def upload_media(call_id):
     :rtype: flask.Response (application/json)
     """
     user = session["user"]
-    is_init = request.args.get("init", "0") == "1"
-    mime_type = request.args.get("mime", "video/webm")
-    track = request.args.get("track", "")
+    is_init = request.headers.get("X-Init", "0") == "1"
+    mime_type = request.headers.get("X-Mime", "video/webm")
+    track = request.headers.get("X-Track", "")
     sender = f"{user}:{track}" if track else user
     data = request.get_data()
 
@@ -567,16 +567,14 @@ def upload_media(call_id):
 
     db = _db()
     try:
-        call = db.execute(
-            "SELECT state FROM calls WHERE call_id = ?", (call_id,)
-        ).fetchone()
+        call = db.execute(_SQL_CALL_STATE, (call_id,)).fetchone()
         participant = db.execute(
-            "SELECT state FROM call_participants WHERE call_id = ? AND username = ?",
+            _SQL_PARTICIPANT,
             (call_id, user),
         ).fetchone()
 
         if not call or not participant:
-            return jsonify({"error": "call not found"}), 404
+            return jsonify({"error": _ERR_NOT_FOUND}), 404
         if call["state"] not in ("ringing", "active"):
             return jsonify({"error": "call is not active"}), 409
 
@@ -647,7 +645,7 @@ def get_media(call_id):
     db = _db()
     try:
         participant = db.execute(
-            "SELECT state FROM call_participants WHERE call_id = ? AND username = ?",
+            _SQL_PARTICIPANT,
             (call_id, user),
         ).fetchone()
         if not participant:

@@ -79,6 +79,7 @@ chat_bp = Blueprint("chat", __name__)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _WAL = "PRAGMA journal_mode=WAL"
+_SQL_AVATAR = "SELECT avatar_file FROM user_settings WHERE username = ?"
 _MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
 _INSERT_MSG_SQL = (
     "INSERT INTO messages (channel, sender, content, content_type, ts, read)"
@@ -633,9 +634,7 @@ def get_avatar(username):
     """
     db = sqlite3.connect(auth.AUTH_DB)
     db.execute(_WAL)
-    row = db.execute(
-        "SELECT avatar_file FROM user_settings WHERE username = ?", (username,)
-    ).fetchone()
+    row = db.execute(_SQL_AVATAR, (username,)).fetchone()
     db.close()
     if not row or not row[0]:
         return "", 404
@@ -665,9 +664,7 @@ def upload_avatar():
 
     db = sqlite3.connect(auth.AUTH_DB)
     db.execute(_WAL)
-    row = db.execute(
-        "SELECT avatar_file FROM user_settings WHERE username = ?", (user,)
-    ).fetchone()
+    row = db.execute(_SQL_AVATAR, (user,)).fetchone()
     if row and row[0]:
         try:
             (AVATAR_DIR / row[0]).unlink()
@@ -696,9 +693,7 @@ def delete_avatar():
     user = session["user"]
     db = sqlite3.connect(auth.AUTH_DB)
     db.execute(_WAL)
-    row = db.execute(
-        "SELECT avatar_file FROM user_settings WHERE username = ?", (user,)
-    ).fetchone()
+    row = db.execute(_SQL_AVATAR, (user,)).fetchone()
     if row and row[0]:
         try:
             (AVATAR_DIR / row[0]).unlink()

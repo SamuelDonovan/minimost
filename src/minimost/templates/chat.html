@@ -349,17 +349,27 @@
 
 <!-- Active Call Panel -->
 <div id="call-panel" style="display:none;">
-    <video id="call-remote-video" autoplay playsinline></video>
-    <video id="call-local-video" autoplay playsinline muted></video>
+    <!-- Avatar view: default when no camera is active -->
+    <div id="call-avatar-view">
+        <div id="call-avatar-container">
+            <div id="call-speaking-ring"></div>
+            <div id="call-remote-avatar"></div>
+        </div>
+        <span id="call-remote-name"></span>
+    </div>
+    <!-- Video elements: hidden until a user shares their camera -->
+    <video id="call-remote-video" autoplay playsinline style="display:none;"></video>
+    <video id="call-local-video" autoplay playsinline muted style="display:none;"></video>
     <div id="call-controls">
         <span id="call-timer">0:00</span>
         <button id="call-mute-audio-btn" class="call-ctrl-btn" onclick="toggleAudioMute()" title="Mute">
+            <div id="call-mic-level"></div>
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
                 <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
-                <path d="M7 3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v4a2 2 0 0 1-2 2A2 2 0 0 1 7 7V3z"/>
             </svg>
         </button>
-        <button id="call-mute-video-btn" class="call-ctrl-btn" onclick="toggleVideoMute()" title="Disable camera">
+        <button id="call-camera-btn" class="call-ctrl-btn muted" onclick="toggleCamera()" title="Share camera">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                 <path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2V5z"/>
             </svg>
@@ -648,11 +658,10 @@ async function loadSidebar() {
     const sb = document.getElementById("sidebar-dynamic");
     sb.innerHTML = "";
 
-    const [chs, privateChannels, dms, online, colors, avatars] = await Promise.all([
+    const [chs, privateChannels, dms, colors, avatars] = await Promise.all([
         fetch("/channels").then(r => r.json()),
         fetch("/private_channels").then(r => r.json()),
         fetch("/dms").then(r => r.json()),
-        fetch("/online_users").then(r => r.json()),
         fetch("/user_colors").then(r => r.json()),
         fetch("/user_avatars").then(r => r.json()),
     ]);
@@ -1038,8 +1047,7 @@ function sidebarEntry(label, channelName, unread = 0) {
     if (channelName.startsWith("dm:")) {
         d.classList.add("sidebar-dm");
 
-        const dmUsers = channelName.split(":").slice(1).filter(u => u !== CURRENT_USER);
-        const avatarUser = dmUsers[0] || CURRENT_USER;
+        const avatarUser = channelName.split(":").slice(1).find(u => u !== CURRENT_USER) || CURRENT_USER;
         d.appendChild(makeAvatarWrap(avatarUser, 28));
         d.appendChild(labelSpan);
 
@@ -3949,7 +3957,7 @@ let callTimerInterval = null;
 let callStartTime     = null;
 let callStatePollId   = null;
 let audioMuted        = false;
-let videoMuted        = false;
+let cameraEnabled     = false;
 let ringAudio         = null;
 
 // HTTP media relay — video
@@ -3971,6 +3979,8 @@ let lastAudioSeq        = -1;
 let audioCtx            = null;   // AudioContext for playback scheduling
 let audioNextPlayTime   = 0;      // next scheduled play position in audioCtx time
 let audioCaptureCleaner = null;   // tears down the sender-side capture graph
+let vadAnalyser         = null;   // AnalyserNode for voice activity detection
+let vadPollId           = null;   // interval for VAD ring updates
 
 function updateCallButton() {
     const btn = document.getElementById("call-btn");
@@ -4001,6 +4011,11 @@ function closeIncomingCallUI() {
 // ── Active call UI ────────────────────────────────────────────────────────────
 
 function openActiveCallUI() {
+    document.getElementById("call-avatar-view").style.display = "flex";
+    document.getElementById("call-remote-video").style.display = "none";
+    document.getElementById("call-local-video").style.display = "none";
+    const cb = document.getElementById("call-camera-btn");
+    if (cb) { cb.classList.add("muted"); cb.title = "Share camera"; }
     document.getElementById("call-panel").style.display = "flex";
 }
 
@@ -4013,16 +4028,20 @@ function closeActiveCallUI() {
         rv.load();
     }
     rv.srcObject = null;
-    document.getElementById("call-local-video").srcObject = null;
+    rv.style.display = "none";
+    const lv = document.getElementById("call-local-video");
+    lv.srcObject = null;
+    lv.style.display = "none";
     document.getElementById("call-timer").textContent = "0:00";
     const ab = document.getElementById("call-mute-audio-btn");
-    const vb = document.getElementById("call-mute-video-btn");
     ab.classList.remove("muted");
-    vb.classList.remove("muted");
     ab.title = "Mute";
-    vb.title = "Disable camera";
     audioMuted = false;
-    videoMuted = false;
+    cameraEnabled = false;
+    const cb = document.getElementById("call-camera-btn");
+    if (cb) { cb.classList.add("muted"); cb.title = "Share camera"; }
+    const ring = document.getElementById("call-speaking-ring");
+    if (ring) ring.classList.remove("speaking");
 }
 
 function _startCallTimer() {
@@ -4043,11 +4062,7 @@ function _stopCallTimer() {
 // ── Media helpers ─────────────────────────────────────────────────────────────
 
 async function _getLocalMedia() {
-    try {
-        return await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    } catch {
-        return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    }
+    return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 }
 
 function _pickVideoMimeType() {
@@ -4086,10 +4101,11 @@ async function _startMediaCapture(callId) {
                     if (videoFirstChunk) {
                         videoFirstChunk = false;
                         const mime = mediaRecorder.mimeType || "video/webm";
-                        await fetch(
-                            `/calls/${callId}/media?init=1&mime=${encodeURIComponent(mime)}`,
-                            { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: buf }
-                        );
+                        await fetch(`/calls/${callId}/media`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/octet-stream", "X-Init": "1", "X-Mime": mime },
+                            body: buf,
+                        });
                     } else {
                         await fetch(`/calls/${callId}/media`, {
                             method: "POST",
@@ -4116,10 +4132,23 @@ async function _startMediaCapture(callId) {
             const source    = captureCtx.createMediaStreamSource(audioStream);
             const processor = captureCtx.createScriptProcessor(4096, 1, 1);
             const sink      = captureCtx.createGain();
+            const micAnalyser = captureCtx.createAnalyser();
+            micAnalyser.fftSize = 256;
             sink.gain.value = 0;
+            source.connect(micAnalyser);
             source.connect(processor);
             processor.connect(sink);
             sink.connect(captureCtx.destination);
+
+            const micLevelEl  = document.getElementById("call-mic-level");
+            const micLevelBuf = new Uint8Array(micAnalyser.frequencyBinCount);
+            const micLevelPoll = setInterval(() => {
+                if (!activeCallId || !micLevelEl) return;
+                micAnalyser.getByteTimeDomainData(micLevelBuf);
+                let sum = 0;
+                for (let i = 0; i < micLevelBuf.length; i++) sum += Math.abs(micLevelBuf[i] - 128);
+                micLevelEl.style.height = Math.min(100, (sum / micLevelBuf.length) * 5) + "%";
+            }, 50);
 
             let firstChunk  = true;
             let uploadChain = Promise.resolve();
@@ -4139,14 +4168,15 @@ async function _startMediaCapture(callId) {
                 uploadChain = uploadChain.then(async () => {
                     try {
                         if (isFirst) {
-                            await fetch(
-                                `/calls/${callId}/media?track=audio&init=1&mime=pcm16%2F${rate}`,
-                                { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: buf }
-                            );
-                        } else {
-                            await fetch(`/calls/${callId}/media?track=audio`, {
+                            await fetch(`/calls/${callId}/media`, {
                                 method: "POST",
-                                headers: { "Content-Type": "application/octet-stream" },
+                                headers: { "Content-Type": "application/octet-stream", "X-Track": "audio", "X-Init": "1", "X-Mime": `pcm16/${rate}` },
+                                body: buf,
+                            });
+                        } else {
+                            await fetch(`/calls/${callId}/media`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/octet-stream", "X-Track": "audio" },
                                 body: buf,
                             });
                         }
@@ -4155,6 +4185,8 @@ async function _startMediaCapture(callId) {
             };
 
             audioCaptureCleaner = () => {
+                clearInterval(micLevelPoll);
+                if (micLevelEl) micLevelEl.style.height = "0%";
                 source.disconnect();
                 processor.disconnect();
                 sink.disconnect();
@@ -4175,7 +4207,7 @@ function _stopMediaCapture() {
 function _b64ToBuffer(b64) {
     const bin = atob(b64);
     const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.codePointAt(i);
     return arr.buffer;
 }
 
@@ -4254,10 +4286,21 @@ async function _pollRelayMedia() {
         if (!resp.ok) return;
         const data = await resp.json();
 
-        if (data.init && !relayInitReceived) {
-            relayInitReceived = true;
-            _initMediaSource(data.mime_type || "video/webm");
-            _enqueueChunk(_b64ToBuffer(data.init));
+        if (data.init) {
+            if (data.mime_type === "camera/off" && relayInitReceived) {
+                // Remote disabled their camera — reset video pipeline and show avatar
+                relayInitReceived = false;
+                if (mediaAbortCtrl) { mediaAbortCtrl.abort(); mediaAbortCtrl = null; }
+                mediaSource  = null;
+                sourceBuffer = null;
+                pendingChunks = [];
+                _switchToAvatarView();
+            } else if (!relayInitReceived && data.mime_type !== "camera/off") {
+                relayInitReceived = true;
+                _initMediaSource(data.mime_type || "video/webm");
+                _switchToVideoView();
+                _enqueueChunk(_b64ToBuffer(data.init));
+            }
         }
 
         for (const chunk of (data.chunks || [])) {
@@ -4290,7 +4333,7 @@ function _playPcmChunk(arrayBuffer) {
 
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
-    src.connect(audioCtx.destination);
+    src.connect(vadAnalyser || audioCtx.destination);
 
     const now = audioCtx.currentTime;
     // Reset if behind (gap/silence) OR too far ahead (backlog catch-up case)
@@ -4316,10 +4359,13 @@ async function _pollAudioMedia() {
         // ("pcm16/<rate>"). Use it only to set up the AudioContext — the init
         // data itself may be stale so we don't play it.
         if (data.init && !audioCtx) {
-            const rate = parseInt((data.mime_type || "pcm16/48000").split("/")[1]) || 48000;
+            const rate = Number.parseInt((data.mime_type || "pcm16/48000").split("/")[1]) || 48000;
             try { audioCtx = new AudioContext({ sampleRate: rate }); }
             catch { audioCtx = new AudioContext(); }
             audioNextPlayTime = 0;
+            vadAnalyser = audioCtx.createAnalyser();
+            vadAnalyser.fftSize = 256;
+            vadAnalyser.connect(audioCtx.destination);
         }
 
         const chunks = data.chunks || [];
@@ -4340,6 +4386,133 @@ async function _pollAudioMedia() {
     }
 }
 
+// ── Avatar / video view switching ─────────────────────────────────────────────
+
+function _switchToVideoView() {
+    document.getElementById("call-avatar-view").style.display = "none";
+    document.getElementById("call-remote-video").style.display = "block";
+}
+
+function _switchToAvatarView() {
+    document.getElementById("call-avatar-view").style.display = "flex";
+    document.getElementById("call-remote-video").style.display = "none";
+    document.getElementById("call-local-video").style.display = "none";
+}
+
+function _initCallAvatarView(remoteUser) {
+    const container = document.getElementById("call-remote-avatar");
+    container.innerHTML = "";
+    container.appendChild(makeAvatarWrap(remoteUser, 120));
+    document.getElementById("call-remote-name").textContent = remoteUser;
+}
+
+// ── Voice activity detection ──────────────────────────────────────────────────
+
+function _checkVAD() {
+    const ring = document.getElementById("call-speaking-ring");
+    if (!ring) return;
+    if (!vadAnalyser) { ring.classList.remove("speaking"); return; }
+    const data = new Uint8Array(vadAnalyser.frequencyBinCount);
+    vadAnalyser.getByteFrequencyData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i];
+    ring.classList.toggle("speaking", (sum / data.length) > 8);
+}
+
+// ── Camera toggle ─────────────────────────────────────────────────────────────
+
+async function _startVideoCapture(callId) {
+    let videoTrack;
+    try {
+        const vs = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoTrack = vs.getVideoTracks()[0];
+    } catch(e) {
+        console.warn("Camera access failed:", e);
+        return false;
+    }
+    localStream.addTrack(videoTrack);
+
+    const localVideo = document.getElementById("call-local-video");
+    localVideo.srcObject = new MediaStream([videoTrack]);
+    localVideo.style.display = "block";
+
+    const videoMime = _pickVideoMimeType();
+    const videoOnlyStream = new MediaStream([videoTrack]);
+    let videoFirstChunk = true;
+    let videoChain = Promise.resolve();
+    try {
+        mediaRecorder = new MediaRecorder(videoOnlyStream, videoMime ? { mimeType: videoMime } : {});
+    } catch {
+        mediaRecorder = new MediaRecorder(videoOnlyStream);
+    }
+    mediaRecorder.ondataavailable = (evt) => {
+        if (!evt.data || evt.data.size === 0 || !activeCallId) return;
+        const blobPromise = evt.data.arrayBuffer();
+        videoChain = videoChain.then(async () => {
+            try {
+                const buf = await blobPromise;
+                if (videoFirstChunk) {
+                    videoFirstChunk = false;
+                    const mime = mediaRecorder.mimeType || "video/webm";
+                    await fetch(`/calls/${callId}/media`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/octet-stream", "X-Init": "1", "X-Mime": mime },
+                        body: buf,
+                    });
+                } else {
+                    await fetch(`/calls/${callId}/media`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/octet-stream" },
+                        body: buf,
+                    });
+                }
+            } catch { /* ignore network errors */ }
+        });
+    };
+    mediaRecorder.start(500);
+    return true;
+}
+
+function _stopVideoCapture() {
+    if (localStream) {
+        localStream.getVideoTracks().forEach(t => { t.stop(); localStream.removeTrack(t); });
+    }
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    mediaRecorder = null;
+    const lv = document.getElementById("call-local-video");
+    lv.srcObject = null;
+    lv.style.display = "none";
+    // Notify the remote side that this camera is now off by replacing the init
+    // chunk with a sentinel mime type they can detect on their next poll.
+    if (activeCallId) {
+        fetch(`/calls/${activeCallId}/media`, {
+            method: "POST",
+            headers: { "Content-Type": "application/octet-stream", "X-Init": "1", "X-Mime": "camera/off" },
+            body: new Uint8Array([0]),
+        }).catch(() => {});
+    }
+}
+
+async function toggleCamera() {
+    if (!localStream || !activeCallId) return;
+    const camBtn = document.getElementById("call-camera-btn");
+    if (cameraEnabled) {
+        cameraEnabled = false;
+        _stopVideoCapture();
+        camBtn.classList.add("muted");
+        camBtn.title = "Share camera";
+        _switchToAvatarView();
+    } else {
+        const ok = await _startVideoCapture(activeCallId);
+        if (ok) {
+            cameraEnabled = true;
+            camBtn.classList.remove("muted");
+            camBtn.title = "Stop sharing camera";
+            _switchToVideoView();
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function _startRelayPolling(remoteUser) {
@@ -4357,6 +4530,8 @@ function _startRelayPolling(remoteUser) {
     audioPollingActive = false;
     audioNextPlayTime  = 0;
     audioPollId = setInterval(_pollAudioMedia, 100);
+    // voice activity detection
+    vadPollId = setInterval(_checkVAD, 100);
 }
 
 function _stopRelayPolling() {
@@ -4364,9 +4539,14 @@ function _stopRelayPolling() {
     relayPollId        = null;
     clearInterval(audioPollId);
     audioPollId        = null;
+    clearInterval(vadPollId);
+    vadPollId          = null;
     relayRemoteUser    = null;
     relayPollingActive = false;
     audioPollingActive = false;
+    vadAnalyser        = null;
+    const ring = document.getElementById("call-speaking-ring");
+    if (ring) ring.classList.remove("speaking");
     if (mediaAbortCtrl) { mediaAbortCtrl.abort(); mediaAbortCtrl = null; }
     if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
 }
@@ -4374,7 +4554,7 @@ function _stopRelayPolling() {
 // ── Call actions ──────────────────────────────────────────────────────────────
 
 function _requireSecureContext() {
-    if (window.isSecureContext && navigator.mediaDevices) return true;
+    if (globalThis.isSecureContext && navigator.mediaDevices) return true;
     alert(
         "Calling requires a secure connection (HTTPS).\n\n" +
         "Generate a self-signed certificate and enable TLS:\n" +
@@ -4401,15 +4581,15 @@ async function startCall() {
 
     const data = await resp.json();
     activeCallId = data.call_id;
-    const peers = data.participants.filter(p => p !== CURRENT_USER);
+    const peers = data.participants.find(p => p !== CURRENT_USER);
 
     try {
         localStream = await _getLocalMedia();
-        document.getElementById("call-local-video").srcObject = localStream;
         openActiveCallUI();
+        _initCallAvatarView(peers);
         _startCallTimer();
         await _startMediaCapture(activeCallId);
-        _startRelayPolling(peers[0]);
+        _startRelayPolling(peers);
         _startCallStatePolling();
     } catch (err) {
         console.error("Call setup failed:", err);
@@ -4433,8 +4613,8 @@ async function acceptCall() {
 
     try {
         localStream = await _getLocalMedia();
-        document.getElementById("call-local-video").srcObject = localStream;
         openActiveCallUI();
+        _initCallAvatarView(initiator);
         _startCallTimer();
         await _startMediaCapture(activeCallId);
         _startRelayPolling(initiator);
@@ -4484,14 +4664,6 @@ function toggleAudioMute() {
     btn.title = audioMuted ? "Unmute" : "Mute";
 }
 
-function toggleVideoMute() {
-    if (!localStream) return;
-    videoMuted = !videoMuted;
-    localStream.getVideoTracks().forEach(t => { t.enabled = !videoMuted; });
-    const btn = document.getElementById("call-mute-video-btn");
-    btn.classList.toggle("muted", videoMuted);
-    btn.title = videoMuted ? "Enable camera" : "Disable camera";
-}
 
 // ── Call-state polling (3 s) — detects remote hang-up ────────────────────────
 

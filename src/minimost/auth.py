@@ -53,6 +53,7 @@ AUTH_DB = str(_PROJECT_ROOT / "auth.db")
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_\-]{1,32}")
 _WAL = "PRAGMA journal_mode=WAL"
+_RESET_PW_TEMPLATE = "reset_password.html"
 _SIGNUP_TEMPLATE = "signup.html"
 
 auth_bp = Blueprint("auth", __name__)
@@ -409,11 +410,9 @@ def reset_password_form(token):
 
     if not row or row[2] or time.time() > row[1]:
         return render_template(
-            "reset_password.html", token=None, error="invalid", username=None
+            _RESET_PW_TEMPLATE, token=None, error="invalid", username=None
         )
-    return render_template(
-        "reset_password.html", token=token, error=None, username=row[0]
-    )
+    return render_template(_RESET_PW_TEMPLATE, token=token, error=None, username=row[0])
 
 
 @auth_bp.route("/reset-password/<token>", methods=["POST"])
@@ -438,7 +437,7 @@ def reset_password_post(token):
     if not row or row[2] or time.time() > row[1]:
         db.close()
         return render_template(
-            "reset_password.html", token=None, error="invalid", username=None
+            _RESET_PW_TEMPLATE, token=None, error="invalid", username=None
         )
 
     username = row[0]
@@ -449,7 +448,7 @@ def reset_password_post(token):
     if error:
         db.close()
         return render_template(
-            "reset_password.html", token=token, error=error, username=username
+            _RESET_PW_TEMPLATE, token=token, error=error, username=username
         )
 
     db.execute(
@@ -460,5 +459,5 @@ def reset_password_post(token):
     db.commit()
     db.close()
     return render_template(
-        "reset_password.html", token=None, error=None, success=True, username=username
+        _RESET_PW_TEMPLATE, token=None, error=None, success=True, username=username
     )

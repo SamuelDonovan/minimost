@@ -1192,6 +1192,54 @@ a { color: #9cdcfe; }
     display: flex;
     flex-direction: column;
 }
+#call-avatar-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: #0d0d17;
+}
+#call-avatar-container {
+    position: relative;
+    width: 120px;
+    height: 120px;
+}
+#call-avatar-container .avatar-wrap {
+    width: 120px !important;
+    height: 120px !important;
+}
+#call-avatar-container .avatar-initials {
+    font-size: 42px !important;
+}
+#call-avatar-container .avatar-presence {
+    display: none;
+}
+#call-speaking-ring {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 4px solid transparent;
+    pointer-events: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    z-index: 1;
+}
+#call-speaking-ring.speaking {
+    border-color: #4a9eff;
+    box-shadow: 0 0 20px rgba(74,158,255,0.55);
+    animation: speaking-pulse 1s ease-in-out infinite;
+}
+@keyframes speaking-pulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(74,158,255,0.4); }
+    50%       { box-shadow: 0 0 28px rgba(74,158,255,0.75); }
+}
+#call-remote-name {
+    color: #eee;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
 #call-remote-video {
     flex: 1;
     width: 100%;
@@ -1245,7 +1293,20 @@ a { color: #9cdcfe; }
     flex-shrink: 0;
 }
 .call-ctrl-btn:hover { background: #555; }
-.call-ctrl-btn.muted { background: #222; color: #888; }
+.call-ctrl-btn.muted { background: #222; color: #aaa; }
 #call-end-btn { background: #c62828; }
 #call-end-btn:hover { background: #d32f2f; }
+#call-mute-audio-btn { position: relative; overflow: hidden; }
+#call-mic-level {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 0%;
+    background: rgba(74, 158, 255, 0.38);
+    pointer-events: none;
+    transition: height 0.06s ease-out;
+    z-index: 0;
+}
+#call-mute-audio-btn svg { position: relative; z-index: 1; }
 .color-swatch.selected { border-color: #fff; }

@@ -765,9 +765,10 @@ def test_upload_media_init_chunk_stored(alice_and_bob):
 
     mime = "video/webm;codecs=vp8,opus"
     resp = alice_and_bob.post(
-        f"/calls/{call_id}/media?init=1&mime={mime}",
+        f"/calls/{call_id}/media",
         data=b"INIT_DATA",
         content_type="application/octet-stream",
+        headers={"X-Init": "1", "X-Mime": mime},
     )
     assert resp.status_code == 200
     assert resp.get_json()["seq"] == -1
@@ -792,9 +793,10 @@ def test_upload_media_subsequent_chunks_sequenced(alice_and_bob):
 
     # Upload init first
     alice_and_bob.post(
-        f"/calls/{call_id}/media?init=1&mime=video/webm",
+        f"/calls/{call_id}/media",
         data=b"INIT",
         content_type="application/octet-stream",
+        headers={"X-Init": "1", "X-Mime": "video/webm"},
     )
     # Upload two more chunks
     r1 = alice_and_bob.post(
@@ -885,9 +887,10 @@ def test_get_media_returns_init_and_chunks(alice_and_bob, app):
     mime = "video/webm;codecs=vp8,opus"
     # Alice uploads init + 2 chunks
     alice_and_bob.post(
-        f"/calls/{call_id}/media?init=1&mime={mime}",
+        f"/calls/{call_id}/media",
         data=b"INIT",
         content_type="application/octet-stream",
+        headers={"X-Init": "1", "X-Mime": mime},
     )
     alice_and_bob.post(
         f"/calls/{call_id}/media",
@@ -924,9 +927,10 @@ def test_get_media_after_param_filters_old_chunks(alice_and_bob, app):
         sess["user"] = "bob"
 
     alice_and_bob.post(
-        f"/calls/{call_id}/media?init=1&mime=video/webm",
+        f"/calls/{call_id}/media",
         data=b"INIT",
         content_type="application/octet-stream",
+        headers={"X-Init": "1", "X-Mime": "video/webm"},
     )
     r0 = alice_and_bob.post(
         f"/calls/{call_id}/media", data=b"C0", content_type="application/octet-stream"
@@ -961,9 +965,10 @@ def test_get_media_init_always_returned_with_after(alice_and_bob, app):
         sess["user"] = "bob"
 
     alice_and_bob.post(
-        f"/calls/{call_id}/media?init=1&mime=video/webm",
+        f"/calls/{call_id}/media",
         data=b"INIT",
         content_type="application/octet-stream",
+        headers={"X-Init": "1", "X-Mime": "video/webm"},
     )
 
     resp = bob_client.get(f"/calls/{call_id}/media?sender=alice&after=999")
@@ -992,9 +997,10 @@ def test_media_relay_roundtrip(alice_and_bob, app):
     fake_chunk = b"\x00" * 64
 
     alice_and_bob.post(
-        f"/calls/{call_id}/media?init=1&mime={mime}",
+        f"/calls/{call_id}/media",
         data=fake_init,
         content_type="application/octet-stream",
+        headers={"X-Init": "1", "X-Mime": mime},
     )
     alice_and_bob.post(
         f"/calls/{call_id}/media",

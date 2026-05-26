@@ -198,8 +198,9 @@ def _cmd_generate_cert():
     therefore calling) requires HTTPS; it will not work over plain HTTP
     even on a local network.
     """
+    import shutil
     import socket
-    import subprocess
+    import subprocess  # nosec B404
     import tempfile
 
     cert_path = "cert.pem"
@@ -215,7 +216,7 @@ def _cmd_generate_cert():
     except socket.gaierror:
         local_ip = None
 
-    san_parts = [f"DNS:localhost", f"DNS:{hostname}", "IP:127.0.0.1"]
+    san_parts = ["DNS:localhost", f"DNS:{hostname}", "IP:127.0.0.1"]
     if local_ip and local_ip != "127.0.0.1":
         san_parts.append(f"IP:{local_ip}")
     san = ",".join(san_parts)
@@ -232,14 +233,21 @@ CN = minimost
 subjectAltName = {san}
 """
 
+    openssl_bin = shutil.which("openssl")
+    if not openssl_bin:
+        print(
+            "openssl not found on PATH. Install openssl and try again.", file=sys.stderr
+        )
+        sys.exit(1)
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".cnf", delete=False) as tmp:
         tmp.write(openssl_conf)
         conf_path = tmp.name
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [
-                "openssl",
+                openssl_bin,
                 "req",
                 "-x509",
                 "-newkey",
