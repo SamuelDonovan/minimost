@@ -35,6 +35,28 @@ errorlog = "-"  # stderr
 # accesslog = "/var/log/gunicorn/access.log"
 # errorlog = "/var/log/gunicorn/error.log"
 
+import logging
+import re as _re
+
+
+class _SuppressCallPolling(logging.Filter):
+    """Drop access-log lines for the high-frequency call-media endpoints.
+
+    During an active call, /calls/<id>/media and /calls/<id>/state are hit
+    multiple times per second by every participant.  Logging each request
+    floods stdout and adds unnecessary I/O on the worker threads.
+    """
+
+    _RE = _re.compile(r"/calls/[^/ ]+/(?:media|state)\b|/calls/incoming\b")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not self._RE.search(record.getMessage())
+
+
+def on_starting(_server) -> None:  # noqa: ANN001
+    logging.getLogger("gunicorn.access").addFilter(_SuppressCallPolling())
+
+
 # --------------------------------------------------------------------
 # Process naming
 # --------------------------------------------------------------------

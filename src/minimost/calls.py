@@ -58,6 +58,26 @@ def _db():
     return db
 
 
+def reset_all_calls_ended() -> None:
+    """Mark every in-progress call as ``'ended'`` and purge orphaned media.
+
+    Called once at application startup so that stale ``'ringing'`` or
+    ``'active'`` call records from a previous server run do not block new
+    calls in the same channels.
+    """
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    db.execute(_WAL)
+    now = __import__("time").time()
+    db.execute(
+        "UPDATE calls SET state = 'ended', ended_ts = ?"
+        " WHERE state IN ('ringing', 'active')",
+        (now,),
+    )
+    db.execute("DELETE FROM call_media")
+    db.commit()
+    db.close()
+
+
 def _participants_for_channel(channel: str) -> list:
     """Return the list of usernames who belong to *channel*.
 
