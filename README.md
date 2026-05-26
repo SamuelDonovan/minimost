@@ -37,6 +37,7 @@
 - **Emoji reactions** — react to any message; reactions sync across all users instantly
 - **Read receipts** — see who has read your messages
 - **Voice & video calling** — one-click calls in any DM or private channel; audio and video are relayed through the server so calls work even behind restrictive firewalls; unanswered calls time out and cancel automatically
+- **Screen sharing** — share your screen during a call with one click; the shared screen takes over as the main view while the camera shrinks to a picture-in-picture corner; stopping the browser capture automatically ends the share
 - **Presence indicators** — active, idle, away, and offline states updated automatically; overlaid on user avatars
 - **User avatars** — default initials avatar for every account; upload a custom image via Settings; displayed in the DM sidebar, private channel tooltips, and the member list
 - **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar

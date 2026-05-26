@@ -49,8 +49,9 @@ The factory is responsible for:
    - :mod:`minimost.presence` — presence, typing, and reaction routes.
    - :mod:`minimost.calls` — voice/video calling and media relay routes.
 
-5. Resetting all presence records to ``"offline"`` so stale state from a
-   previous server run does not persist.
+5. Resetting all presence records to ``"offline"`` and all in-progress call
+   records to ``"ended"`` so stale state from a previous server run does not
+   persist.
 
 Blueprint structure means each module is self-contained and the URL routing
 is defined close to the handler code.
@@ -185,11 +186,22 @@ The client runs several ``setInterval`` loops:
    * - Media relay (upload)
      - 500 ms
      - Uploads ``MediaRecorder`` chunks via ``POST /calls/<id>/media``
-       while a call is active.
+       while a call is active.  Camera/mic uses ``X-Track: video``; screen
+       share uses ``X-Track: screen``.
    * - Media relay (download)
      - 500 ms
      - Polls ``GET /calls/<id>/media`` for the remote participant's chunks
-       and feeds them into a ``MediaSource`` / ``SourceBuffer``.
+       and feeds them into a ``MediaSource`` / ``SourceBuffer``.  Screen
+       share is polled on a separate interval using ``?sender=user:screen``.
+   * - Screen relay (upload)
+     - 500 ms
+     - Uploads screen-share ``MediaRecorder`` chunks with ``X-Track: screen``
+       while screen sharing is active.
+   * - Screen relay (download)
+     - 500 ms
+     - Polls ``GET /calls/<id>/media?sender=<user>:screen`` and feeds chunks
+       into a dedicated ``MediaSource`` / ``SourceBuffer`` for the screen
+       video element.
    * - ``refreshTotalUnreadCount``
      - 5 s
      - Updates the browser tab title badge.
