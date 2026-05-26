@@ -35,16 +35,117 @@ import secrets
 import sqlite3
 import sys
 import time
+from pathlib import Path
 
 from minimost import create_app
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _ensure_certs():
+    """Generate ``cert.pem`` and ``key.pem`` in the project root if absent.
+
+    Attempts to create a self-signed TLS certificate using the system
+    ``openssl`` binary.  The certificate covers ``localhost``, the current
+    machine's hostname, and its local IP address via Subject Alternative Names.
+
+    :returns: ``(cert_path, key_path)`` as :class:`pathlib.Path` objects on
+        success, or ``(None, None)`` if generation is skipped or fails.  In
+        the failure case a warning is printed to stderr but the caller should
+        continue running without TLS.
+    :rtype: tuple[Path, Path] | tuple[None, None]
+    """
+    import shutil
+    import socket
+    import subprocess  # nosec B404
+    import tempfile
+
+    cert_path = _PROJECT_ROOT / "cert.pem"
+    key_path = _PROJECT_ROOT / "key.pem"
+
+    if cert_path.exists() and key_path.exists():
+        return cert_path, key_path
+
+    openssl_bin = shutil.which("openssl")
+    if not openssl_bin:
+        print(
+            "WARNING: openssl not found on PATH; cannot generate TLS certificates.\n"
+            "WARNING: Calls will not work without HTTPS. Install openssl and restart.",
+            file=sys.stderr,
+        )
+        return None, None
+
+    hostname = socket.gethostname()
+    try:
+        local_ip = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        local_ip = None
+
+    san_parts = ["DNS:localhost", f"DNS:{hostname}", "IP:127.0.0.1"]
+    if local_ip and local_ip != "127.0.0.1":
+        san_parts.append(f"IP:{local_ip}")
+    san = ",".join(san_parts)
+
+    openssl_conf = (
+        "[req]\n"
+        "distinguished_name = req_dn\n"
+        "x509_extensions   = v3_req\n"
+        "prompt            = no\n"
+        "\n"
+        "[req_dn]\n"
+        "CN = minimost\n"
+        "\n"
+        "[v3_req]\n"
+        f"subjectAltName = {san}\n"
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".cnf", delete=False) as tmp:
+        tmp.write(openssl_conf)
+        conf_path = tmp.name
+
+    try:
+        result = subprocess.run(  # nosec B603
+            [
+                openssl_bin,
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                str(key_path),
+                "-out",
+                str(cert_path),
+                "-days",
+                "3650",
+                "-nodes",
+                "-config",
+                conf_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(conf_path)
+
+    if result.returncode != 0:
+        print(
+            "WARNING: Failed to generate TLS certificates.\n"
+            f"WARNING: {result.stderr.strip()}\n"
+            "WARNING: Calls will not work without HTTPS.",
+            file=sys.stderr,
+        )
+        return None, None
+
+    print(f"Generated TLS certificates (cert.pem, key.pem) in {_PROJECT_ROOT}.")
+    return cert_path, key_path
 
 
 def main():
     """Parse arguments and dispatch to the appropriate command.
 
     With no subcommand (or unrecognised first argument), starts the MiniMost
-    development server exactly as before.  Pass ``reset-password`` as the
-    first argument to generate a password reset URL instead.
+    development server.  Pass ``reset-password`` as the first argument to
+    generate a password reset URL instead.
 
     Command-line arguments (server mode):
 
@@ -60,10 +161,6 @@ def main():
     """
     if len(sys.argv) > 1 and sys.argv[1] == "reset-password":
         _cmd_reset_password(sys.argv[2:])
-        return
-
-    if len(sys.argv) > 1 and sys.argv[1] == "generate-cert":
-        _cmd_generate_cert()
         return
 
     parser = argparse.ArgumentParser(
@@ -85,8 +182,11 @@ def main():
     )
     args = parser.parse_args()
 
+    cert, key = _ensure_certs()
+    ssl_context = (str(cert), str(key)) if cert else None
+
     app = create_app()
-    app.run(host=args.host, port=args.port, debug=False)
+    app.run(host=args.host, port=args.port, debug=False, ssl_context=ssl_context)
 
 
 def _send_reset_dm(username: str, expires_minutes: int) -> None:
@@ -181,105 +281,6 @@ def _cmd_reset_password(argv):
         f" (expires in {args.expires} {minutes_word}):"
     )
     print(url)
-
-
-def _cmd_generate_cert():
-    """Generate a self-signed TLS certificate for HTTPS support.
-
-    Creates ``cert.pem`` and ``key.pem`` in the current working directory
-    using the system ``openssl`` utility.  The certificate includes a
-    Subject Alternative Name (SAN) for ``localhost`` and the current
-    machine's hostname so that modern browsers accept it without a hard
-    error.  Users must still click through the untrusted-issuer warning
-    the first time they visit the site.
-
-    After running this command, uncomment the ``keyfile`` / ``certfile``
-    lines in ``gunicorn.conf.py`` and restart gunicorn.  WebRTC (and
-    therefore calling) requires HTTPS; it will not work over plain HTTP
-    even on a local network.
-    """
-    import shutil
-    import socket
-    import subprocess  # nosec B404
-    import tempfile
-
-    cert_path = "cert.pem"
-    key_path = "key.pem"
-
-    if os.path.exists(cert_path) and os.path.exists(key_path):
-        print("cert.pem and key.pem already exist. Delete them first to regenerate.")
-        sys.exit(0)
-
-    hostname = socket.gethostname()
-    try:
-        local_ip = socket.gethostbyname(hostname)
-    except socket.gaierror:
-        local_ip = None
-
-    san_parts = ["DNS:localhost", f"DNS:{hostname}", "IP:127.0.0.1"]
-    if local_ip and local_ip != "127.0.0.1":
-        san_parts.append(f"IP:{local_ip}")
-    san = ",".join(san_parts)
-
-    openssl_conf = f"""[req]
-distinguished_name = req_dn
-x509_extensions   = v3_req
-prompt            = no
-
-[req_dn]
-CN = minimost
-
-[v3_req]
-subjectAltName = {san}
-"""
-
-    openssl_bin = shutil.which("openssl")
-    if not openssl_bin:
-        print(
-            "openssl not found on PATH. Install openssl and try again.", file=sys.stderr
-        )
-        sys.exit(1)
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".cnf", delete=False) as tmp:
-        tmp.write(openssl_conf)
-        conf_path = tmp.name
-
-    try:
-        result = subprocess.run(  # nosec B603
-            [
-                openssl_bin,
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:2048",
-                "-keyout",
-                key_path,
-                "-out",
-                cert_path,
-                "-days",
-                "3650",
-                "-nodes",
-                "-config",
-                conf_path,
-            ],
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        os.unlink(conf_path)
-
-    if result.returncode != 0:
-        print("openssl failed:", result.stderr, file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Generated {cert_path} and {key_path}.")
-    print(f"  Hostname : {hostname}")
-    print(f"  SANs     : {san}")
-    print()
-    print("Next steps:")
-    print("  1. Uncomment 'keyfile' and 'certfile' in gunicorn.conf.py")
-    print("  2. Restart gunicorn")
-    print("  3. Access MiniMost via https:// — click through the cert warning once")
 
 
 if __name__ == "__main__":

@@ -95,9 +95,12 @@ def test_main_default_args():
 
     mock_app = MagicMock()
     with patch("minimost.__main__.create_app", return_value=mock_app):
-        with patch("sys.argv", ["minimost"]):
-            main()
-    mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False)
+        with patch("minimost.__main__._ensure_certs", return_value=(None, None)):
+            with patch("sys.argv", ["minimost"]):
+                main()
+    mock_app.run.assert_called_once_with(
+        host="127.0.0.1", port=5000, debug=False, ssl_context=None
+    )
 
 
 def test_main_custom_args():
@@ -105,6 +108,9 @@ def test_main_custom_args():
 
     mock_app = MagicMock()
     with patch("minimost.__main__.create_app", return_value=mock_app):
-        with patch("sys.argv", ["minimost", "--host", "0.0.0.0", "--port", "8080"]):
-            main()
-    mock_app.run.assert_called_once_with(host="0.0.0.0", port=8080, debug=False)
+        with patch("minimost.__main__._ensure_certs", return_value=(None, None)):
+            with patch("sys.argv", ["minimost", "--host", "0.0.0.0", "--port", "8080"]):
+                main()
+    mock_app.run.assert_called_once_with(
+        host="0.0.0.0", port=8080, debug=False, ssl_context=None
+    )

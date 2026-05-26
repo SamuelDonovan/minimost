@@ -1,5 +1,11 @@
 # gunicorn.conf.py
 import multiprocessing
+import os
+import shutil
+import socket
+import subprocess  # nosec B404
+import sys
+import tempfile
 
 # --------------------------------------------------------------------
 # Server socket
@@ -50,16 +56,100 @@ pythonpath = "src"
 # --------------------------------------------------------------------
 # TLS / HTTPS  (required for WebRTC calling)
 # --------------------------------------------------------------------
-# Generate a self-signed certificate first (no external packages needed):
-#   python -m minimost generate-cert
-#
-# Then uncomment the two lines below and restart gunicorn.
-# Browsers will show an "untrusted certificate" warning the first time;
-# accept it once and calling will work.  navigator.mediaDevices is only
-# exposed by browsers in a secure context (HTTPS or localhost).
-#
-keyfile = "key.pem"
-certfile = "cert.pem"
+# Certificates are generated automatically on first run using the system
+# openssl binary.  If generation fails a warning is printed and gunicorn
+# starts without TLS (calls will not work in that case).
+
+
+def _generate_certs(cert_path, key_path):
+    openssl_bin = shutil.which("openssl")
+    if not openssl_bin:
+        print(
+            "WARNING: openssl not found on PATH; cannot generate TLS certificates.\n"
+            "WARNING: Calls will not work without HTTPS. Install openssl and restart.",
+            file=sys.stderr,
+        )
+        return False
+
+    hostname = socket.gethostname()
+    try:
+        local_ip = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        local_ip = None
+
+    san_parts = ["DNS:localhost", f"DNS:{hostname}", "IP:127.0.0.1"]
+    if local_ip and local_ip != "127.0.0.1":
+        san_parts.append(f"IP:{local_ip}")
+    san = ",".join(san_parts)
+
+    openssl_conf = (
+        "[req]\n"
+        "distinguished_name = req_dn\n"
+        "x509_extensions   = v3_req\n"
+        "prompt            = no\n"
+        "\n"
+        "[req_dn]\n"
+        "CN = minimost\n"
+        "\n"
+        "[v3_req]\n"
+        f"subjectAltName = {san}\n"
+    )
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".cnf", delete=False) as tmp:
+        tmp.write(openssl_conf)
+        conf_path = tmp.name
+
+    try:
+        result = subprocess.run(  # nosec B603
+            [
+                openssl_bin,
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                key_path,
+                "-out",
+                cert_path,
+                "-days",
+                "3650",
+                "-nodes",
+                "-config",
+                conf_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(conf_path)
+
+    if result.returncode != 0:
+        print(
+            "WARNING: Failed to generate TLS certificates.\n"
+            f"WARNING: {result.stderr.strip()}\n"
+            "WARNING: Calls will not work without HTTPS.",
+            file=sys.stderr,
+        )
+        return False
+
+    print(f"Generated TLS certificates ({cert_path}, {key_path}).")
+    return True
+
+
+_cert_path = "cert.pem"
+_key_path = "key.pem"
+
+if not (os.path.exists(_cert_path) and os.path.exists(_key_path)):
+    _generate_certs(_cert_path, _key_path)
+
+if os.path.exists(_cert_path) and os.path.exists(_key_path):
+    certfile = _cert_path
+    keyfile = _key_path
+else:
+    print(
+        "WARNING: Running without TLS — calls will not work without HTTPS.",
+        file=sys.stderr,
+    )
 
 # --------------------------------------------------------------------
 # Environment variables (optional)
