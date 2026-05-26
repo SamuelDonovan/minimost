@@ -1868,6 +1868,18 @@ def rename_private_channel(channel_id):
     pdb.commit()
     pdb.close()
 
+    now = time()
+    ch = f"private:{channel_id}"
+    sys_content = f"{user} has renamed the channel to {name}"
+    for recipient in get_private_channel_members(channel_id):
+        db = get_db(recipient)
+        db.execute(
+            "INSERT INTO messages (channel, sender, content, content_type, ts, read) VALUES (?, ?, ?, ?, ?, ?)",
+            (ch, "system", sys_content, "system", now, 1),
+        )
+        db.commit()
+        db.close()
+
     return "ok"
 
 
