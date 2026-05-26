@@ -75,6 +75,7 @@
             <div id="private-ch-controls">
                 <button class="icon-btn" onclick="openRenameChannel()" title="Rename channel">Rename</button>
                 <button class="icon-btn" onclick="openChannelMembers()" title="Manage members">Members</button>
+                <button class="icon-btn" onclick="leaveChannel()" title="Leave channel">Leave</button>
             </div>
         </div>
     </div>
@@ -1735,6 +1736,25 @@ function loadChannelMembers(channelId) {
 document.getElementById("members-modal-close-btn").onclick = () => {
     privateMembersModal.style.display = "none";
 };
+
+async function leaveChannel() {
+    if (!channel.startsWith("private:")) return;
+    const name = privateChannelMap[channel] || channel;
+    if (!confirm(`Leave "${name}"?`)) return;
+    const channelId = channel.split(":")[1];
+
+    const resp = await fetch(`/private_channels/${channelId}/leave`, { method: "POST" });
+    if (!resp.ok) {
+        alert("Failed to leave channel: " + await resp.text());
+        return;
+    }
+
+    privateMembersModal.style.display = "none";
+    delete privateChannelMap[channel];
+    delete privateChannelMembers[channel];
+    switchChannel("general");
+    refreshPrivateChannels();
+}
 
 
 addMemberInput.addEventListener("input", () => {

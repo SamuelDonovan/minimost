@@ -1937,6 +1937,49 @@ def add_private_channel_member(channel_id):
     return "ok"
 
 
+@chat_bp.route("/private_channels/<int:channel_id>/leave", methods=["POST"])
+@auth.login_required
+def leave_private_channel(channel_id):
+    """Remove the current user from a private channel.
+
+    Route: ``POST /private_channels/<channel_id>/leave``
+
+    A system message announcing the departure is inserted into every
+    remaining member's database.
+
+    :returns: ``"ok"`` on success.
+    :rtype: flask.Response
+    """
+    user = session["user"]
+    members = get_private_channel_members(channel_id)
+    if user not in members:
+        return "forbidden", 403
+
+    pdb = _get_private_db()
+    pdb.execute(
+        "DELETE FROM private_channel_members WHERE channel_id = ? AND username = ?",
+        (channel_id, user),
+    )
+    pdb.commit()
+    pdb.close()
+
+    remaining = [m for m in members if m != user]
+    if remaining:
+        now = time()
+        ch = f"private:{channel_id}"
+        sys_content = f"{user} has left the channel"
+        for recipient in remaining:
+            db = get_db(recipient)
+            db.execute(
+                "INSERT INTO messages (channel, sender, content, content_type, ts, read) VALUES (?, ?, ?, ?, ?, ?)",
+                (ch, "system", sys_content, "system", now, 1),
+            )
+            db.commit()
+            db.close()
+
+    return "ok"
+
+
 @chat_bp.route("/private_channels/<int:channel_id>/members", methods=["GET"])
 @auth.login_required
 def private_channel_members_route(channel_id):
