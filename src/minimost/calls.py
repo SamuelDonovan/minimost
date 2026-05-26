@@ -496,6 +496,27 @@ def call_state(call_id):
         db.close()
         return jsonify({"error": _ERR_NOT_FOUND}), 404
 
+    if (
+        call["state"] == "ringing"
+        and time.time() - call["started_ts"] > _RINGING_TIMEOUT
+    ):
+        now = time.time()
+        db.execute(
+            "UPDATE calls SET state = 'rejected', ended_ts = ? WHERE call_id = ?",
+            (now, call_id),
+        )
+        db.execute(
+            "UPDATE call_participants SET state = 'rejected', left_ts = ?"
+            " WHERE call_id = ? AND state = 'pending'",
+            (now, call_id),
+        )
+        db.commit()
+        call = db.execute(
+            "SELECT call_id, channel, initiator, state, started_ts, answered_ts, ended_ts"
+            " FROM calls WHERE call_id = ?",
+            (call_id,),
+        ).fetchone()
+
     participants = db.execute(
         "SELECT username, role, state, joined_ts, left_ts"
         " FROM call_participants WHERE call_id = ?",

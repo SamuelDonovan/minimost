@@ -3960,15 +3960,18 @@ async function attachPreview(msgEl) {
 
 // ── Calling ───────────────────────────────────────────────────────────────────
 
-let activeCallId      = null;
-let incomingCallData  = null;
-let localStream       = null;
-let callTimerInterval = null;
-let callStartTime     = null;
-let callStatePollId   = null;
-let audioMuted        = false;
-let cameraEnabled     = false;
-let ringAudio         = null;
+let activeCallId        = null;
+let incomingCallData    = null;
+let localStream         = null;
+let callTimerInterval   = null;
+let callStartTime       = null;
+let callStatePollId     = null;
+let audioMuted          = false;
+let cameraEnabled       = false;
+let ringAudio           = null;
+let ringTimeoutId       = null;
+let incomingRingTimeout = null;
+const RING_TIMEOUT_MS   = 45000;
 
 // HTTP media relay — video
 let mediaRecorder      = null;
@@ -4010,9 +4013,12 @@ function openIncomingCallUI(callData) {
         a.play().catch(() => {});
         ringAudio = a;
     }
+    const elapsed = Date.now() - callData.started_ts * 1000;
+    incomingRingTimeout = setTimeout(closeIncomingCallUI, Math.max(0, RING_TIMEOUT_MS - elapsed));
 }
 
 function closeIncomingCallUI() {
+    if (incomingRingTimeout) { clearTimeout(incomingRingTimeout); incomingRingTimeout = null; }
     document.getElementById("call-incoming").style.display = "none";
     if (ringAudio) { ringAudio.pause(); ringAudio = null; }
     incomingCallData = null;
@@ -4601,6 +4607,7 @@ async function startCall() {
         await _startMediaCapture(activeCallId);
         _startRelayPolling(peers);
         _startCallStatePolling();
+        ringTimeoutId = setTimeout(_handleRingTimeout, RING_TIMEOUT_MS);
     } catch (err) {
         console.error("Call setup failed:", err);
         const callId = activeCallId;
@@ -4608,6 +4615,16 @@ async function startCall() {
         await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
         _cleanupCall();
     }
+}
+
+async function _handleRingTimeout() {
+    ringTimeoutId = null;
+    if (!activeCallId) return;
+    const callId = activeCallId;
+    activeCallId = null;
+    await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
+    document.getElementById("call-timer").textContent = "No answer";
+    setTimeout(_cleanupCall, 2000);
 }
 
 async function acceptCall() {
@@ -4654,6 +4671,7 @@ async function endCall() {
 }
 
 function _cleanupCall() {
+    if (ringTimeoutId) { clearTimeout(ringTimeoutId); ringTimeoutId = null; }
     _stopCallTimer();
     clearInterval(callStatePollId); callStatePollId = null;
     _stopRelayPolling();
@@ -4697,13 +4715,16 @@ async function _pollCallState() {
 // ── Incoming call polling (1 s) ───────────────────────────────────────────────
 
 function pollIncomingCalls() {
-    if (activeCallId || incomingCallData) return;
+    if (activeCallId) return;
     fetch("/calls/incoming")
         .then(r => r.ok ? r.json() : [])
         .then(calls => {
-            if (calls.length > 0 && !activeCallId && !incomingCallData) {
-                openIncomingCallUI(calls[0]);
+            if (incomingCallData) {
+                const stillRinging = calls.some(c => c.call_id === incomingCallData.call_id);
+                if (!stillRinging) closeIncomingCallUI();
+                return;
             }
+            if (calls.length > 0) openIncomingCallUI(calls[0]);
         })
         .catch(() => {});
 }

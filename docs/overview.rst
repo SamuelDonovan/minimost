@@ -201,11 +201,6 @@ MiniMost is intentionally minimal. The following are explicit non-goals:
 FAQ
 ---
 
-**Can it run on Windows?**
-
-Yes. Replace ``python3`` with ``py`` and ``pip`` with ``py -m pip``.
-Everything else works the same.
-
 **How many users can it support?**
 
 MiniMost is designed for small teams — typically 2–50 users on a local
