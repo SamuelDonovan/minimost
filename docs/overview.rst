@@ -66,6 +66,11 @@ Messaging
 Real-time Interaction
 ~~~~~~~~~~~~~~~~~~~~~
 
+- **Voice & video calling** — one-click calls directly in any DM or private
+  channel.  Audio and video are captured with ``MediaRecorder`` and relayed
+  through the server as binary chunks, so calls work even behind strict
+  firewalls with no UDP or peer-to-peer connectivity.  Unanswered calls time
+  out and cancel automatically.
 - **Emoji reactions** — react to any message with one of 477 emoji; reactions
   are toggled atomically and sync instantly across all users.
 - **Typing indicators** — see when other users are composing a message.
@@ -139,6 +144,10 @@ Technical Stack
      - Plain CSS, dark theme
    * - Templating
      - Jinja2 (Flask default)
+   * - Calling media transport
+     - HTTP-relayed binary chunks (``MediaRecorder`` → ``MediaSource``)
+   * - TLS certificates
+     - Auto-generated on first run via system ``openssl`` (self-signed)
    * - Production server
      - Gunicorn (optional, recommended for multi-user deployments)
    * - Python requirement
@@ -154,8 +163,10 @@ Project Structure
     ├── gunicorn.conf.py            # Production WSGI server configuration
     ├── channels.json               # Public channel definitions
     ├── secret.key                  # Auto-generated Flask session secret
+    ├── cert.pem                    # Auto-generated TLS certificate (self-signed)
+    ├── key.pem                     # Auto-generated TLS private key
     ├── auth.db                     # Shared authentication database
-    ├── presence.db                 # Shared real-time state database
+    ├── presence.db                 # Shared real-time state database (incl. call state)
     ├── uploads/                    # Image attachment storage
     ├── avatars/                    # User avatar image storage
     ├── users/                      # Per-user SQLite message databases
@@ -164,6 +175,7 @@ Project Structure
         ├── __init__.py             # Flask app factory
         ├── __main__.py             # CLI entry point
         ├── auth.py                 # Authentication routes & utilities
+        ├── calls.py                # Voice/video calling routes & media relay
         ├── chat.py                 # Messaging routes & channel logic
         ├── presence.py             # Presence, typing, reactions
         ├── common.py               # Database path helpers
@@ -173,7 +185,8 @@ Project Structure
         ├── templates/
         │   ├── login.html
         │   ├── signup.html
-        │   └── chat.html           # Main SPA template (~2800 lines)
+        │   ├── forgot_password.html
+        │   └── chat.html           # Main SPA template
         └── static/
             ├── auth.css
             └── styles.css
@@ -186,8 +199,9 @@ MiniMost is intentionally minimal. The following are explicit non-goals:
 - **End-to-end encryption** — messages are stored in plaintext in SQLite
   files. An administrator with filesystem access can read all messages. Treat
   this as an internal LAN tool, not a secure messenger.
-- **Self-service password reset** — there is no email-based reset flow. An
-  administrator must update the password hash directly in ``auth.db``.
+- **Self-service password reset** — there is no email-based reset flow.
+  An administrator generates a one-time reset URL via the CLI; the user
+  cannot initiate a reset themselves.
 - **Role-based access control** — all registered users have the same
   permissions; there are no admin accounts, channel moderation roles, or
   invite-only channels.

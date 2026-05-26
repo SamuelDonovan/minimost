@@ -36,6 +36,7 @@
 - **Editing & deletion** — edit or delete your own messages; changes propagate in real time
 - **Emoji reactions** — react to any message; reactions sync across all users instantly
 - **Read receipts** — see who has read your messages
+- **Voice & video calling** — one-click calls in any DM or private channel; audio and video are relayed through the server so calls work even behind restrictive firewalls; unanswered calls time out and cancel automatically
 - **Presence indicators** — active, idle, away, and offline states updated automatically; overlaid on user avatars
 - **User avatars** — default initials avatar for every account; upload a custom image via Settings; displayed in the DM sidebar, private channel tooltips, and the member list
 - **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
@@ -90,7 +91,7 @@ Or without installing:
 python3 -m minimost
 ```
 
-The server starts at [http://127.0.0.1:5000](http://127.0.0.1:5000) by default. Use `--host` and `--port` to change the bind address:
+On first run MiniMost automatically generates a self-signed TLS certificate (`cert.pem` / `key.pem`) using the system `openssl` binary and serves over **HTTPS**. The server starts at [https://127.0.0.1:5000](https://127.0.0.1:5000) by default. Use `--host` and `--port` to change the bind address:
 
 ```bash
 # Listen on all interfaces (accessible from other machines on the network)
@@ -100,7 +101,9 @@ minimost --host 0.0.0.0
 minimost --host 192.168.1.10 --port 8080
 ```
 
-To reach the server from another machine, navigate to `http://<server-ip>:<port>` in a browser.
+To reach the server from another machine, navigate to `https://<server-ip>:<port>` in a browser. The generated certificate is self-signed, so your browser will show a security warning — add a permanent exception to dismiss it.
+
+> **Note:** HTTPS is required for voice and video calling (browsers only allow camera/microphone access in secure contexts). If `openssl` is not installed, MiniMost will still start over plain HTTP but the calling feature will not work.
 
 ### Production deployment
 
@@ -108,8 +111,10 @@ The built-in Flask server is suitable for development and small private networks
 
 ```bash
 pip install gunicorn
-gunicorn "minimost:create_app()" --workers 4 --bind 0.0.0.0:5000
+gunicorn "minimost:create_app()" --config gunicorn.conf.py
 ```
+
+The bundled `gunicorn.conf.py` also handles automatic TLS certificate generation before Gunicorn starts.
 
 ### Configuring channels
 

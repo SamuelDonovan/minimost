@@ -1,6 +1,33 @@
 Deployment
 ==========
 
+TLS Certificates
+----------------
+
+Voice and video calling requires a **secure context** — browsers will not
+grant microphone or camera access over plain HTTP.  MiniMost handles this
+automatically:
+
+- On first run, both the development server (``minimost`` / ``python3 -m
+  minimost``) and the Gunicorn configuration file (``gunicorn.conf.py``)
+  check for ``cert.pem`` and ``key.pem`` in the project root.
+- If those files are absent, a self-signed certificate is generated using
+  the system ``openssl`` binary.  The certificate covers ``localhost``, the
+  server's hostname, and its local IP address via Subject Alternative Names
+  so it is valid for LAN access.
+- If ``openssl`` is not installed or generation fails, a warning is printed
+  to stderr and the server starts over plain HTTP.  Chat will work normally
+  but calling will not.
+
+Because the certificate is self-signed, your browser will show a security
+warning on first visit.  Click **Advanced → Proceed** (Chrome) or
+**Accept the Risk and Continue** (Firefox) to add a permanent exception.
+
+To replace the self-signed certificate with a proper one (e.g. from Let's
+Encrypt), simply place your ``cert.pem`` and ``key.pem`` (or equivalent
+PEM files) in the project root before starting the server.  Auto-generation
+is skipped when both files are already present.
+
 Development Server
 ------------------
 
@@ -14,8 +41,8 @@ Or without the console script::
 
     python3 -m minimost
 
-By default this binds to ``127.0.0.1:5000`` (loopback only). To allow access
-from other machines on your network::
+By default this binds to ``127.0.0.1:5000`` (loopback only) over HTTPS.
+To allow access from other machines on your network::
 
     minimost --host 0.0.0.0
 
@@ -23,7 +50,7 @@ To use a non-default port::
 
     minimost --host 0.0.0.0 --port 8080
 
-Other machines can then reach the server at ``http://<server-ip>:8080``.
+Other machines can then reach the server at ``https://<server-ip>:8080``.
 
 .. warning::
 
@@ -41,7 +68,7 @@ Install Gunicorn::
 
     pip install gunicorn
 
-Start with the bundled configuration::
+Start with the bundled configuration (handles TLS cert generation automatically)::
 
     gunicorn "minimost:create_app()" --config gunicorn.conf.py
 
@@ -211,12 +238,16 @@ Security Checklist for Production
 
 Before exposing MiniMost to a network:
 
-1. **Use HTTPS** — run behind Nginx with a TLS certificate (Let's Encrypt
-   is free).
+1. **Use HTTPS** — MiniMost generates a self-signed certificate automatically.
+   For a public-facing deployment, replace it with a CA-signed certificate
+   (Let's Encrypt is free) by placing ``cert.pem`` and ``key.pem`` in the
+   project root before starting the server.  HTTPS is also required for
+   voice and video calling.
 2. **Run as a non-root user** — create a dedicated ``minimost`` user account.
 3. **Restrict filesystem permissions** — the ``minimost`` user should own
    ``auth.db``, ``presence.db``, ``users/``, and ``uploads/``; no other
-   users should be able to read them.
+   users should be able to read them.  Protect ``key.pem`` with the same
+   care — it is the TLS private key.
 4. **Keep Flask debug mode off** — the :func:`minimost.create_app` factory
    always passes ``debug=False`` to ``app.run()``, but verify the
    ``FLASK_ENV`` variable is not set to ``development``.

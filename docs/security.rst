@@ -184,6 +184,18 @@ Any unauthenticated visitor can create an account. If exposing MiniMost to
 the internet, consider adding registration invite codes or IP-based rate
 limiting on the ``/signup`` route.
 
+**TLS / HTTPS**
+
+Voice and video calling requires a secure context — browsers refuse to grant
+microphone and camera access over plain HTTP.  MiniMost automatically
+generates a self-signed TLS certificate on first run using the system
+``openssl`` binary (see :doc:`deployment`).  This certificate is suitable
+for LAN use; replace it with a CA-signed certificate for public-facing
+deployments.
+
+The TLS private key (``key.pem``) should be protected with the same
+filesystem permissions as ``secret.key`` and ``auth.db``.
+
 **Session cookie flags**
 
 The ``HttpOnly`` flag is set by Flask by default. The ``Secure`` flag

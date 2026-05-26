@@ -42,11 +42,15 @@ The factory is responsible for:
 1. Generating or loading the ``secret.key`` (session signing key).
 2. Setting the 16 MiB upload limit.
 3. Injecting the version string into the Jinja2 context.
-4. Registering the three Blueprints:
+4. Registering the four Blueprints:
 
    - :mod:`minimost.auth` — authentication routes.
    - :mod:`minimost.chat` — messaging routes.
    - :mod:`minimost.presence` — presence, typing, and reaction routes.
+   - :mod:`minimost.calls` — voice/video calling and media relay routes.
+
+5. Resetting all presence records to ``"offline"`` so stale state from a
+   previous server run does not persist.
 
 Blueprint structure means each module is self-contained and the URL routing
 is defined close to the handler code.
@@ -119,6 +123,9 @@ to all users simultaneously.
 - **Typing indicators** — shown to channel members in real time.
 - **Read receipts** — visible to the message sender.
 - **Reactions** — visible to all users on the message.
+- **Call state** — ``calls``, ``call_participants``, ``call_signals``, and
+  ``call_media`` tables that track the full lifecycle of every voice/video
+  call and buffer the relayed media chunks.
 
 All of this lives in ``presence.db``. The key table is ``message_reactions``,
 which stores individual ``(channel, msg_ts, emoji, reactor)`` tuples. This
@@ -164,9 +171,25 @@ The client runs several ``setInterval`` loops:
    * - ``refreshChannels``
      - 1 s
      - Refreshes channel unread badges.
+   * - ``pollIncomingCalls``
+     - 1 s
+     - Polls ``GET /calls/incoming``; surfaces the incoming-call overlay
+       and closes it when the caller hangs up or times out.
    * - ``fetchReadReceipts``
      - 3 s
      - Updates ``✓`` read checkmarks.
+   * - ``_pollCallState``
+     - 3 s
+     - Polls ``GET /calls/<id>/state`` during an active call; tears down
+       the call UI when the remote side hangs up.
+   * - Media relay (upload)
+     - 500 ms
+     - Uploads ``MediaRecorder`` chunks via ``POST /calls/<id>/media``
+       while a call is active.
+   * - Media relay (download)
+     - 500 ms
+     - Polls ``GET /calls/<id>/media`` for the remote participant's chunks
+       and feeds them into a ``MediaSource`` / ``SourceBuffer``.
    * - ``refreshTotalUnreadCount``
      - 5 s
      - Updates the browser tab title badge.
@@ -261,6 +284,99 @@ The client renders the result as a card below the message:
 - Code previews use client-side syntax highlighting with regex-based rules.
 - OpenGraph previews show the title, description, and thumbnail image.
 
+Calling Architecture
+--------------------
+
+Voice and video calls are handled entirely over HTTP — there is no WebRTC
+peer-to-peer connection, no STUN server, and no UDP.  Media is relayed
+through Flask, which makes calls work even behind NAT and restrictive
+corporate firewalls.
+
+**Why HTTP relay instead of WebRTC?**
+
+WebRTC P2P requires either a direct network path or a TURN relay server.
+MiniMost's HTTP relay is simpler to operate: it needs only the same Flask
+server that handles chat.
+
+**Call lifecycle:**
+
+.. code-block:: text
+
+    Caller                            Server                         Callee
+      │                                 │                               │
+      │  POST /calls/initiate           │                               │
+      │ ──────────────────────────────► │  INSERT calls (ringing)       │
+      │                                 │  INSERT call_participants     │
+      │  ◄──────────────────────────── │  { call_id }                  │
+      │                                 │                               │
+      │  GET /calls/<id>/state (3 s)   │  GET /calls/incoming (1 s)   │
+      │ ──────────────────────────────► │ ◄──────────────────────────── │
+      │                                 │                               │
+      │                                 │  ───────────────────────────► │
+      │                                 │  incoming call overlay shown  │
+      │                                 │                               │
+      │  [user answers]                 │                               │
+      │                                 │  POST /calls/<id>/accept      │
+      │                                 │ ◄──────────────────────────── │
+      │                                 │  UPDATE calls (active)        │
+      │                                 │                               │
+      │  ◄── state: active ──────────── │                               │
+      │                                 │                               │
+      │  POST /calls/<id>/media (500ms) │  GET /calls/<id>/media (500ms)│
+      │ ──────────────────────────────► │ ◄──────────────────────────── │
+      │  (MediaRecorder chunks)         │  (SourceBuffer playback)      │
+      │                                 │                               │
+      │  POST /calls/<id>/end           │                               │
+      │ ──────────────────────────────► │  UPDATE calls (ended)         │
+      │                                 │  DELETE call_media            │
+
+**Ring timeout:**
+
+If the callee does not answer, the call is automatically cancelled through
+two complementary mechanisms:
+
+- **Backend** (``_RINGING_TIMEOUT = 30 s``) — ``GET /calls/incoming``
+  filters out calls older than 30 seconds so they never surface on the
+  callee side.  ``GET /calls/<id>/state`` also auto-transitions a stale
+  ringing call to ``'rejected'`` at the same threshold.
+- **Frontend** (``RING_TIMEOUT_MS = 30 000 ms``) — a client-side
+  ``setTimeout`` fires after 30 s; the caller posts
+  ``POST /calls/<id>/end`` and the callee's incoming-call overlay is closed.
+- **Callee poll** — ``pollIncomingCalls`` continues running even while the
+  incoming-call overlay is visible; when the call disappears from the
+  ringing list (due to the backend timeout, the caller hanging up, or any
+  other state change) ``closeIncomingCallUI()`` is called immediately.
+
+**Database tables** (all in ``presence.db``):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Table
+     - Contents
+   * - ``calls``
+     - One row per call: ``call_id`` (UUID), ``channel``, ``initiator``,
+       ``state`` (ringing/active/ended/rejected), and timestamps.
+   * - ``call_participants``
+     - One row per (call, user): ``role`` (initiator/participant),
+       ``state`` (pending/accepted/rejected/left), and timestamps.
+   * - ``call_signals``
+     - Retained for backwards compatibility; not used by the HTTP relay
+       frontend.
+   * - ``call_media``
+     - Binary media chunks uploaded by ``MediaRecorder``.  Marked
+       ``is_init = 1`` for the initialisation segment (so late-joining
+       receivers can bootstrap their ``SourceBuffer``).  Purged when the
+       call ends.
+
+**HTTPS requirement:**
+
+Browsers only grant microphone and camera access in a `secure context
+<https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts>`_
+(HTTPS or localhost).  MiniMost auto-generates a self-signed TLS certificate
+on first run (see :doc:`deployment`) to satisfy this requirement.
+
 Frontend Architecture
 ---------------------
 
@@ -286,6 +402,10 @@ Module Dependency Graph
     │   ├── minimost.auth
     │   └── minimost.preview
     ├── minimost.presence    (presence_bp)
+    ├── minimost.calls       (calls_bp)
+    │   ├── minimost.auth
+    │   ├── minimost.presence  (for PRESENCE_DB path)
+    │   └── minimost.chat      (for get_private_channel_members)
     ├── minimost.common
     └── minimost.database
         └── minimost.auth    (for AUTH_DB path)

@@ -401,6 +401,67 @@ The "New DM" modal provides username autocomplete:
 5. On submit, :func:`minimost.chat.normalize_dm` is computed client-side and
    the user is switched to that channel.
 
+Calling
+-------
+
+Voice and video calls are initiated from a phone icon displayed in the
+topbar when the active channel is a DM or private channel.
+
+**Caller flow:**
+
+1. ``startCall()`` posts ``{ channel }`` to ``POST /calls/initiate`` and
+   receives a ``call_id``.
+2. A call overlay appears showing a "Calling…" status and a hang-up button.
+3. A 30-second ``setTimeout`` (``ringTimeoutId``) is armed; if the callee
+   does not answer in time, ``_handleRingTimeout()`` posts
+   ``POST /calls/<id>/end`` and shows "No answer" before cleaning up.
+4. ``_pollCallState()`` runs every 3 seconds polling
+   ``GET /calls/<id>/state``; when ``state === "active"`` the call is live.
+5. ``MediaRecorder`` captures the local camera/microphone stream; each
+   ``dataavailable`` chunk is uploaded via ``POST /calls/<id>/media``.
+6. A 500 ms interval polls ``GET /calls/<id>/media?sender=<callee>`` for
+   the remote participant's chunks and feeds them into a ``MediaSource`` /
+   ``SourceBuffer`` for playback.
+
+**Callee flow:**
+
+1. ``pollIncomingCalls()`` runs every second, polling
+   ``GET /calls/incoming``.
+2. When a ringing call is returned, ``openIncomingCallUI(callData)`` shows
+   an overlay with the caller's name and Accept/Decline buttons.
+3. A client-side timeout (``incomingRingTimeout``) is set to
+   ``RING_TIMEOUT_MS − elapsed`` (where elapsed is computed from the
+   server-supplied ``started_ts``); it closes the UI when the ring period
+   expires even if the caller does not explicitly end the call.
+4. The polling continues while the overlay is visible; if the call
+   disappears from the ringing list (caller hung up or timed out),
+   ``closeIncomingCallUI()`` is called automatically.
+5. Accepting calls ``POST /calls/<id>/accept`` and starts the same media
+   relay pipeline used by the caller.
+6. Declining calls ``POST /calls/<id>/reject``.
+
+**Key variables:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Variable
+     - Purpose
+   * - ``activeCallId``
+     - UUID of the call currently in progress; ``null`` when idle.
+   * - ``ringTimeoutId``
+     - Handle for the caller-side 45-second ring timeout.
+   * - ``incomingRingTimeout``
+     - Handle for the callee-side ring timeout.
+   * - ``RING_TIMEOUT_MS``
+     - Ring timeout in milliseconds (30 000); matches the backend
+       ``_RINGING_TIMEOUT`` of 30 s.
+   * - ``incomingCallData``
+     - The call object currently shown in the incoming-call overlay.
+   * - ``localStream``
+     - The ``MediaStream`` from ``getUserMedia``; stopped on hang-up.
+
 Mobile Support
 --------------
 

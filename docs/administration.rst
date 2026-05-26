@@ -188,6 +188,8 @@ All state lives in these locations:
         auth.db \
         presence.db \
         secret.key \
+        cert.pem \
+        key.pem \
         channels.json \
         users/ \
         uploads/ \
@@ -249,6 +251,8 @@ Migrating to a New Server
         auth.db \
         presence.db \
         secret.key \
+        cert.pem \
+        key.pem \
         channels.json \
         users/ \
         uploads/ \

@@ -11,6 +11,7 @@ MiniMost Python package, generated from docstrings using
 
    minimost
    auth
+   calls
    chat
    presence
    common
