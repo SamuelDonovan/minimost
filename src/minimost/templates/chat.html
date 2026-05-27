@@ -362,6 +362,12 @@
     </div>
 </div>
 
+<!-- DM hover card – shown via fixed positioning to escape sidebar overflow -->
+<div id="dm-hover-card">
+    <div id="dm-hover-avatar"></div>
+    <span id="dm-hover-name"></span>
+</div>
+
 <!-- Standalone Screen Share Viewer Overlay -->
 <div id="screenshare-viewer" style="display:none;">
     <div id="screenshare-viewer-header">
@@ -668,6 +674,22 @@ function makeAvatarWrap(username, size = 28, channelKey = null) {
     wrap.appendChild(dot);
 
     return wrap;
+}
+
+function _showDmHoverCard(el, username) {
+    const card = document.getElementById("dm-hover-card");
+    const rect  = el.getBoundingClientRect();
+    const container = document.getElementById("dm-hover-avatar");
+    container.innerHTML = "";
+    container.appendChild(makeAvatarWrap(username, 64));
+    document.getElementById("dm-hover-name").textContent = username;
+    card.style.left = (rect.right + 10) + "px";
+    card.style.top  = Math.round(rect.top + rect.height / 2) + "px";
+    card.classList.add("visible");
+}
+
+function _hideDmHoverCard() {
+    document.getElementById("dm-hover-card").classList.remove("visible");
 }
 
 function _refreshUserAvatar(username) {
@@ -1092,7 +1114,11 @@ function sidebarEntry(label, channelName, unread = 0) {
         d.classList.add("sidebar-dm");
 
         const avatarUser = channelName.split(":").slice(1).find(u => u !== CURRENT_USER) || CURRENT_USER;
-        d.appendChild(makeAvatarWrap(avatarUser, 28));
+        const avatarWrap = makeAvatarWrap(avatarUser, 28);
+        // Use .on* assignment so repeated calls to sidebarEntry don't stack listeners.
+        avatarWrap.onmouseenter = () => _showDmHoverCard(avatarWrap, avatarUser);
+        avatarWrap.onmouseleave = _hideDmHoverCard;
+        d.appendChild(avatarWrap);
         d.appendChild(labelSpan);
 
         const closeBtn = document.createElement("button");

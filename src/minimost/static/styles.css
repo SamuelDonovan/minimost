@@ -478,6 +478,41 @@ body {
     opacity: 1;
     pointer-events: auto;
 }
+#dm-hover-card {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    background: #2d2d2d;
+    border: 1px solid #454545;
+    border-radius: 10px;
+    padding: 16px 20px;
+    z-index: 300;
+    pointer-events: none;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+#dm-hover-card.visible {
+    opacity: 1;
+}
+#dm-hover-card #dm-hover-name {
+    font-size: 13px;
+    color: #ddd;
+    font-weight: 600;
+    white-space: nowrap;
+}
+#dm-hover-card .avatar-wrap { cursor: default; }
+.sidebar-dm .avatar-wrap { cursor: pointer; }
+#dm-hover-card .avatar-presence {
+    width: 14px;
+    height: 14px;
+    bottom: 1px;
+    right: 1px;
+    border-width: 2px;
+}
 #private-ch-controls {
     display: none;
     align-items: center;
