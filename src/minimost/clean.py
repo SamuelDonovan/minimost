@@ -2,14 +2,16 @@
 minimost.clean
 ==============
 
-Maintenance utility for purging old image uploads.
+Maintenance utility for purging old uploads.
 
-MiniMost stores image attachments in the ``uploads/`` directory.
+MiniMost stores file attachments in the ``uploads/`` directory.
 :func:`delete_files_older_than` is called automatically by a background daemon
 thread started in :func:`minimost.create_app` — no cron job or external
 scheduler is required.  The thread runs 5 minutes after startup and repeats
-every 24 hours.  The retention period is read from ``"image_retention_days"``
-in ``settings.json`` on each run (default: 30 days).
+every 24 hours.  Retention periods are read from ``settings.json`` on each run:
+
+* ``"image_retention_days"`` — applies to image files (default: 30 days).
+* ``"file_retention_days"`` — applies to all other file types (default: 30 days).
 
 This module can also be invoked directly for ad-hoc cleanup:
 
@@ -29,64 +31,50 @@ This module can also be invoked directly for ad-hoc cleanup:
 from pathlib import Path
 import time
 
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
-def delete_files_older_than(directory: str, days: int, dry_run: bool = False):
-    """Delete files in *directory* whose modification time is older than *days*.
 
-    Iterates over every file (not directory) directly inside *directory* and
-    removes those whose ``mtime`` predates the computed cutoff timestamp.
-    Subdirectories are skipped.
+def delete_files_older_than(
+    directory: str,
+    image_days: int,
+    file_days: int,
+    dry_run: bool = False,
+):
+    """Delete files in *directory* based on type-specific retention periods.
 
-    Files that cannot be stat'd (e.g. due to a permission error) are silently
-    skipped so a single unreadable file does not abort the cleanup run.
+    Image files (jpg, jpeg, png, gif, webp) are removed when older than
+    *image_days*; all other files are removed when older than *file_days*.
 
-    **Dry-run mode:**
-
-    When *dry_run* is ``True`` the function prints a ``[DRY RUN]`` line for
-    each file it *would* delete but does not actually remove anything.  This
-    is useful for previewing what a scheduled run will clean up::
-
-        delete_files_older_than("uploads", days=30, dry_run=True)
-
-    **Normal mode:**
-
-    Each deleted file is logged to stdout so the cron daemon (or systemd
-    journal) captures an audit trail.
-
-    :param directory: Path to the directory to clean.  Relative paths are
-        resolved from the current working directory.
+    :param directory: Path to the directory to clean.
     :type directory: str
-    :param days: Files older than this many days will be deleted.  For
-        example, ``days=30`` removes files not modified in the last 30 days.
-    :type days: int
+    :param image_days: Retention period in days for image files.
+    :type image_days: int
+    :param file_days: Retention period in days for non-image files.
+    :type file_days: int
     :param dry_run: If ``True``, only print what would be deleted without
         removing any files.  Defaults to ``False``.
     :type dry_run: bool
-    :returns: None
     :raises ValueError: If *directory* does not exist or is not a directory.
-
-    Example::
-
-        # Remove uploads older than 14 days
-        delete_files_older_than("uploads", days=14)
-
-        # Preview what would be removed without deleting
-        delete_files_older_than("uploads", days=14, dry_run=True)
     """
-    cutoff = time.time() - (days * 86400)
-    directory = Path(directory)
+    now = time.time()
+    image_cutoff = now - (image_days * 86400)
+    file_cutoff = now - (file_days * 86400)
+    dirpath = Path(directory)
 
-    if not directory.is_dir():
+    if not dirpath.is_dir():
         raise ValueError(f"{directory} is not a valid directory")
 
-    for path in directory.iterdir():
+    for path in dirpath.iterdir():
         if not path.is_file():
             continue
 
         try:
             mtime = path.stat().st_mtime
         except OSError:
-            continue  # skip unreadable files
+            continue
+
+        ext = path.suffix.lower()
+        cutoff = image_cutoff if ext in _IMAGE_EXTENSIONS else file_cutoff
 
         if mtime < cutoff:
             if dry_run:
@@ -100,4 +88,4 @@ def delete_files_older_than(directory: str, days: int, dry_run: bool = False):
 
 
 if __name__ == "__main__":
-    delete_files_older_than(directory="uploads", days=30)
+    delete_files_older_than(directory="uploads", image_days=30, file_days=30)

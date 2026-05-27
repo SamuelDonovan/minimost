@@ -14,7 +14,7 @@ def _old_file(path, days=31):
 def test_deletes_old_file(tmp_path, capsys):
     f = tmp_path / "old.txt"
     _old_file(f)
-    delete_files_older_than(str(tmp_path), days=30)
+    delete_files_older_than(str(tmp_path), image_days=30, file_days=30)
     assert not f.exists()
     assert "Deleted" in capsys.readouterr().out
 
@@ -22,7 +22,7 @@ def test_deletes_old_file(tmp_path, capsys):
 def test_keeps_new_file(tmp_path, capsys):
     f = tmp_path / "new.txt"
     f.write_text("data")
-    delete_files_older_than(str(tmp_path), days=30)
+    delete_files_older_than(str(tmp_path), image_days=30, file_days=30)
     assert f.exists()
     assert capsys.readouterr().out == ""
 
@@ -30,20 +30,20 @@ def test_keeps_new_file(tmp_path, capsys):
 def test_dry_run_does_not_delete(tmp_path, capsys):
     f = tmp_path / "old.txt"
     _old_file(f)
-    delete_files_older_than(str(tmp_path), days=30, dry_run=True)
+    delete_files_older_than(str(tmp_path), image_days=30, file_days=30, dry_run=True)
     assert f.exists()
     assert "[DRY RUN]" in capsys.readouterr().out
 
 
 def test_invalid_directory_raises():
     with pytest.raises(ValueError, match="not a valid directory"):
-        delete_files_older_than("/nonexistent/path", days=30)
+        delete_files_older_than("/nonexistent/path", image_days=30, file_days=30)
 
 
 def test_skips_subdirectory(tmp_path):
     subdir = tmp_path / "subdir"
     subdir.mkdir()
-    delete_files_older_than(str(tmp_path), days=0)
+    delete_files_older_than(str(tmp_path), image_days=0, file_days=0)
     assert subdir.exists()
 
 
@@ -57,7 +57,7 @@ def test_skips_unreadable_file(tmp_path):
     fake.stat.side_effect = OSError("no access")
 
     with patch("pathlib.Path.iterdir", return_value=[fake]):
-        delete_files_older_than(str(tmp_path), days=0)
+        delete_files_older_than(str(tmp_path), image_days=0, file_days=0)
 
     fake.unlink.assert_not_called()
 
@@ -67,6 +67,18 @@ def test_multiple_files_mixed_ages(tmp_path):
     new = tmp_path / "new.log"
     _old_file(old)
     new.write_text("recent")
-    delete_files_older_than(str(tmp_path), days=30)
+    delete_files_older_than(str(tmp_path), image_days=30, file_days=30)
     assert not old.exists()
     assert new.exists()
+
+
+def test_image_and_file_retention_differ(tmp_path):
+    # Old image (32 days) should survive a 60-day image retention
+    # but an old non-image (32 days) should be deleted under a 10-day file retention
+    old_img = tmp_path / "photo.jpg"
+    old_doc = tmp_path / "report.pdf"
+    _old_file(old_img, days=32)
+    _old_file(old_doc, days=32)
+    delete_files_older_than(str(tmp_path), image_days=60, file_days=10)
+    assert old_img.exists()
+    assert not old_doc.exists()

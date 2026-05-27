@@ -207,15 +207,17 @@ def _start_cleanup_scheduler(interval_hours: int = 24, days: int = 30) -> None:
     upload_dir = _PROJECT_ROOT / "uploads"
     settings_file = _PROJECT_ROOT / "settings.json"
 
-    def _image_retention_days() -> int:
+    def _read_retention() -> tuple:
         with suppress(Exception):
             import json
 
             data = json.loads(settings_file.read_text())
-            value = data.get("image_retention_days")
-            if isinstance(value, int) and value > 0:
-                return value
-        return days
+            img = data.get("image_retention_days")
+            fil = data.get("file_retention_days")
+            img = img if isinstance(img, int) and img > 0 else days
+            fil = fil if isinstance(fil, int) and fil > 0 else days
+            return img, fil
+        return days, days
 
     def _loop() -> None:
         time.sleep(300)  # short initial delay — let the server finish starting
@@ -223,7 +225,12 @@ def _start_cleanup_scheduler(interval_hours: int = 24, days: int = 30) -> None:
             try:
                 from .clean import delete_files_older_than
 
-                delete_files_older_than(str(upload_dir), days=_image_retention_days())
+                image_days, file_days = _read_retention()
+                delete_files_older_than(
+                    str(upload_dir),
+                    image_days=image_days,
+                    file_days=file_days,
+                )
             except (
                 Exception
             ):  # nosec B110 — cleanup failure must not crash the daemon thread
