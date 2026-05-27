@@ -201,10 +201,9 @@ body {
     height: 10px;
     border-radius: 50%;
 }
-.help-presence.active  { background: #4fc3f7; }
-.help-presence.idle    { background: #ffd54f; }
-.help-presence.away    { background: #888; }
-.help-presence.offline { background: transparent; border: 2px solid #888; width: 8px; height: 8px; }
+.help-presence.active  { background: #6cf; }
+.help-presence.idle    { background: #fc6; }
+.help-presence.offline { background: #555; }
 
 /* Close button */
 #help-close {
@@ -229,6 +228,7 @@ body {
 #chat {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 10px;
     font-size: 14px;
     /* Firefox scrollbar */
@@ -286,9 +286,35 @@ body {
     cursor: pointer;
 }
 .msg {
-    margin: 2px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 6px 0;
     font-family: system-ui, sans-serif;
-    margin-bottom: 4px;
+}
+.msg-content-col {
+    flex: 1;
+    min-width: 0;
+}
+.msg-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    line-height: 1.4;
+}
+.msg-body {
+    margin-top: 2px;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+.msg-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+}
+.msg > .avatar-wrap {
+    align-self: flex-start;
 }
 .msg.visual-selected {
     background: rgba(0, 122, 204, 0.18);
@@ -379,16 +405,13 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px; /* make sure the button has some area */
+    width: 24px;
     height: 24px;
     background: none;
     cursor: pointer;
     border: none;
     opacity: 0.6;
     padding: 0;
-    vertical-align: middle;
-    margin-top: -50px;
-    margin-bottom: -50px;
 }
 .edited-icon {
     width: 16px;
@@ -398,10 +421,7 @@ body {
     cursor: pointer;
     pointer-events: auto;
     padding: 0;
-    align-items: center;
-    vertical-align: middle;
-    margin-top: -50px;
-    margin-bottom: -50px;
+    display: block;
 }
 .edited-icon:hover {
     opacity: 1;
@@ -444,6 +464,7 @@ body {
 }
 .text {
     white-space: pre-wrap;
+    overflow-wrap: break-word;
 }
 .sidebar-item {
     display: flex;
@@ -679,22 +700,18 @@ button, input, textarea{
 .read-receipt.seen {
     color: #6cf;
 }
-.receipt-tooltip {
+#receipt-tooltip {
     display: none;
-    position: absolute;
-    bottom: 1.4em;
-    right: 0;
+    position: fixed;
     background: #2d2d2d;
     border: 1px solid #555;
     border-radius: 4px;
     padding: 4px 8px;
     white-space: nowrap;
-    font-size: 1.1em;
+    font-size: 0.75em;
     color: #ddd;
-    z-index: 10;
-}
-.read-receipt:hover .receipt-tooltip {
-    display: block;
+    z-index: 9999;
+    pointer-events: none;
 }
 #input {
     padding: 10px;
@@ -900,9 +917,6 @@ a { color: #9cdcfe; }
     border: none;
     opacity: 0.6;
     padding: 0;
-    vertical-align: middle;
-    margin-top: -50px;
-    margin-bottom: -50px;
 }
 .react-btn:hover { opacity: 1; }
 
@@ -1118,7 +1132,6 @@ a { color: #9cdcfe; }
 }
 .avatar-presence.active { background: #6cf; }
 .avatar-presence.idle   { background: #fc6; }
-.avatar-presence.away { background: #888; }
 #settings-avatar-preview .avatar-wrap { cursor: default; }
 
 /* Settings modal */

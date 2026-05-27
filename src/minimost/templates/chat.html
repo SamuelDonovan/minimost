@@ -337,8 +337,7 @@
         <h3 class="help-section">Status Indicators</h3>
         <ul>
             <li><span class="help-presence active"></span> <b>Active</b> – Currently using the app</li>
-            <li><span class="help-presence idle"></span> <b>Idle</b> – Tab open but no recent activity</li>
-            <li><span class="help-presence away"></span> <b>Away</b> – Tab hidden or in background</li>
+            <li><span class="help-presence idle"></span> <b>Idle</b> – Away or no recent activity</li>
             <li><span class="help-presence offline"></span> <b>Offline</b> – Not connected</li>
         </ul>
     </dialog>
@@ -366,6 +365,9 @@
         </button>
     </div>
 </div>
+
+<!-- Read receipt tooltip – fixed-position to escape overflow:hidden on #chat -->
+<div id="receipt-tooltip"></div>
 
 <!-- DM hover card – shown via fixed positioning to escape sidebar overflow -->
 <div id="dm-hover-card">
@@ -481,9 +483,31 @@ function updateReadReceiptUI() {
         if (!readers || readers.length === 0) return;
         const names = readers.filter(r => r !== CURRENT_USER).join(", ");
         if (!names) return;
-        el.innerHTML = `✓<span class="receipt-tooltip">Read by: ${names}</span>`;
+        el.textContent = "✓";
         el.classList.add("seen");
+        el.dataset.receiptNames = `Read by: ${names}`;
+        el.onmouseenter = () => _showReceiptTooltip(el);
+        el.onmouseleave = _hideReceiptTooltip;
     });
+}
+
+function _showReceiptTooltip(el) {
+    const tip = document.getElementById("receipt-tooltip");
+    tip.textContent = el.dataset.receiptNames;
+    tip.style.visibility = "hidden";
+    tip.style.display = "block";
+    const rect = el.getBoundingClientRect();
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let left = rect.right - tw;
+    if (left < 4) left = 4;
+    tip.style.left = left + "px";
+    tip.style.top = (rect.top - th - 6) + "px";
+    tip.style.visibility = "visible";
+}
+
+function _hideReceiptTooltip() {
+    document.getElementById("receipt-tooltip").style.display = "none";
 }
 
 // Help Button
@@ -642,11 +666,12 @@ function _setInitials(el, username, size) {
 
 function applyPresenceDot(dot, state) {
     dot.className = "avatar-presence";
-    if (state === "active" || state === "idle") {
-        dot.classList.add(state);
-    } else if (state === "hidden") {
-        dot.classList.add("away");
+    if (state === "active") {
+        dot.classList.add("active");
+    } else if (state === "idle" || state === "hidden") {
+        dot.classList.add("idle");
     }
+    // offline: base style only (solid gray)
 }
 
 function makeAvatarWrap(username, size = 28, channelKey = null) {
@@ -963,16 +988,13 @@ function setPresence(presenceEl, state) {
             presenceEl.style.color = "#6cf";
             break;
         case "idle":
+        case "hidden":
             presenceEl.textContent = " ●";
             presenceEl.style.color = "#fc6";
             break;
-        case "hidden":
-            presenceEl.textContent = " ●";
-            presenceEl.style.color = "#888";
-            break;
         default: // offline
-            presenceEl.textContent = " ○";
-            presenceEl.style.color = "#444";
+            presenceEl.textContent = " ●";
+            presenceEl.style.color = "#555";
     }
 }
 
@@ -1269,89 +1291,62 @@ function _ensureDateDivider(chat, dateKey, msgDate) {
 }
 
 function _buildMsgHtml(m, time, fullTime, color) {
-    let html = "";
-    if (m.reply_to_id) {
-        html += `<div class="quoted-msg" id="quoted-${m.id}" onclick="scrollToMsg(${m.reply_to_id})"><em>Loading…</em></div>`;
-    }
-    html += `<span class="time" title="${fullTime}">[${time}]</span> <span class="user" style="color:${color}">${m.sender}</span>`;
+    let headerHtml = `<span class="user" style="color:${color}">${m.sender}</span>`;
+    headerHtml += `<span class="time" title="${fullTime}">${time}</span>`;
 
+    let actionsHtml = "";
     if (m.edited) {
         const editedDate = new Date(m.edited_ts * 1000);
         const formatted = editedDate.toLocaleString('en-US', {
             month: '2-digit', day: '2-digit', year: '2-digit',
             hour: '2-digit', minute: '2-digit', hour12: true
         });
-        html += `
-            <span class="edit-icon">
-                <svg class="edited-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <title>Last edited at ${formatted}</title>
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M12 8v4l3 3"/>
-                </svg>
-            </span>
-        `;
+        actionsHtml += `<span class="edit-icon"><svg class="edited-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><title>Last edited at ${formatted}</title><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></span>`;
     }
 
     if (m.sender === CURRENT_USER) {
-        html += `<button class="edit-btn" title="Edit" onclick="startEdit(${m.id})">
-            <svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9"/>
-                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-            </svg>
-            </button>`;
-        html += `<button class="delete-btn" title="Delete" onclick="deleteMsg(${m.id})">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                <path d="M10 11v6"/>
-                <path d="M14 11v6"/>
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-            </svg>
-            </button>`;
+        actionsHtml += `<button class="edit-btn" title="Edit" onclick="startEdit(${m.id})"><svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>`;
+        actionsHtml += `<button class="delete-btn" title="Delete" onclick="deleteMsg(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>`;
     }
 
-    html += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 17 4 12 9 7"/>
-            <path d="M20 18v-2a4 4 0 0 0-4-4H4"/>
-        </svg>
-    </button>`;
+    actionsHtml += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button>`;
+    actionsHtml += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>`;
+    headerHtml += `<span class="msg-actions">${actionsHtml}</span>`;
 
-    html += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-            <line x1="9" y1="9" x2="9.01" y2="9"/>
-            <line x1="15" y1="9" x2="15.01" y2="9"/>
-        </svg>
-    </button>`;
-
-    html += ` : `;
+    let bodyHtml = "";
+    if (m.reply_to_id) {
+        bodyHtml += `<div class="quoted-msg" id="quoted-${m.id}" onclick="scrollToMsg(${m.reply_to_id})"><em>Loading…</em></div>`;
+    }
 
     if (m.content?.trim()) {
-        html += `<span class="text" id="msg-text-${m.id}">${formatText(m.content)}</span>`;
+        bodyHtml += `<span class="text" id="msg-text-${m.id}">${formatText(m.content)}</span>`;
     }
 
     if (m.filename) {
         const files = m.filename.split(",");
         for (const f of files) {
             if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
-                html += `
-                    <a href="/files/${f}" target="_blank">
-                        <img src="/files/${f}" class="chat-image" loading="lazy"
-                            onerror="this.onerror=null; this.src='static/retention.png';">
-                    </a>
-                `;
+                bodyHtml += `<a href="/files/${f}" target="_blank"><img src="/files/${f}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='static/retention.png';"></a>`;
             }
         }
     }
 
     if (m.sender === CURRENT_USER) {
-        html += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
+        bodyHtml += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
     }
 
-    html += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
-    return html;
+    bodyHtml += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
+
+    return `<div class="msg-avatar-slot"></div><div class="msg-content-col"><div class="msg-header">${headerHtml}</div><div class="msg-body">${bodyHtml}</div></div>`;
+}
+
+function _injectMsgAvatar(msgEl, sender) {
+    const slot = msgEl.querySelector(".msg-avatar-slot");
+    if (!slot) return;
+    const wrap = makeAvatarWrap(sender, 32);
+    wrap.onmouseenter = () => _showDmHoverCard(wrap, sender);
+    wrap.onmouseleave = _hideDmHoverCard;
+    slot.replaceWith(wrap);
 }
 
 function fetchMessages() {
@@ -1423,12 +1418,14 @@ function fetchMessages() {
                         return;
                     }
                     existing.innerHTML = html;
+                    _injectMsgAvatar(existing, m.sender);
                     attachPreview(existing);
                 } else {
                     const d = document.createElement("div");
                     d.className = "msg";
                     d.id = msgId;
                     d.innerHTML = html;
+                    _injectMsgAvatar(d, m.sender);
                     chat.appendChild(d);
                     attachPreview(d);
                     appended = true;
@@ -3993,7 +3990,7 @@ async function attachPreview(msgEl) {
     if (receipt) {
         receipt.before(previewEl);
     } else {
-        msgEl.appendChild(previewEl);
+        (msgEl.querySelector(".msg-body") || msgEl).appendChild(previewEl);
     }
 }
 
