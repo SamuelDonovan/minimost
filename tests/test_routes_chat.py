@@ -323,14 +323,34 @@ def test_send_file(alice, tmp_path):
     assert resp.status_code == 200
 
 
-def test_send_file_invalid_extension(alice):
+def test_send_file_any_extension(alice):
+    import minimost.chat as chat
+
+    chat.UPLOAD_DIR.mkdir(exist_ok=True)
     exe = io.BytesIO(b"MZ" + b"\x00" * 10)
     resp = alice.post(
         "/send/general",
-        data={"text": "", "files": (exe, "virus.exe")},
+        data={"text": "", "files": (exe, "document.exe")},
         content_type="multipart/form-data",
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
+
+
+def test_send_file_too_large(alice):
+    import minimost.chat as chat
+
+    orig = chat._max_upload_size_bytes
+    chat._max_upload_size_bytes = lambda: 5  # 5 bytes limit
+    try:
+        big = io.BytesIO(b"\x00" * 10)
+        resp = alice.post(
+            "/send/general",
+            data={"text": "", "files": (big, "big.bin")},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 413
+    finally:
+        chat._max_upload_size_bytes = orig
 
 
 # ── GET /message/<id> ─────────────────────────────────────────────────────────

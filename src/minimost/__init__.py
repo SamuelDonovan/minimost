@@ -79,6 +79,20 @@ def _read_version() -> str:
 
 _APP_VERSION = _read_version()
 
+_SETTINGS_FILE = _PROJECT_ROOT / "settings.json"
+
+
+def _max_upload_size_mb() -> int:
+    """Return the configured max upload size in MB (default 25)."""
+    import json
+
+    with suppress(Exception):
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("max_upload_size_mb")
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value)
+    return 25
+
 
 def create_app():
     """Create and configure the MiniMost Flask application.
@@ -123,7 +137,8 @@ def create_app():
         key_file.write_text(secrets.token_hex(32))
     app.secret_key = key_file.read_text().strip()
 
-    app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+    _upload_mb = _max_upload_size_mb()
+    app.config["MAX_CONTENT_LENGTH"] = _upload_mb * 1024 * 1024
 
     def _csrf_token() -> str:
         """Return a per-session CSRF token, generating one if absent."""
@@ -150,13 +165,9 @@ def create_app():
             abort(403)
 
     @app.context_processor
-    def inject_version():
-        """Inject the application version into every template context.
-
-        :returns: A dict mapping ``"app_version"`` to the version string.
-        :rtype: dict
-        """
-        return {"app_version": _APP_VERSION}
+    def inject_globals():
+        """Inject global template variables."""
+        return {"app_version": _APP_VERSION, "max_upload_mb": _upload_mb}
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(calls_bp)

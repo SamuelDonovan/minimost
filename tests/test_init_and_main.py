@@ -51,7 +51,7 @@ def test_create_app_registers_blueprints(app):
 
 
 def test_create_app_max_content_length(app):
-    assert app.config["MAX_CONTENT_LENGTH"] == 16 * 1024 * 1024
+    assert app.config["MAX_CONTENT_LENGTH"] == 25 * 1024 * 1024
 
 
 def test_create_app_has_secret_key(app):

@@ -68,6 +68,7 @@ from flask import (
     session,
     Blueprint,
 )
+from werkzeug.utils import secure_filename as _secure_filename
 
 # Local Imports
 from . import common
@@ -77,7 +78,21 @@ from . import preview as preview_mod
 
 chat_bp = Blueprint("chat", __name__)
 
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def _max_upload_size_bytes() -> int:
+    """Return the configured max upload size in bytes (default 25 MiB)."""
+    try:
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("max_upload_size_mb")
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value * 1024 * 1024)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return 25 * 1024 * 1024
+
+
 _WAL = "PRAGMA journal_mode=WAL"
 _SQL_AVATAR = "SELECT avatar_file FROM user_settings WHERE username = ?"
 _MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
@@ -933,6 +948,17 @@ def send(channel):
     except (ValueError, TypeError):
         reply_to_id = None
 
+    max_bytes = _max_upload_size_bytes()
+    for f in request.files.getlist("files"):
+        if not hasattr(f, "filename") or not f.filename:
+            continue
+        f.stream.seek(0, 2)
+        size = f.stream.tell()
+        f.stream.seek(0)
+        if size > max_bytes:
+            mb = max_bytes // (1024 * 1024)
+            return f"file too large (max {mb} MB)", 413
+
     filenames = _save_uploaded_files(request.files.getlist("files"))
 
     if not text and not filenames:
@@ -1010,24 +1036,23 @@ def get_message(msg_id):
 @chat_bp.route("/files/<path:filename>", methods=["GET"])
 @auth.login_required
 def files(filename):
-    """Serve an uploaded image file.
+    """Serve an uploaded file.
 
     Route: ``GET /files/<filename>``
 
-    Requires authentication.  Delegates to Flask's
-    :func:`~flask.send_from_directory` using :data:`UPLOAD_DIR` as the
-    root, which prevents directory traversal attacks.
-
-    Files are stored with UUID-based names (see :func:`send`) so there is no
-    mapping from original filenames to on-disk names — ``filename`` must be
-    the UUID name as stored in the database.
-
-    :param filename: The UUID-based filename of the image to serve.
-    :type filename: str
-    :returns: The binary file response with an appropriate
-        ``Content-Type`` header inferred from the file extension.
-    :rtype: flask.Response
+    Images are served inline; all other file types are served as attachments
+    so the browser downloads rather than attempts to render them.
     """
+    ext = Path(filename).suffix.lower()
+    as_attachment = ext not in IMAGE_EXTENSIONS
+    if as_attachment:
+        # Strip the 32-char UUID prefix + underscore separator to recover the original name
+        download_name = (
+            filename[33:] if len(filename) > 33 and filename[32] == "_" else filename
+        )
+        return send_from_directory(
+            UPLOAD_DIR, filename, as_attachment=True, download_name=download_name
+        )
     return send_from_directory(UPLOAD_DIR, filename)
 
 
@@ -1705,15 +1730,23 @@ VALID_REACTIONS = {
 
 
 def _save_uploaded_files(files) -> List[str]:
-    """Validate and save uploaded image files, returning their stored filenames."""
+    """Save uploaded files of any type, returning their stored filenames.
+
+    Images are stored as ``<uuid32hex><ext>``.
+    All other files are stored as ``<uuid32hex>_<sanitized_original_name>``
+    so the original name can be recovered by slicing off the first 33 chars.
+    """
     filenames = []
     for f in files:
         if not hasattr(f, "filename") or not f.filename:
             continue
         ext = os.path.splitext(f.filename)[1].lower()
-        if ext not in ALLOWED_EXTENSIONS:
-            continue
-        filename = f"{uuid.uuid4().hex}{ext}"
+        uid = uuid.uuid4().hex
+        if ext in IMAGE_EXTENSIONS:
+            filename = f"{uid}{ext}"
+        else:
+            safe = _secure_filename(f.filename) or f"file{ext}"
+            filename = f"{uid}_{safe}"
         f.save(UPLOAD_DIR / filename)
         filenames.append(filename)
     return filenames

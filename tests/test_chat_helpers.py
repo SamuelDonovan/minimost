@@ -172,13 +172,14 @@ def test_save_uploaded_files_no_filename():
     assert result == []
 
 
-def test_save_uploaded_files_invalid_extension():
+def test_save_uploaded_files_any_extension():
     from unittest.mock import MagicMock
 
     f = MagicMock()
     f.filename = "script.exe"
     result = chat_mod._save_uploaded_files([f])
-    assert result == []
+    assert len(result) == 1
+    assert result[0].endswith(".exe")
 
 
 def test_save_uploaded_files_valid_extension():

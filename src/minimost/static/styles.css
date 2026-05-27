@@ -285,6 +285,49 @@ body {
     height: 20px;
     cursor: pointer;
 }
+.file-preview-name {
+    display: inline-block;
+    max-width: 160px;
+    padding: 6px 10px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    font-size: 0.8em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+.file-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 5px 10px;
+    background: #1e1e2e;
+    border: 1px solid #444;
+    border-radius: 6px;
+    color: #7eb8f7;
+    font-size: 0.85em;
+    text-decoration: none;
+}
+.file-download:hover {
+    background: #2a2a3e;
+    border-color: #7eb8f7;
+}
+.file-deleted {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 5px 10px;
+    background: #1e1e2e;
+    border: 1px solid #555;
+    border-radius: 6px;
+    color: #888;
+    font-size: 0.85em;
+    font-style: italic;
+}
 .msg {
     display: flex;
     align-items: flex-start;

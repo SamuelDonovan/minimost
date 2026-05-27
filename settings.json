@@ -1,4 +1,5 @@
 {
     "channels": ["general", "software", "firmware", "systems", "off-topic"],
-    "image_retention_days": 30
+    "image_retention_days": 30,
+    "max_upload_size_mb": 25
 }

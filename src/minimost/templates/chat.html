@@ -15,6 +15,7 @@
 <!-- expose current user to JS -->
 <script>
     const CURRENT_USER = "{{ session['user'] }}";
+    const MAX_UPLOAD_MB = {{ max_upload_mb }};
 </script>
 
 <button id="sidebar-backdrop" aria-label="Close sidebar" onclick="closeSidebar()"></button>
@@ -133,7 +134,6 @@
                 type="file"
                 id="fileInput"
                 multiple
-                accept="image/*"
                 hidden
             >
 
@@ -555,8 +555,9 @@ msgBox.addEventListener("paste", e => {
     const files = [];
 
     for (const item of items) {
-        if (item.type.startsWith("image/")) {
-            files.push(item.getAsFile());
+        if (item.kind === "file") {
+            const f = item.getAsFile();
+            if (f) files.push(f);
         }
     }
 
@@ -613,15 +614,15 @@ let notifMuted = localStorage.getItem('notifMuted') === 'true';
 // Preview Renderer
 function addFiles(files) {
     for (const file of files) {
-        if (!file.type.startsWith("image/")) continue;
+        if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+            alert(`"${file.name}" exceeds the ${MAX_UPLOAD_MB} MB upload limit.`);
+            continue;
+        }
 
         pendingFiles.push(file);
 
         const div = document.createElement("div");
         div.className = "preview-img";
-
-        const img = document.createElement("img");
-        img.src = URL.createObjectURL(file);
 
         const btn = document.createElement("button");
         btn.textContent = "×";
@@ -631,10 +632,46 @@ function addFiles(files) {
             div.remove();
         };
 
-        div.appendChild(img);
+        if (file.type.startsWith("image/")) {
+            const img = document.createElement("img");
+            img.src = URL.createObjectURL(file);
+            div.appendChild(img);
+        } else {
+            const label = document.createElement("span");
+            label.className = "file-preview-name";
+            label.textContent = file.name;
+            div.appendChild(label);
+        }
+
         div.appendChild(btn);
         preview.appendChild(div);
     }
+}
+
+// File-deleted detection
+const _fileExistsCache = new Map();
+
+function _markFileDeleted(linkEl) {
+    const span = document.createElement("span");
+    span.className = "file-deleted";
+    span.textContent = "File deleted";
+    linkEl.replaceWith(span);
+}
+
+function _checkDeletedFiles(msgEl) {
+    msgEl.querySelectorAll("a.file-download[data-fn]").forEach(link => {
+        const fn = link.dataset.fn;
+        if (_fileExistsCache.has(fn)) {
+            if (!_fileExistsCache.get(fn)) _markFileDeleted(link);
+            return;
+        }
+        fetch(`/files/${fn}`, { method: "HEAD" })
+            .then(r => {
+                _fileExistsCache.set(fn, r.ok);
+                if (!r.ok) _markFileDeleted(link);
+            })
+            .catch(() => {});
+    });
 }
 
 // User color
@@ -1324,10 +1361,14 @@ function _buildMsgHtml(m, time, fullTime, color) {
     }
 
     if (m.filename) {
+        const imageExts = /\.(png|jpg|jpeg|gif|webp)$/i;
         const files = m.filename.split(",");
-        for (const f of files) {
-            if (f.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
-                bodyHtml += `<a href="/files/${f}" target="_blank"><img src="/files/${f}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='static/retention.png';"></a>`;
+        for (const fn of files) {
+            if (imageExts.test(fn)) {
+                bodyHtml += `<a href="/files/${fn}" target="_blank"><img src="/files/${fn}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='static/retention.png';"></a>`;
+            } else {
+                const displayName = (fn.length > 33 && fn[32] === "_") ? fn.slice(33) : fn;
+                bodyHtml += `<a href="/files/${fn}" class="file-download" data-fn="${fn}" download="${displayName}"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4v-2h14v2H5z"/></svg> ${displayName}</a>`;
             }
         }
     }
@@ -1466,6 +1507,7 @@ function fetchMessages() {
                     existing.innerHTML = html;
                     _injectMsgAvatar(existing, m.sender);
                     attachPreview(existing);
+                    _checkDeletedFiles(existing);
                 } else {
                     const d = document.createElement("div");
                     d.className = "msg";
@@ -1474,6 +1516,7 @@ function fetchMessages() {
                     _injectMsgAvatar(d, m.sender);
                     chat.appendChild(d);
                     attachPreview(d);
+                    _checkDeletedFiles(d);
                     appended = true;
                     if (m.sender !== CURRENT_USER) playNewMsgSound = true;
                 }
