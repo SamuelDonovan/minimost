@@ -1244,9 +1244,11 @@ function _ensureDateDivider(chat, dateKey, msgDate) {
     const divider = document.createElement("div");
     divider.className = "date-divider";
     divider.id = dividerId;
-    divider.textContent = msgDate.toLocaleDateString(undefined, {
+    const dividerLabel = document.createElement("span");
+    dividerLabel.textContent = msgDate.toLocaleDateString(undefined, {
         weekday: "long", year: "numeric", month: "long", day: "numeric"
     });
+    divider.appendChild(dividerLabel);
     chat.appendChild(divider);
     return true;
 }

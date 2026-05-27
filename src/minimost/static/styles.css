@@ -322,15 +322,22 @@ body {
     opacity: 1;
 }
 .date-divider {
-    text-align: center;
-    margin: 12px 0;
-    color: #aaa;
-    font-size: 0.85em;
-    border-bottom: 1px solid #333;
-    line-height: 0.1em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+    color: #666;
+    font-size: 0.78em;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
-.date-divider::before {
+.date-divider::before,
+.date-divider::after {
     content: "";
+    flex: 1;
+    height: 1px;
+    background: #333;
 }
 .time {
     color: #888;
