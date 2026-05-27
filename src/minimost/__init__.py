@@ -94,6 +94,18 @@ def _max_upload_size_mb() -> int:
     return 25
 
 
+def _max_avatar_size_mb() -> int:
+    """Return the configured max avatar size in MB (default 5)."""
+    import json
+
+    with suppress(Exception):
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("max_avatar_size_mb")
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value)
+    return 5
+
+
 def create_app():
     """Create and configure the MiniMost Flask application.
 
@@ -138,6 +150,7 @@ def create_app():
     app.secret_key = key_file.read_text().strip()
 
     _upload_mb = _max_upload_size_mb()
+    _avatar_mb = _max_avatar_size_mb()
     app.config["MAX_CONTENT_LENGTH"] = _upload_mb * 1024 * 1024
 
     def _csrf_token() -> str:
@@ -167,7 +180,11 @@ def create_app():
     @app.context_processor
     def inject_globals():
         """Inject global template variables."""
-        return {"app_version": _APP_VERSION, "max_upload_mb": _upload_mb}
+        return {
+            "app_version": _APP_VERSION,
+            "max_upload_mb": _upload_mb,
+            "max_avatar_mb": _avatar_mb,
+        }
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(calls_bp)

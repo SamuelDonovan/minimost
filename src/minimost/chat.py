@@ -93,6 +93,18 @@ def _max_upload_size_bytes() -> int:
     return 25 * 1024 * 1024
 
 
+def _max_avatar_size_bytes() -> int:
+    """Return the configured max avatar size in bytes (default 5 MiB)."""
+    try:
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("max_avatar_size_mb")
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value * 1024 * 1024)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return 5 * 1024 * 1024
+
+
 _WAL = "PRAGMA journal_mode=WAL"
 _SQL_AVATAR = "SELECT avatar_file FROM user_settings WHERE username = ?"
 _MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
@@ -673,6 +685,14 @@ def upload_avatar():
     f = request.files.get("avatar")
     if not f or not f.filename:
         return "no file", 400
+
+    f.stream.seek(0, 2)
+    size = f.stream.tell()
+    f.stream.seek(0)
+    max_bytes = _max_avatar_size_bytes()
+    if size > max_bytes:
+        mb = max_bytes // (1024 * 1024)
+        return f"file too large (max {mb} MB)", 413
 
     filename = f"{uuid.uuid4().hex}.jpg"
     f.save(AVATAR_DIR / filename)

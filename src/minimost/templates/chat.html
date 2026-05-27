@@ -16,6 +16,7 @@
 <script>
     const CURRENT_USER = "{{ session['user'] }}";
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
+    const MAX_AVATAR_MB = {{ max_avatar_mb }};
 </script>
 
 <button id="sidebar-backdrop" aria-label="Close sidebar" onclick="closeSidebar()"></button>
@@ -1948,6 +1949,11 @@ document.getElementById("settings-avatar-btn").addEventListener("click", () => {
 document.getElementById("settings-avatar-file").addEventListener("change", e => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > MAX_AVATAR_MB * 1024 * 1024) {
+        alert(`Avatar image must be under ${MAX_AVATAR_MB} MB.`);
+        e.target.value = "";
+        return;
+    }
     _removeAvatar = false;
     _resizeImage(file, 128, blob => {
         _pendingAvatarBlob = blob;
