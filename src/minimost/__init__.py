@@ -213,7 +213,9 @@ def _start_cleanup_scheduler(interval_hours: int = 24, days: int = 30) -> None:
                 from .clean import delete_files_older_than
 
                 delete_files_older_than(str(upload_dir), days=_image_retention_days())
-            except Exception:
+            except (
+                Exception
+            ):  # nosec B110 — cleanup failure must not crash the daemon thread
                 pass
             time.sleep(interval_hours * 3600)
 
