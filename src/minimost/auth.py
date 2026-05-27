@@ -285,6 +285,8 @@ def _validate_signup(username: str, password: str, confirm: str):
     """
     if not username or not password:
         return "Missing fields"
+    if username.lower() == "minimost":
+        return '"minimost" is a protected username'
     if not _USERNAME_RE.fullmatch(username):
         return "Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)"
     if len(password) < 8:

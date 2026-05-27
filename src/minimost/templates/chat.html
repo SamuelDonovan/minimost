@@ -1291,7 +1291,8 @@ function _ensureDateDivider(chat, dateKey, msgDate) {
 }
 
 function _buildMsgHtml(m, time, fullTime, color) {
-    let headerHtml = `<span class="user" style="color:${color}">${m.sender}</span>`;
+    const displayName = m.sender === "system" ? "MiniMost" : m.sender;
+    let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}">${displayName}</span>`;
     headerHtml += `<span class="time" title="${fullTime}">${time}</span>`;
 
     let actionsHtml = "";
@@ -1343,9 +1344,24 @@ function _buildMsgHtml(m, time, fullTime, color) {
 function _injectMsgAvatar(msgEl, sender) {
     const slot = msgEl.querySelector(".msg-avatar-slot");
     if (!slot) return;
-    const wrap = makeAvatarWrap(sender, 32);
-    wrap.onmouseenter = () => _showDmHoverCard(wrap, sender);
-    wrap.onmouseleave = _hideDmHoverCard;
+    let wrap;
+    if (sender === "system") {
+        wrap = document.createElement("div");
+        wrap.className = "avatar-wrap";
+        wrap.style.cssText = "width:32px;height:32px;flex-shrink:0";
+        const inner = document.createElement("div");
+        inner.className = "avatar";
+        const img = document.createElement("img");
+        img.className = "avatar-img";
+        img.src = "/static/minimost-icon-32.svg";
+        img.alt = "MiniMost";
+        inner.appendChild(img);
+        wrap.appendChild(inner);
+    } else {
+        wrap = makeAvatarWrap(sender, 32);
+        wrap.onmouseenter = () => _showDmHoverCard(wrap, sender);
+        wrap.onmouseleave = _hideDmHoverCard;
+    }
     slot.replaceWith(wrap);
 }
 
@@ -1389,9 +1405,39 @@ function fetchMessages() {
                 if (m.content_type === "system") {
                     if (!existing) {
                         const d = document.createElement("div");
-                        d.className = "system-msg";
+                        d.className = "msg system-msg";
                         d.id = msgId;
-                        d.textContent = m.content;
+
+                        const avatarWrap = document.createElement("div");
+                        avatarWrap.className = "avatar-wrap";
+                        avatarWrap.style.cssText = "width:32px;height:32px;flex-shrink:0";
+                        const avatarInner = document.createElement("div");
+                        avatarInner.className = "avatar";
+                        const avatarImg = document.createElement("img");
+                        avatarImg.className = "avatar-img";
+                        avatarImg.src = "/static/minimost-icon-32.svg";
+                        avatarImg.alt = "MiniMost";
+                        avatarInner.appendChild(avatarImg);
+                        avatarWrap.appendChild(avatarInner);
+
+                        const contentCol = document.createElement("div");
+                        contentCol.className = "msg-content-col";
+
+                        const header = document.createElement("div");
+                        header.className = "msg-header";
+                        const nameSpan = document.createElement("span");
+                        nameSpan.className = "user system-msg-name";
+                        nameSpan.textContent = "MiniMost";
+                        header.appendChild(nameSpan);
+
+                        const body = document.createElement("div");
+                        body.className = "msg-body";
+                        body.textContent = m.content;
+
+                        contentCol.appendChild(header);
+                        contentCol.appendChild(body);
+                        d.appendChild(avatarWrap);
+                        d.appendChild(contentCol);
                         chat.appendChild(d);
                         appended = true;
                     }
@@ -1486,7 +1532,6 @@ function send() {
             preview.innerHTML = "";
             cancelReply();
             fetchMessages();
-            loadSidebar();
         }
     });
 }

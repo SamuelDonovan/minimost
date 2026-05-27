@@ -583,13 +583,13 @@ body {
     font-size: 13px;
     color: #ddd;
 }
-.system-msg {
-    text-align: center;
-    color: #777;
-    font-size: 12px;
+.system-msg-name {
+    color: #7090b0 !important;
+}
+.system-msg .msg-body {
+    color: #888;
     font-style: italic;
-    padding: 6px 0;
-    pointer-events: none;
+    font-size: 0.9em;
 }
 
 .unread-badge {
