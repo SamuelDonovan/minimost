@@ -60,6 +60,12 @@
         </div>
 
         <div id="topbar-actions">
+            <button id="topbar-share-btn" class="icon-btn" style="display:none" title="Share screen" onclick="toggleStandaloneScreenShare()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4c0 .667.083 1.167.25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75c.167-.333.25-.833.25-1.5H2s-2 0-2-2zm1.398-.855A1.002 1.002 0 0 0 1 4v6c0 .255.098.292.412.637C1.574 10.89 1.851 11 2 11h12c.149 0 .426-.11.588-.363C14.902 10.292 15 10.255 15 10V4c0-.255-.098-.292-.412-.637C14.426 3.11 14.149 3 14 3H2c-.149 0-.426.11-.588.363z"/>
+                </svg>
+                <span class="icon-text">Share</span>
+            </button>
             <button id="call-btn" class="icon-btn" style="display:none" title="Start call" onclick="startCall()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
@@ -90,6 +96,15 @@
                 <button class="icon-btn" onclick="leaveChannel()" title="Leave channel">Leave</button>
             </div>
         </div>
+    </div>
+
+    <!-- Shown when a channel member is sharing their screen -->
+    <div id="screenshare-banner" style="display:none;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0;">
+            <path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4c0 .667.083 1.167.25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75c.167-.333.25-.833.25-1.5H2s-2 0-2-2zm1.398-.855A1.002 1.002 0 0 0 1 4v6c0 .255.098.292.412.637C1.574 10.89 1.851 11 2 11h12c.149 0 .426-.11.588-.363C14.902 10.292 15 10.255 15 10V4c0-.255-.098-.292-.412-.637C14.426 3.11 14.149 3 14 3H2c-.149 0-.426.11-.588.363z"/>
+        </svg>
+        <span id="screenshare-banner-text"></span>
+        <button id="screenshare-banner-view-btn" class="ss-banner-btn" onclick="openShareViewer()">View</button>
     </div>
 
     <div id="chat"></div>
@@ -345,6 +360,18 @@
             </svg>
         </button>
     </div>
+</div>
+
+<!-- Standalone Screen Share Viewer Overlay -->
+<div id="screenshare-viewer" style="display:none;">
+    <div id="screenshare-viewer-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4c0 .667.083 1.167.25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75c.167-.333.25-.833.25-1.5H2s-2 0-2-2zm1.398-.855A1.002 1.002 0 0 0 1 4v6c0 .255.098.292.412.637C1.574 10.89 1.851 11 2 11h12c.149 0 .426-.11.588-.363C14.902 10.292 15 10.255 15 10V4c0-.255-.098-.292-.412-.637C14.426 3.11 14.149 3 14 3H2c-.149 0-.426.11-.588.363z"/>
+        </svg>
+        <span id="screenshare-viewer-label"></span>
+        <button class="ss-viewer-close-btn" onclick="closeShareViewer()" title="Stop viewing">&#x2715;</button>
+    </div>
+    <video id="screenshare-viewer-video" autoplay playsinline></video>
 </div>
 
 <!-- Active Call Panel -->
@@ -1158,6 +1185,7 @@ function switchChannel(c) {
 
     fetch(`/mark_read/${channel}`, { method: "POST" });
 
+    _cleanupStandaloneShare();
     updateCallButton();
     fetchMessages();
     fetchReadReceipts();
@@ -3531,6 +3559,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(fetchReadReceipts, 3000);
     setInterval(refreshTotalUnreadCount, 5000);
     setInterval(pollIncomingCalls, 1000);
+    setInterval(refreshScreenShares, 1000);
     setInterval(() => {
         if (
             document.visibilityState === "visible" &&
@@ -4016,10 +4045,32 @@ let screenSourceBuffer   = null;
 let screenPendingChunks  = [];
 let screenMediaAbortCtrl = null;
 
+// ── Standalone screen share ────────────────────────────────────────────────────
+// Sharer side
+let standaloneShareId     = null;
+let standaloneShareStream = null;
+let standaloneShareRec    = null;
+let standaloneFirstChunk  = true;
+let standaloneShareChain  = Promise.resolve();
+// Viewer side
+let viewShareId           = null;
+let viewShareDownId       = null;
+let viewShareLastSeq      = -1;
+let viewShareInitReceived = false;
+let viewShareMediaSource  = null;
+let viewShareSourceBuffer = null;
+let viewSharePending      = [];
+let viewShareAbortCtrl    = null;
+// Shared: the most recently polled active share (other than ours) for this channel
+let _currentRemoteShare   = null;
+
 function updateCallButton() {
     const btn = document.getElementById("call-btn");
     if (!btn) return;
-    btn.style.display = channel.startsWith("dm:") ? "inline-flex" : "none";
+    const eligible = channel.startsWith("dm:") || channel.startsWith("private:");
+    btn.style.display = eligible ? "inline-flex" : "none";
+    const sbtn = document.getElementById("topbar-share-btn");
+    if (sbtn) sbtn.style.display = eligible ? "inline-flex" : "none";
 }
 
 // ── Incoming call UI ──────────────────────────────────────────────────────────
@@ -4826,6 +4877,303 @@ async function toggleScreenShare() {
         btn.classList.remove("muted");
         btn.title = "Stop sharing screen";
     }
+}
+
+// ── Standalone screen share ────────────────────────────────────────────────────
+
+async function toggleStandaloneScreenShare() {
+    if (standaloneShareId) {
+        await _stopStandaloneShare();
+    } else {
+        // getDisplayMedia must be called directly in the user-gesture handler
+        if (!navigator.mediaDevices?.getDisplayMedia) {
+            alert("Your browser does not support screen sharing.");
+            return;
+        }
+        let displayStream;
+        try {
+            displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        } catch (e) {
+            console.warn("Screen share cancelled:", e);
+            return;
+        }
+        if (!displayStream) return;
+        await _startStandaloneShare(displayStream);
+    }
+}
+
+async function _startStandaloneShare(displayStream) {
+    const videoTracks = displayStream.getVideoTracks();
+    if (videoTracks.length === 0) {
+        displayStream.getTracks().forEach(t => t.stop());
+        return;
+    }
+
+    // Register share on server first
+    const resp = await fetch("/screenshare/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel }),
+    }).catch(() => null);
+    if (!resp || !resp.ok) {
+        displayStream.getTracks().forEach(t => t.stop());
+        return;
+    }
+    const { share_id } = await resp.json();
+    standaloneShareId     = share_id;
+    standaloneShareStream = displayStream;
+    standaloneFirstChunk  = true;
+    standaloneShareChain  = Promise.resolve();
+
+    const videoMime = _pickVideoMimeType();
+    try {
+        standaloneShareRec = new MediaRecorder(displayStream, videoMime ? { mimeType: videoMime } : {});
+    } catch {
+        try { standaloneShareRec = new MediaRecorder(displayStream); } catch (e) {
+            console.error("MediaRecorder unavailable for standalone share:", e);
+            displayStream.getTracks().forEach(t => t.stop());
+            standaloneShareId = null;
+            standaloneShareStream = null;
+            return;
+        }
+    }
+
+    standaloneShareRec.ondataavailable = (evt) => {
+        if (!evt.data || evt.data.size === 0 || !standaloneShareId) return;
+        const id = standaloneShareId;
+        const isFirst = standaloneFirstChunk;
+        if (isFirst) standaloneFirstChunk = false;
+        evt.data.arrayBuffer().then(buf => {
+            const headers = { "Content-Type": "application/octet-stream" };
+            if (isFirst) {
+                headers["X-Init"] = "1";
+                headers["X-Mime"] = standaloneShareRec?.mimeType || "video/webm";
+                // Init segment must complete before data chunks so the receiver
+                // can initialise its SourceBuffer; subsequent chunks are fire-and-forget.
+                standaloneShareChain = standaloneShareChain.then(() =>
+                    fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
+                        .catch(() => {})
+                );
+            } else {
+                fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
+                    .catch(() => {});
+            }
+        });
+    };
+
+    // Handle user clicking the browser's native "Stop sharing" button
+    videoTracks[0].addEventListener("ended", () => {
+        if (standaloneShareId) _stopStandaloneShare();
+    });
+
+    standaloneShareRec.start(500);
+
+    const sbtn = document.getElementById("topbar-share-btn");
+    if (sbtn) { sbtn.classList.add("active"); sbtn.title = "Stop sharing"; }
+}
+
+async function _stopStandaloneShare() {
+    const id = standaloneShareId;
+    standaloneShareId = null;
+    if (standaloneShareRec && standaloneShareRec.state !== "inactive") {
+        standaloneShareRec.stop();
+    }
+    standaloneShareRec    = null;
+    standaloneFirstChunk  = true;
+    if (standaloneShareStream) {
+        standaloneShareStream.getTracks().forEach(t => t.stop());
+        standaloneShareStream = null;
+    }
+    if (id) await fetch(`/screenshare/${id}/stop`, { method: "POST" }).catch(() => {});
+    const sbtn = document.getElementById("topbar-share-btn");
+    if (sbtn) { sbtn.classList.remove("active"); sbtn.title = "Share screen"; }
+}
+
+// Polled every 1 s to detect when someone else starts/stops sharing.
+async function refreshScreenShares() {
+    if (!channel || (!channel.startsWith("dm:") && !channel.startsWith("private:"))) return;
+    let shares;
+    try {
+        const resp = await fetch(`/screenshare/active?channel=${encodeURIComponent(channel)}`);
+        if (!resp.ok) return;
+        shares = await resp.json();
+    } catch { return; }
+
+    const others = shares.filter(s => s.sharer !== CURRENT_USER);
+
+    if (others.length === 0) {
+        // No one else is sharing — hide banner and close viewer if open
+        _currentRemoteShare = null;
+        document.getElementById("screenshare-banner").style.display = "none";
+        if (viewShareId) closeShareViewer();
+        return;
+    }
+
+    const share = others[0];
+    _currentRemoteShare = share;
+
+    // Update banner text
+    const banner = document.getElementById("screenshare-banner");
+    document.getElementById("screenshare-banner-text").textContent =
+        `${share.sharer} is sharing their screen`;
+
+    if (viewShareId === share.share_id) {
+        // Already viewing this share — keep viewer open, hide banner
+        banner.style.display = "none";
+        return;
+    }
+
+    if (viewShareId && viewShareId !== share.share_id) {
+        // A different share started while we were viewing another — switch
+        closeShareViewer();
+    }
+
+    // Show the banner (not auto-opening the viewer to avoid surprise)
+    document.getElementById("screenshare-banner-view-btn").style.display = "inline-flex";
+    banner.style.display = "flex";
+}
+
+function openShareViewer() {
+    const share = _currentRemoteShare;
+    if (!share) return;
+    viewShareId           = share.share_id;
+    viewShareLastSeq      = -1;
+    viewShareInitReceived = false;
+    viewSharePending      = [];
+
+    document.getElementById("screenshare-viewer-label").textContent =
+        `${share.sharer} is sharing their screen`;
+    document.getElementById("screenshare-viewer").style.display = "flex";
+    document.getElementById("screenshare-banner").style.display = "none";
+
+    _initShareMediaSource();
+    viewShareDownId = setInterval(_pollShareViewerMedia, 500);
+}
+
+function closeShareViewer() {
+    if (viewShareDownId) { clearInterval(viewShareDownId); viewShareDownId = null; }
+    if (viewShareAbortCtrl) { viewShareAbortCtrl.abort(); viewShareAbortCtrl = null; }
+    if (viewShareMediaSource && viewShareMediaSource.readyState === "open") {
+        try { viewShareMediaSource.endOfStream(); } catch { /* ignore */ }
+    }
+    viewShareId           = null;
+    viewShareMediaSource  = null;
+    viewShareSourceBuffer = null;
+    viewSharePending      = [];
+    viewShareInitReceived = false;
+    const el = document.getElementById("screenshare-viewer-video");
+    if (el.src && el.src.startsWith("blob:")) URL.revokeObjectURL(el.src);
+    el.removeAttribute("src");
+    el.load();
+    document.getElementById("screenshare-viewer").style.display = "none";
+    // Show banner again if share is still active
+    if (_currentRemoteShare) {
+        document.getElementById("screenshare-banner").style.display = "flex";
+    }
+}
+
+function _initShareMediaSource() {
+    const videoEl = document.getElementById("screenshare-viewer-video");
+    const ctrl = new AbortController();
+    viewShareAbortCtrl = ctrl;
+    const ms = new MediaSource();
+    viewShareMediaSource = ms;
+    if (videoEl.src?.startsWith("blob:")) URL.revokeObjectURL(videoEl.src);
+    videoEl.src = URL.createObjectURL(ms);
+    // SourceBuffer is created lazily on the first poll so we can use the exact
+    // MIME type reported by the sender's MediaRecorder (avoids codec mismatches).
+}
+
+// Called once, after the first poll response supplies the real MIME type.
+function _createShareSourceBuffer(mimeType) {
+    const ms = viewShareMediaSource;
+    if (!ms || ms.readyState !== "open") return false;
+    const videoEl = document.getElementById("screenshare-viewer-video");
+    const signal  = viewShareAbortCtrl?.signal;
+    let sb;
+    try {
+        sb = ms.addSourceBuffer(mimeType);
+    } catch {
+        try { sb = ms.addSourceBuffer("video/webm"); } catch { return false; }
+    }
+    sb.mode = "segments";
+    viewShareSourceBuffer = sb;
+
+    sb.addEventListener("updateend", () => {
+        // ① Seek to live edge BEFORE enqueueing more data.
+        //    If we called _appendNextShareChunk() first it would set
+        //    sb.updating = true and the seek check would never execute.
+        if (sb.buffered.length > 0) {
+            const end = sb.buffered.end(0);
+            if (end - videoEl.currentTime > 0.5) videoEl.currentTime = end - 0.1;
+            const head   = sb.buffered.start(0);
+            const cutoff = videoEl.currentTime - 1.0;
+            if (cutoff > head + 0.05) {
+                // ② remove() triggers another updateend which then appends.
+                try { sb.remove(head, cutoff); } catch { /* ignore */ }
+                return;
+            }
+        }
+        _appendNextShareChunk();
+        videoEl.play().catch(() => {});
+    }, signal ? { signal } : {});
+
+    return true;
+}
+
+function _appendNextShareChunk() {
+    const sb = viewShareSourceBuffer;
+    if (!sb || sb.updating) return;
+    if (viewSharePending.length === 0) return;
+    if (viewShareMediaSource?.readyState !== "open") return;
+    // ③ Peek before shifting — if appendBuffer throws the chunk stays in the queue.
+    const chunk = viewSharePending[0];
+    try {
+        sb.appendBuffer(chunk);
+        viewSharePending.shift();
+    } catch (e) {
+        if (e.name === "QuotaExceededError" && sb.buffered.length > 0) {
+            const start = sb.buffered.start(0);
+            const end   = sb.buffered.end(0);
+            if (end - start > 2) {
+                try { sb.remove(start, end - 1); } catch { /* ignore */ }
+            }
+        }
+    }
+}
+
+async function _pollShareViewerMedia() {
+    if (!viewShareId) return;
+    let payload;
+    try {
+        const resp = await fetch(`/screenshare/${viewShareId}/media?after=${viewShareLastSeq}`);
+        if (!resp.ok) return;
+        payload = await resp.json();
+    } catch { return; }
+
+    if (payload.active === false) { closeShareViewer(); return; }
+
+    if (payload.init && !viewShareInitReceived) {
+        // MediaSource may not be open yet on the very first poll — retry next tick.
+        if (viewShareMediaSource?.readyState !== "open") return;
+        const mimeType = payload.mime_type || "video/webm";
+        if (!_createShareSourceBuffer(mimeType)) return;
+        viewShareInitReceived = true;
+        viewSharePending.unshift(_b64ToBuffer(payload.init));
+    }
+    for (const chunk of payload.chunks) {
+        viewShareLastSeq = chunk.seq;
+        viewSharePending.push(_b64ToBuffer(chunk.data));
+    }
+    _appendNextShareChunk();
+}
+
+// Clean up standalone share state when switching channels
+function _cleanupStandaloneShare() {
+    if (standaloneShareId) _stopStandaloneShare();
+    if (viewShareId) closeShareViewer();
+    _currentRemoteShare = null;
+    document.getElementById("screenshare-banner").style.display = "none";
 }
 
 // ── Call actions ──────────────────────────────────────────────────────────────

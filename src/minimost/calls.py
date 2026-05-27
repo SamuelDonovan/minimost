@@ -58,6 +58,24 @@ def _db():
     return db
 
 
+def reset_all_screenshares_ended() -> None:
+    """Mark every active standalone screen share as ``'ended'`` and purge media.
+
+    Called once at application startup so stale share records from a previous
+    server run do not block new shares or leave orphaned media in the database.
+    """
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    db.execute(_WAL)
+    now = time.time()
+    db.execute(
+        "UPDATE screenshares SET state = 'ended', ended_ts = ? WHERE state = 'active'",
+        (now,),
+    )
+    db.execute("DELETE FROM share_media")
+    db.commit()
+    db.close()
+
+
 def reset_all_calls_ended() -> None:
     """Mark every in-progress call as ``'ended'`` and purge orphaned media.
 
@@ -715,6 +733,259 @@ def get_media(call_id):
         {
             "mime_type": mime_type,
             "init": init_b64,
+            "chunks": [
+                {"seq": r["id"], "data": base64.b64encode(bytes(r["data"])).decode()}
+                for r in chunk_rows
+            ],
+        }
+    )
+
+
+# ── Standalone screen share ────────────────────────────────────────────────────
+
+
+@calls_bp.route("/screenshare/start", methods=["POST"])
+@auth.login_required
+def start_screenshare():
+    """Start a standalone screen share in a channel.
+
+    Route: ``POST /screenshare/start``
+
+    Creates a ``screenshares`` record in ``'active'`` state.  Unlike calls,
+    no acceptance by viewers is required — any channel member can watch
+    immediately by polling ``GET /screenshare/active``.
+
+    Any previous active share by the same user in the same channel is
+    automatically ended.
+
+    Request body (JSON):
+        **channel** (str): The DM or private channel to share into.
+
+    :returns: JSON with ``share_id`` (str).
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+    channel = data.get("channel", "").strip()
+    if not channel:
+        return jsonify({"error": "channel required"}), 400
+    participants = _participants_for_channel(channel)
+    if participants and user not in participants:
+        return jsonify({"error": "access denied"}), 403
+    now = time.time()
+    share_id = str(uuid.uuid4())
+    db = _db()
+    try:
+        db.execute(
+            "UPDATE screenshares SET state = 'ended', ended_ts = ?"
+            " WHERE channel = ? AND sharer = ? AND state = 'active'",
+            (now, channel, user),
+        )
+        db.execute(
+            "INSERT INTO screenshares (share_id, channel, sharer, state, started_ts)"
+            " VALUES (?, ?, ?, 'active', ?)",
+            (share_id, channel, user, now),
+        )
+        db.commit()
+    finally:
+        db.close()
+    return jsonify({"share_id": share_id})
+
+
+@calls_bp.route("/screenshare/<share_id>/stop", methods=["POST"])
+@auth.login_required
+def stop_screenshare(share_id):
+    """End a standalone screen share.
+
+    Route: ``POST /screenshare/<share_id>/stop``
+
+    Marks the share as ``'ended'`` and purges its buffered media so
+    ``share_media`` does not grow unboundedly.  Only the sharer may call
+    this endpoint.
+
+    :param share_id: UUID of the screen share.
+    :type share_id: str
+    :returns: JSON with ``status``.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    now = time.time()
+    db = _db()
+    try:
+        share = db.execute(
+            "SELECT sharer FROM screenshares WHERE share_id = ?", (share_id,)
+        ).fetchone()
+        if not share:
+            return jsonify({"error": "share not found"}), 404
+        if share["sharer"] != user:
+            return jsonify({"error": "access denied"}), 403
+        db.execute(
+            "UPDATE screenshares SET state = 'ended', ended_ts = ? WHERE share_id = ?",
+            (now, share_id),
+        )
+        db.execute("DELETE FROM share_media WHERE share_id = ?", (share_id,))
+        db.commit()
+    finally:
+        db.close()
+    return jsonify({"status": "ok"})
+
+
+@calls_bp.route("/screenshare/active", methods=["GET"])
+@auth.login_required
+def active_screenshares():
+    """Return all active screen shares in a channel.
+
+    Route: ``GET /screenshare/active?channel=<channel>``
+
+    Polled every second by the client to detect when a channel member starts
+    or stops sharing their screen.  Returns shares for all users, including
+    the caller's own share if they are currently sharing.
+
+    Query parameters:
+        **channel** (str): The channel to query.  Required.
+
+    :returns: JSON array of share objects with ``share_id``, ``channel``,
+        ``sharer``, and ``started_ts``.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    channel = request.args.get("channel", "").strip()
+    if not channel:
+        return jsonify({"error": "channel required"}), 400
+    participants = _participants_for_channel(channel)
+    if participants and user not in participants:
+        return jsonify({"error": "access denied"}), 403
+    db = _db()
+    rows = db.execute(
+        "SELECT share_id, channel, sharer, started_ts"
+        " FROM screenshares WHERE channel = ? AND state = 'active'",
+        (channel,),
+    ).fetchall()
+    db.close()
+    return jsonify(
+        [
+            {
+                "share_id": r["share_id"],
+                "channel": r["channel"],
+                "sharer": r["sharer"],
+                "started_ts": r["started_ts"],
+            }
+            for r in rows
+        ]
+    )
+
+
+@calls_bp.route("/screenshare/<share_id>/media", methods=["POST"])
+@auth.login_required
+def upload_share_media(share_id):
+    """Receive a binary media chunk from the screen sharer.
+
+    Route: ``POST /screenshare/<share_id>/media``
+
+    Identical semantics to ``POST /calls/<id>/media`` but for standalone
+    screen shares.  The first chunk must be sent with ``X-Init: 1`` and
+    ``X-Mime: <mimeType>`` so viewers can initialise their ``SourceBuffer``.
+
+    :param share_id: UUID of the screen share.
+    :type share_id: str
+    :returns: JSON with ``status`` and ``seq``.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    is_init = request.headers.get("X-Init", "0") == "1"
+    mime_type = request.headers.get("X-Mime", "video/webm")
+    data = request.get_data()
+    if not data:
+        return jsonify({"error": "no data"}), 400
+    db = _db()
+    try:
+        share = db.execute(
+            "SELECT sharer, state FROM screenshares WHERE share_id = ?", (share_id,)
+        ).fetchone()
+        if not share or share["sharer"] != user:
+            return jsonify({"error": "not found"}), 404
+        if share["state"] != "active":
+            return jsonify({"error": "share is not active"}), 409
+        now = time.time()
+        if is_init:
+            db.execute(
+                "DELETE FROM share_media WHERE share_id = ? AND is_init = 1",
+                (share_id,),
+            )
+            db.execute(
+                "INSERT INTO share_media (share_id, is_init, mime_type, data, ts)"
+                " VALUES (?, 1, ?, ?, ?)",
+                (share_id, mime_type, data, now),
+            )
+            db.commit()
+            return jsonify({"status": "ok", "seq": -1})
+        cursor = db.execute(
+            "INSERT INTO share_media (share_id, is_init, data, ts) VALUES (?, 0, ?, ?)",
+            (share_id, data, now),
+        )
+        seq = cursor.lastrowid
+        db.commit()
+    finally:
+        db.close()
+    return jsonify({"status": "ok", "seq": seq})
+
+
+@calls_bp.route("/screenshare/<share_id>/media", methods=["GET"])
+@auth.login_required
+def get_share_media(share_id):
+    """Return buffered screen-share media chunks.
+
+    Route: ``GET /screenshare/<share_id>/media?after=<seq>``
+
+    Polled by viewers every 500 ms.  Always returns the most-recent init
+    segment so late-joining viewers can bootstrap their ``SourceBuffer``,
+    plus any data chunks whose ``id`` is greater than ``after``.
+
+    Query parameters:
+        **after** (int, optional): ``id`` of the last chunk already processed.
+        Defaults to ``-1`` (return all buffered chunks).
+
+    :param share_id: UUID of the screen share.
+    :type share_id: str
+    :returns: JSON with ``mime_type``, ``init`` (base64 or null), ``chunks``,
+        and ``active`` (bool).
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    try:
+        after_seq = int(request.args.get("after", -1))
+    except ValueError:
+        after_seq = -1
+    db = _db()
+    try:
+        share = db.execute(
+            "SELECT channel, sharer, state FROM screenshares WHERE share_id = ?",
+            (share_id,),
+        ).fetchone()
+        if not share:
+            return jsonify({"error": "not found"}), 404
+        participants = _participants_for_channel(share["channel"])
+        if participants and user not in participants:
+            return jsonify({"error": "access denied"}), 403
+        init_row = db.execute(
+            "SELECT mime_type, data FROM share_media"
+            " WHERE share_id = ? AND is_init = 1 ORDER BY id DESC LIMIT 1",
+            (share_id,),
+        ).fetchone()
+        chunk_rows = db.execute(
+            "SELECT id, data FROM share_media"
+            " WHERE share_id = ? AND is_init = 0 AND id > ? ORDER BY id ASC LIMIT 20",
+            (share_id, after_seq),
+        ).fetchall()
+    finally:
+        db.close()
+    init_b64 = base64.b64encode(bytes(init_row["data"])).decode() if init_row else None
+    mime_type = init_row["mime_type"] if init_row else None
+    return jsonify(
+        {
+            "mime_type": mime_type,
+            "init": init_b64,
+            "active": share["state"] == "active",
             "chunks": [
                 {"seq": r["id"], "data": base64.b64encode(bytes(r["data"])).decode()}
                 for r in chunk_rows

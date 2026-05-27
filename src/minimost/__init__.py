@@ -163,5 +163,6 @@ def create_app():
 
     presence.reset_all_offline()
     calls_mod.reset_all_calls_ended()
+    calls_mod.reset_all_screenshares_ended()
 
     return app

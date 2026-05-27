@@ -1027,3 +1027,190 @@ def test_media_relay_roundtrip(alice_and_bob, app):
     data2 = resp2.get_json()
     assert len(data2["chunks"]) == 1
     assert base64.b64decode(data2["chunks"][0]["data"]) == b"NEW"
+
+
+# ── Standalone screen share ───────────────────────────────────────────────────
+
+
+def _make_bob_client(app, isolated_dbs):
+    """Create an authenticated client for bob (assumes bob is already registered)."""
+    import minimost.auth as auth_mod
+    import minimost.common as common_mod
+
+    _add_user = lambda db, u: None  # noqa: E731 – already registered by fixture
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess["user"] = "bob"
+    return c
+
+
+def test_screenshare_start_unauthenticated(client):
+    resp = client.post("/screenshare/start", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 302
+
+
+def test_screenshare_start_missing_channel(alice):
+    resp = alice.post("/screenshare/start", json={})
+    assert resp.status_code == 400
+
+
+def test_screenshare_start_not_participant(alice):
+    resp = alice.post("/screenshare/start", json={"channel": "dm:bob:charlie"})
+    assert resp.status_code == 403
+
+
+def test_screenshare_start_and_active(alice_and_bob):
+    resp = alice_and_bob.post("/screenshare/start", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "share_id" in data
+
+    active = alice_and_bob.get("/screenshare/active?channel=dm:alice:bob")
+    assert active.status_code == 200
+    shares = active.get_json()
+    assert len(shares) == 1
+    assert shares[0]["sharer"] == "alice"
+    assert shares[0]["share_id"] == data["share_id"]
+
+
+def test_screenshare_active_missing_channel(alice_and_bob):
+    resp = alice_and_bob.get("/screenshare/active")
+    assert resp.status_code == 400
+
+
+def test_screenshare_active_not_participant(alice_and_bob):
+    resp = alice_and_bob.get("/screenshare/active?channel=dm:bob:charlie")
+    assert resp.status_code == 403
+
+
+def test_screenshare_stop_own_share(alice_and_bob):
+    share_id = alice_and_bob.post(
+        "/screenshare/start", json={"channel": "dm:alice:bob"}
+    ).get_json()["share_id"]
+
+    resp = alice_and_bob.post(f"/screenshare/{share_id}/stop")
+    assert resp.status_code == 200
+
+    active = alice_and_bob.get("/screenshare/active?channel=dm:alice:bob").get_json()
+    assert active == []
+
+
+def test_screenshare_stop_not_found(alice_and_bob):
+    resp = alice_and_bob.post(f"/screenshare/{uuid.uuid4()}/stop")
+    assert resp.status_code == 404
+
+
+def test_screenshare_stop_other_user_denied(app, isolated_dbs, alice_and_bob):
+    share_id = alice_and_bob.post(
+        "/screenshare/start", json={"channel": "dm:alice:bob"}
+    ).get_json()["share_id"]
+
+    import minimost.auth as auth_mod
+    import minimost.common as common_mod
+
+    try:
+        auth_mod._add_user(auth_mod.AUTH_DB, "bob", "Pass1234!")
+    except Exception:
+        pass
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    resp = bob_client.post(f"/screenshare/{share_id}/stop")
+    assert resp.status_code == 403
+
+
+def test_screenshare_media_upload_and_download(app, isolated_dbs, alice_and_bob):
+    share_id = alice_and_bob.post(
+        "/screenshare/start", json={"channel": "dm:alice:bob"}
+    ).get_json()["share_id"]
+
+    # Upload init segment
+    resp = alice_and_bob.post(
+        f"/screenshare/{share_id}/media",
+        data=b"INIT",
+        content_type="application/octet-stream",
+        headers={"X-Init": "1", "X-Mime": "video/webm"},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["seq"] == -1
+
+    # Upload data chunk
+    resp2 = alice_and_bob.post(
+        f"/screenshare/{share_id}/media",
+        data=b"CHUNK1",
+        content_type="application/octet-stream",
+    )
+    assert resp2.status_code == 200
+    seq = resp2.get_json()["seq"]
+    assert seq > 0
+
+    # Bob downloads
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    dl = bob_client.get(f"/screenshare/{share_id}/media?after=-1")
+    assert dl.status_code == 200
+    payload = dl.get_json()
+    assert payload["active"] is True
+    assert base64.b64decode(payload["init"]) == b"INIT"
+    assert len(payload["chunks"]) == 1
+    assert base64.b64decode(payload["chunks"][0]["data"]) == b"CHUNK1"
+
+    # After stopping, active flag is false
+    alice_and_bob.post(f"/screenshare/{share_id}/stop")
+    dl2 = bob_client.get(f"/screenshare/{share_id}/media?after=-1")
+    assert dl2.status_code == 200
+    assert dl2.get_json()["active"] is False
+
+
+def test_screenshare_media_upload_no_data(alice_and_bob):
+    share_id = alice_and_bob.post(
+        "/screenshare/start", json={"channel": "dm:alice:bob"}
+    ).get_json()["share_id"]
+    resp = alice_and_bob.post(
+        f"/screenshare/{share_id}/media",
+        data=b"",
+        content_type="application/octet-stream",
+    )
+    assert resp.status_code == 400
+
+
+def test_screenshare_media_upload_to_ended_share(alice_and_bob):
+    share_id = alice_and_bob.post(
+        "/screenshare/start", json={"channel": "dm:alice:bob"}
+    ).get_json()["share_id"]
+    alice_and_bob.post(f"/screenshare/{share_id}/stop")
+    resp = alice_and_bob.post(
+        f"/screenshare/{share_id}/media",
+        data=b"DATA",
+        content_type="application/octet-stream",
+    )
+    assert resp.status_code == 409
+
+
+def test_screenshare_start_replaces_previous(alice_and_bob):
+    ch = "dm:alice:bob"
+    first = alice_and_bob.post("/screenshare/start", json={"channel": ch}).get_json()[
+        "share_id"
+    ]
+    second = alice_and_bob.post("/screenshare/start", json={"channel": ch}).get_json()[
+        "share_id"
+    ]
+    assert first != second
+
+    active = alice_and_bob.get(f"/screenshare/active?channel={ch}").get_json()
+    share_ids = [s["share_id"] for s in active]
+    assert second in share_ids
+    assert first not in share_ids
+
+
+def test_reset_all_screenshares_ended(alice_and_bob):
+    from minimost.calls import reset_all_screenshares_ended
+
+    alice_and_bob.post("/screenshare/start", json={"channel": "dm:alice:bob"})
+    reset_all_screenshares_ended()
+
+    active = alice_and_bob.get("/screenshare/active?channel=dm:alice:bob").get_json()
+    assert active == []
