@@ -4,18 +4,18 @@ minimost.clean
 
 Maintenance utility for purging old image uploads.
 
-MiniMost stores image attachments in the ``uploads/`` directory with no
-automatic expiry.  This module provides :func:`delete_files_older_than`,
-which is intended to be run as a scheduled cron job to prevent unbounded
-disk growth.
+MiniMost stores image attachments in the ``uploads/`` directory.
+:func:`delete_files_older_than` is called automatically by a background daemon
+thread started in :func:`minimost.create_app` — no cron job or external
+scheduler is required.  The thread runs 5 minutes after startup and repeats
+every 24 hours.  The retention period is read from ``"image_retention_days"``
+in ``settings.json`` on each run (default: 30 days).
 
-**Recommended crontab entry** (runs daily at 02:30)::
+This module can also be invoked directly for ad-hoc cleanup:
 
-    30 2 * * * /usr/bin/python3 /path/to/minimost/src/minimost/clean.py
+.. code-block:: bash
 
-When executed directly (``python -m minimost.clean`` or as the cron command
-above) the script deletes files in the ``uploads/`` directory that are older
-than 30 days.
+    python3 src/minimost/clean.py
 
 .. note::
 
@@ -92,8 +92,11 @@ def delete_files_older_than(directory: str, days: int, dry_run: bool = False):
             if dry_run:
                 print(f"[DRY RUN] Would delete: {path}")
             else:
-                path.unlink()
-                print(f"Deleted: {path}")
+                try:
+                    path.unlink()
+                    print(f"Deleted: {path}")
+                except FileNotFoundError:
+                    pass  # already removed by another process
 
 
 if __name__ == "__main__":

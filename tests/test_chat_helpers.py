@@ -115,23 +115,23 @@ def test_get_db_row_factory():
 
 
 def test_load_channels_from_file(tmp_path, monkeypatch):
-    channels_file = tmp_path / "channels.json"
-    channels_file.write_text('["alpha", "beta"]')
-    monkeypatch.setattr(chat_mod, "_CHANNELS_FILE", channels_file)
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text('{"channels": ["alpha", "beta"]}')
+    monkeypatch.setattr(chat_mod, "_SETTINGS_FILE", settings_file)
     result = chat_mod._load_channels()
     assert result == ["alpha", "beta"]
 
 
 def test_load_channels_fallback_on_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(chat_mod, "_CHANNELS_FILE", tmp_path / "no_file.json")
+    monkeypatch.setattr(chat_mod, "_SETTINGS_FILE", tmp_path / "no_file.json")
     result = chat_mod._load_channels()
     assert result == ["general"]
 
 
 def test_load_channels_fallback_on_invalid_json(tmp_path, monkeypatch):
-    bad_file = tmp_path / "channels.json"
+    bad_file = tmp_path / "settings.json"
     bad_file.write_text("not json{{{")
-    monkeypatch.setattr(chat_mod, "_CHANNELS_FILE", bad_file)
+    monkeypatch.setattr(chat_mod, "_SETTINGS_FILE", bad_file)
     result = chat_mod._load_channels()
     assert result == ["general"]
 

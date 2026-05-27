@@ -5,28 +5,37 @@ MiniMost is designed to work out-of-the-box with zero configuration. All
 settings have sensible defaults and only need to be changed to customize the
 application for your environment.
 
-channels.json
+settings.json
 -------------
 
-**Location:** ``<project_root>/channels.json``
+**Location:** ``<project_root>/settings.json``
 
-Defines the list of public channels visible to all users. Edit this file to
-add, remove, or rename channels.
+The main configuration file for MiniMost. It is a JSON object that controls
+channel definitions and upload retention. All keys are optional — missing keys
+fall back to built-in defaults.
 
 Example::
 
-    ["general", "software", "firmware", "systems", "off-topic"]
+    {
+        "channels": ["general", "software", "firmware", "systems", "off-topic"],
+        "image_retention_days": 30
+    }
 
-- Channels are displayed in the sidebar in the order listed.
-- Changes take effect on the **next server restart** — the list is loaded
-  at startup.
-- If ``channels.json`` is absent or contains invalid JSON, MiniMost falls
-  back to a single ``"general"`` channel.
-- Channel names should be short, lowercase, and contain no spaces.
+``channels``
+    List of public channel names visible to all users. Channels are displayed
+    in the sidebar in the order listed. Changes take effect on the **next server
+    restart**. If this key is absent or the file cannot be read, MiniMost falls
+    back to a single ``"general"`` channel. Channel names should be short,
+    lowercase, and contain no spaces.
+
+``image_retention_days``
+    How many days to keep image uploads before the background cleanup thread
+    removes them. Defaults to ``30``. Changes take effect at the next scheduled
+    cleanup run — no restart required. See :doc:`administration` for details.
 
 .. warning::
 
-   Removing a channel from ``channels.json`` does not delete its message
+   Removing a channel from ``settings.json`` does not delete its message
    history. The messages remain in each user's database but the channel will
    no longer appear in the sidebar. If you re-add the channel name later,
    the history reappears.
@@ -115,8 +124,9 @@ Stores image attachments as UUID-named files (e.g.
 ``a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6.jpg``). The original filename is not
 preserved on disk; only the extension is kept.
 
-Images are not automatically cleaned up. Run ``clean.py`` periodically
-to remove old attachments — see :doc:`administration`.
+Image attachments are automatically purged by a background thread that runs
+every 24 hours. The retention period is set by ``"image_retention_days"`` in
+``settings.json`` (default: 30 days). See :doc:`administration` for details.
 
 gunicorn.conf.py
 ----------------

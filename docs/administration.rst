@@ -7,18 +7,22 @@ MiniMost running smoothly.
 Image Cleanup
 -------------
 
-Image attachments are stored indefinitely in ``uploads/`` unless cleaned up.
-The :mod:`minimost.clean` module provides the :func:`~minimost.clean.delete_files_older_than`
-function for this purpose.
+MiniMost automatically purges old image attachments from ``uploads/`` while
+the server is running. A background thread starts 5 minutes after startup and
+repeats every 24 hours. No cron job or external scheduler is required.
 
-**Running manually:**
+The retention period is configured via the ``"image_retention_days"`` key in
+``settings.json`` (default: 30 days). Changes to that value take effect at
+the next scheduled run without restarting the server — see
+:doc:`configuration`.
+
+**Running cleanup manually** (e.g. to reclaim disk space immediately):
 
 .. code-block:: bash
 
     python3 src/minimost/clean.py
 
-This deletes files in ``uploads/`` older than 30 days (the hardcoded default
-when the script is run directly).
+This deletes files in ``uploads/`` older than 30 days.
 
 **Dry run (preview without deleting):**
 
@@ -27,22 +31,12 @@ when the script is run directly).
     from minimost.clean import delete_files_older_than
     delete_files_older_than("uploads", days=30, dry_run=True)
 
-**Scheduled cron job** (recommended — runs daily at 02:30):
-
-.. code-block:: bash
-
-    crontab -e
-
-Add the following line::
-
-    30 2 * * * /usr/bin/python3 /srv/minimost/src/minimost/clean.py
-
 .. note::
 
-   The cleanup script operates on filesystem ``mtime`` values, not on the
-   database ``expires_ts`` column. Deleted files leave behind orphan database
-   rows; this is intentional — messages referencing deleted images show
-   a broken-image placeholder rather than being removed.
+   Cleanup operates on filesystem ``mtime`` values, not on the database
+   ``expires_ts`` column. Deleted files leave behind orphan database rows;
+   this is intentional — messages referencing deleted images show a
+   broken-image placeholder rather than being removed.
 
 User Management
 ---------------
@@ -125,19 +119,19 @@ Run ``minimost reset-password --help`` for the full list of options.
 
 **Add a channel:**
 
-Edit ``channels.json`` and restart the server::
+Edit the ``"channels"`` list in ``settings.json`` and restart the server::
 
-    # channels.json (before)
-    ["general", "software"]
+    # settings.json (before)
+    {"channels": ["general", "software"], "image_retention_days": 30}
 
-    # channels.json (after)
-    ["general", "software", "design"]
+    # settings.json (after)
+    {"channels": ["general", "software", "design"], "image_retention_days": 30}
 
 **Remove a channel:**
 
-Edit ``channels.json``, removing the unwanted channel name, and restart the
-server. Existing messages for that channel remain in all user databases but
-will no longer be accessible through the UI.
+Edit the ``"channels"`` list in ``settings.json``, removing the unwanted channel
+name, and restart the server. Existing messages for that channel remain in all
+user databases but will no longer be accessible through the UI.
 
 Database Maintenance
 --------------------
@@ -190,7 +184,7 @@ All state lives in these locations:
         secret.key \
         cert.pem \
         key.pem \
-        channels.json \
+        settings.json \
         users/ \
         uploads/ \
         avatars/
@@ -253,7 +247,7 @@ Migrating to a New Server
         secret.key \
         cert.pem \
         key.pem \
-        channels.json \
+        settings.json \
         users/ \
         uploads/ \
         avatars/ \

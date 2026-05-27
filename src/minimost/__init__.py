@@ -29,6 +29,8 @@ _APP_VERSION : str
 
 import re
 import secrets
+import threading
+import time
 from contextlib import suppress
 from pathlib import Path
 
@@ -165,4 +167,55 @@ def create_app():
     calls_mod.reset_all_calls_ended()
     calls_mod.reset_all_screenshares_ended()
 
+    _start_cleanup_scheduler()
+
     return app
+
+
+def _start_cleanup_scheduler(interval_hours: int = 24, days: int = 30) -> None:
+    """Start a daemon thread that periodically purges old upload files.
+
+    Runs :func:`minimost.clean.delete_files_older_than` once shortly after
+    startup and then every *interval_hours* hours.  The thread is a daemon so
+    it exits automatically when the server process shuts down — no teardown
+    required.
+
+    The retention period is read from the ``"image_retention_days"`` key in
+    ``settings.json`` at each run, so changes to the file take effect on the
+    next scheduled cleanup without restarting the server.  If the key is
+    absent or the file cannot be read, *days* is used as the fallback.
+
+    Multiple Gunicorn workers each start their own thread; concurrent runs are
+    safe because :func:`~minimost.clean.delete_files_older_than` tolerates
+    ``FileNotFoundError`` on files already removed by another worker.
+
+    :param interval_hours: Hours between cleanup runs.  Defaults to ``24``.
+    :param days: Fallback retention period in days if ``settings.json`` does
+        not specify ``"image_retention_days"``.  Defaults to ``30``.
+    """
+    upload_dir = _PROJECT_ROOT / "uploads"
+    settings_file = _PROJECT_ROOT / "settings.json"
+
+    def _image_retention_days() -> int:
+        with suppress(Exception):
+            import json
+
+            data = json.loads(settings_file.read_text())
+            value = data.get("image_retention_days")
+            if isinstance(value, int) and value > 0:
+                return value
+        return days
+
+    def _loop() -> None:
+        time.sleep(300)  # short initial delay — let the server finish starting
+        while True:
+            try:
+                from .clean import delete_files_older_than
+
+                delete_files_older_than(str(upload_dir), days=_image_retention_days())
+            except Exception:
+                pass
+            time.sleep(interval_hours * 3600)
+
+    thread = threading.Thread(target=_loop, daemon=True, name="minimost-cleanup")
+    thread.start()

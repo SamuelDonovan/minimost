@@ -1,3 +1,4 @@
 {
-    "channels": ["general", "software", "firmware", "systems", "off-topic"]
+    "channels": ["general", "software", "firmware", "systems", "off-topic"],
+    "image_retention_days": 30
 }
