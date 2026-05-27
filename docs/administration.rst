@@ -4,17 +4,21 @@ Administration
 This page covers tasks a server administrator may need to perform to keep
 MiniMost running smoothly.
 
-Image Cleanup
--------------
+File Cleanup
+------------
 
-MiniMost automatically purges old image attachments from ``uploads/`` while
+MiniMost automatically purges old file attachments from ``uploads/`` while
 the server is running. A background thread starts 5 minutes after startup and
 repeats every 24 hours. No cron job or external scheduler is required.
 
-The retention period is configured via the ``"image_retention_days"`` key in
-``settings.json`` (default: 30 days). Changes to that value take effect at
-the next scheduled run without restarting the server — see
-:doc:`configuration`.
+Separate retention periods apply to different file types, both configured in
+``settings.json`` (defaults: 30 days each):
+
+- ``"image_retention_days"`` — images (jpg, jpeg, png, gif, webp)
+- ``"file_retention_days"`` — all other file types (pdf, zip, docx, etc.)
+
+Changes to either value take effect at the next scheduled run without
+restarting the server — see :doc:`configuration`.
 
 **Running cleanup manually** (e.g. to reclaim disk space immediately):
 
@@ -22,21 +26,30 @@ the next scheduled run without restarting the server — see
 
     python3 src/minimost/clean.py
 
-This deletes files in ``uploads/`` older than 30 days.
+This deletes files in ``uploads/`` using the default retention of 30 days for
+both images and other file types.
 
 **Dry run (preview without deleting):**
 
 .. code-block:: python
 
     from minimost.clean import delete_files_older_than
-    delete_files_older_than("uploads", days=30, dry_run=True)
+    delete_files_older_than("uploads", image_days=30, file_days=30, dry_run=True)
+
+**Custom retention periods:**
+
+.. code-block:: python
+
+    from minimost.clean import delete_files_older_than
+    # Keep images for 90 days, but delete other files after 7 days
+    delete_files_older_than("uploads", image_days=90, file_days=7)
 
 .. note::
 
    Cleanup operates on filesystem ``mtime`` values, not on the database
    ``expires_ts`` column. Deleted files leave behind orphan database rows;
-   this is intentional — messages referencing deleted images show a
-   broken-image placeholder rather than being removed.
+   this is intentional — messages referencing deleted files show a "File
+   deleted" indicator rather than being removed from chat history.
 
 User Management
 ---------------
@@ -122,10 +135,10 @@ Run ``minimost reset-password --help`` for the full list of options.
 Edit the ``"channels"`` list in ``settings.json`` and restart the server::
 
     # settings.json (before)
-    {"channels": ["general", "software"], "image_retention_days": 30}
+    {"channels": ["general", "software"], "image_retention_days": 30, "file_retention_days": 30}
 
     # settings.json (after)
-    {"channels": ["general", "software", "design"], "image_retention_days": 30}
+    {"channels": ["general", "software", "design"], "image_retention_days": 30, "file_retention_days": 30}
 
 **Remove a channel:**
 

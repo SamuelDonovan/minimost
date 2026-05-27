@@ -10,15 +10,17 @@ settings.json
 
 **Location:** ``<project_root>/settings.json``
 
-The main configuration file for MiniMost. It is a JSON object that controls
-channel definitions and upload retention. All keys are optional — missing keys
-fall back to built-in defaults.
+The main configuration file for MiniMost. It is a JSON object. All keys are
+optional — missing keys fall back to built-in defaults.
 
-Example::
+Example (showing all available keys with their defaults)::
 
     {
         "channels": ["general", "software", "firmware", "systems", "off-topic"],
-        "image_retention_days": 30
+        "image_retention_days": 30,
+        "file_retention_days": 30,
+        "max_upload_size_mb": 25,
+        "max_avatar_size_mb": 5
     }
 
 ``channels``
@@ -29,9 +31,31 @@ Example::
     lowercase, and contain no spaces.
 
 ``image_retention_days``
-    How many days to keep image uploads before the background cleanup thread
-    removes them. Defaults to ``30``. Changes take effect at the next scheduled
-    cleanup run — no restart required. See :doc:`administration` for details.
+    How many days to keep image attachments in ``uploads/`` before the
+    background cleanup thread removes them. Defaults to ``30``. Changes take
+    effect at the next scheduled cleanup run — no restart required. See
+    :doc:`administration` for details.
+
+``file_retention_days``
+    How many days to keep non-image file attachments in ``uploads/`` before
+    the background cleanup thread removes them. Defaults to ``30``. Kept
+    separate from ``image_retention_days`` so administrators can apply
+    different retention policies to images versus documents, archives, etc.
+    Changes take effect at the next scheduled cleanup run — no restart required.
+
+``max_upload_size_mb``
+    Maximum size in megabytes allowed for a single file attachment uploaded
+    via the message input. Applies to all file types. Defaults to ``25``.
+    The server enforces this limit per file and returns ``413`` if it is
+    exceeded; the browser also warns the user before attempting the upload.
+    Changes require a **server restart** to take effect.
+
+``max_avatar_size_mb``
+    Maximum size in megabytes allowed for a profile avatar upload. The browser
+    resizes the chosen image to 128×128 pixels before sending, so the upload
+    is always small in practice — this limit guards against oversized source
+    files being loaded into browser memory. Defaults to ``5``. Changes require
+    a **server restart** to take effect.
 
 .. warning::
 
@@ -120,13 +144,39 @@ uploads/ directory
 
 **Location:** ``<project_root>/uploads/``
 
-Stores image attachments as UUID-named files (e.g.
-``a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6.jpg``). The original filename is not
-preserved on disk; only the extension is kept.
+Stores all message file attachments. Two naming schemes are used:
 
-Image attachments are automatically purged by a background thread that runs
-every 24 hours. The retention period is set by ``"image_retention_days"`` in
-``settings.json`` (default: 30 days). See :doc:`administration` for details.
+- **Images** (``jpg``, ``jpeg``, ``png``, ``gif``, ``webp``) are stored as
+  ``<uuid32hex><ext>`` (e.g. ``a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6.jpg``).
+- **All other files** are stored as ``<uuid32hex>_<original_filename>`` (e.g.
+  ``a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6_report.pdf``), preserving the original
+  name while still preventing collisions and path-traversal attacks.
+
+Files are automatically purged by a background thread that runs every 24 hours,
+using type-specific retention periods from ``settings.json``:
+
+- ``"image_retention_days"`` controls how long image files are kept (default: 30).
+- ``"file_retention_days"`` controls how long non-image files are kept (default: 30).
+
+See :doc:`administration` for details on manual cleanup.
+
+avatars/ directory
+------------------
+
+**Location:** ``<project_root>/avatars/``
+
+Stores user profile avatar images. Each file is named ``<uuid32hex>.jpg`` and
+is linked to a user via the ``avatar_file`` column in the ``user_settings``
+table in ``auth.db``.
+
+Avatars are uploaded at a maximum resolution of 128×128 pixels (the browser
+crops and resizes the source image before sending). The maximum permitted source
+file size is controlled by ``"max_avatar_size_mb"`` in ``settings.json``
+(default: 5 MB).
+
+When a user uploads a new avatar, the previous file is automatically deleted.
+Avatar files are **not** subject to the automatic retention cleanup — they
+persist until the user replaces or removes them, or the user account is deleted.
 
 gunicorn.conf.py
 ----------------

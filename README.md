@@ -42,7 +42,7 @@
 - **User avatars** — default initials avatar for every account; upload a custom image via Settings; displayed in the DM sidebar, private channel tooltips, and the member list
 - **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
 - **Close DM conversations** — hide a DM thread from the sidebar with one click; it reappears automatically if a new message arrives
-- **Image attachments** — paste, drag-and-drop, or use the paperclip button; images auto-delete after 30 days
+- **File attachments** — paste, drag-and-drop, or use the paperclip button to attach any file type; images are displayed inline, other files appear as a download link; uploaded files auto-delete after a configurable retention period
 - **Desktop & sound notifications** — configurable per session, mutable with one click
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing
 - **Dark theme** — easy on the eyes
@@ -117,13 +117,27 @@ gunicorn "minimost:create_app()" --config gunicorn.conf.py
 
 The bundled `gunicorn.conf.py` also handles automatic TLS certificate generation before Gunicorn starts.
 
-### Configuring channels
+### Configuration
 
-Edit `channels.json` in the project root to define your public channels:
+Edit `settings.json` in the project root to configure MiniMost. All keys are optional and fall back to sensible defaults if omitted:
 
 ```json
-["general", "software", "firmware", "systems", "off-topic"]
+{
+    "channels": ["general", "software", "firmware", "systems", "off-topic"],
+    "image_retention_days": 30,
+    "file_retention_days": 30,
+    "max_upload_size_mb": 25,
+    "max_avatar_size_mb": 5
+}
 ```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `channels` | `["general"]` | Public channel names shown in the sidebar. Restart required. |
+| `image_retention_days` | `30` | Days before image attachments are auto-deleted. No restart needed. |
+| `file_retention_days` | `30` | Days before non-image attachments are auto-deleted. No restart needed. |
+| `max_upload_size_mb` | `25` | Maximum size in MB for a single file attachment. Restart required. |
+| `max_avatar_size_mb` | `5` | Maximum size in MB for a profile avatar upload. Restart required. |
 
 ---
 
@@ -180,7 +194,9 @@ All formatting uses Markdown syntax (underline uses `__text__`). Shortcuts work 
 
 ### Media & Display
 
-- **Attach images** — paste from clipboard, drag onto the message box, or use the paperclip button
+- **Attach files** — paste from clipboard, drag onto the message box, or use the paperclip button; any file type is accepted
+- **Images** are displayed inline; all other file types appear as a download link showing the original filename
+- **File size limit** — configurable per-upload maximum (default 25 MB); the browser warns before attempting an oversized upload
 - **Font size** — pinch (mobile) or `Ctrl + Scroll` (desktop); preference is saved across sessions
 
 ---
