@@ -2,9 +2,7 @@ Frontend Architecture
 =====================
 
 MiniMost's chat interface is a **single-page application (SPA)** implemented
-in approximately 2,800 lines of vanilla JavaScript — no framework, no build
-step, no bundler. The entire client lives in the Jinja2 template
-``src/minimost/templates/chat.html``.
+in vanilla JavaScript — no framework, no build step, no bundler.
 
 This page documents the client-side architecture for developers who need to
 understand or modify the frontend behaviour.
@@ -19,21 +17,23 @@ The rendered HTML has three main regions:
     ┌──────────────────────────────────────────────────────────────┐
     │  Sidebar (220–260px)        │  Main Content (flex: 1)        │
     │  ─────────────────────────  │  ───────────────────────────── │
-    │  [+ New DM]                 │  Topbar                        │
-    │                             │   Username | Mute | Search | ? │
-    │  Channels                   │                                │
-    │  ● general          [3]     │  Chat Area (scrollable)        │
-    │  ● software                 │   ── Date divider ──           │
-    │  ● off-topic                │   alice  12:34                 │
-    │                             │   Hello, world!                │
-    │  Direct Messages            │   bob  12:35                   │
-    │  ● bob              [1]     │   👋 Hello!                    │
-    │  ● charlie                  │                                │
-    │                             │  Typing indicator              │
+    │  Public Channels            │  Topbar                        │
+    │  ● general          [3]     │                                │
+    │  ● software                 │  Chat Area (scrollable)        │
+    │  ● off-topic                │  ── Date divider ──            │
+    │                             │  alice  12:34                  │
+    │  Private Channels           │  Hello, world!                 │
+    │  ● minimost-enjoyers [5]    │                                │
+    │  ● software                 │  bob  12:35                    │
+    │                             │  👋 Hello!                     │
+    │  Direct Messages            │                                │
+    │  ● bob              [1]     │                                │
+    │  ● charlie                  │  Typing indicator              │
     │                             │  ───────────────────────────── │
     │                             │  [  Type a message...      ]   │
     │                             │  [ 📎 ] [ ▶ Send ]             │
     └──────────────────────────────────────────────────────────────┘
+   
 
 Client-side State
 -----------------
@@ -416,9 +416,11 @@ topbar when the active channel is a DM or private channel.
    does not answer in time, ``_handleRingTimeout()`` posts
    ``POST /calls/<id>/end`` and shows "No answer" before cleaning up.
 4. ``_pollCallState()`` runs every 3 seconds polling
-   ``GET /calls/<id>/state``; when ``state === "active"`` the call is live.
+   ``GET /calls/<id>/state``; when ``state === "active"`` the call is live
+   and the ring timeout is cleared.
 5. ``MediaRecorder`` captures the local camera/microphone stream; each
-   ``dataavailable`` chunk is uploaded via ``POST /calls/<id>/media``.
+   ``dataavailable`` chunk is uploaded via ``POST /calls/<id>/media`` with
+   ``X-Track: video``.
 6. A 500 ms interval polls ``GET /calls/<id>/media?sender=<callee>`` for
    the remote participant's chunks and feeds them into a ``MediaSource`` /
    ``SourceBuffer`` for playback.
@@ -440,6 +442,33 @@ topbar when the active channel is a DM or private channel.
    relay pipeline used by the caller.
 6. Declining calls ``POST /calls/<id>/reject``.
 
+**Screen sharing flow:**
+
+Screen sharing is available during an active call via a monitor-icon button
+in the call controls bar.
+
+1. ``toggleScreenShare()`` is invoked directly by the button's ``onclick``
+   handler.  ``navigator.mediaDevices.getDisplayMedia()`` is called
+   immediately inside this function — without any intermediate async calls —
+   so the browser's user-gesture activation token is preserved.
+2. The resulting ``displayStream`` is passed to ``_startScreenCapture()``,
+   which sets up a separate ``MediaRecorder`` for the screen track.
+3. Screen chunks are uploaded via ``POST /calls/<id>/media`` with
+   ``X-Track: screen``, which the server stores as ``sender = "user:screen"``
+   in ``call_media``.
+4. A dedicated poll interval fetches ``GET /calls/<id>/media?sender=<user>:screen``
+   and feeds chunks into a second ``MediaSource`` / ``SourceBuffer`` pipeline
+   connected to ``#call-screen-video``.
+5. When screen sharing is active, the ``#call-panel`` gains the
+   ``screen-share-active`` CSS class: the screen video takes over as the
+   main view and the camera video shrinks to a picture-in-picture corner.
+6. When the user stops sharing (button click or browser capture end),
+   ``_stopScreenCapture()`` stops the recorder and tracks; the
+   ``screen-share-active`` class is removed and the camera view is restored.
+7. If the browser's native screen-capture stop button is used,
+   the ``"ended"`` event on the video track calls ``toggleScreenShare()``
+   automatically to keep UI state in sync.
+
 **Key variables:**
 
 .. list-table::
@@ -451,7 +480,7 @@ topbar when the active channel is a DM or private channel.
    * - ``activeCallId``
      - UUID of the call currently in progress; ``null`` when idle.
    * - ``ringTimeoutId``
-     - Handle for the caller-side 45-second ring timeout.
+     - Handle for the caller-side 30-second ring timeout.
    * - ``incomingRingTimeout``
      - Handle for the callee-side ring timeout.
    * - ``RING_TIMEOUT_MS``
@@ -461,6 +490,14 @@ topbar when the active channel is a DM or private channel.
      - The call object currently shown in the incoming-call overlay.
    * - ``localStream``
      - The ``MediaStream`` from ``getUserMedia``; stopped on hang-up.
+   * - ``screenStream``
+     - The ``MediaStream`` from ``getDisplayMedia``; ``null`` when not sharing.
+   * - ``screenRecorder``
+     - The ``MediaRecorder`` instance for the screen track.
+   * - ``screenEnabled``
+     - ``true`` while screen sharing is active.
+   * - ``screenPollId``
+     - Handle for the screen-relay download poll interval.
 
 Mobile Support
 --------------

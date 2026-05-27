@@ -299,10 +299,10 @@ The client renders the result as a card below the message:
 Calling Architecture
 --------------------
 
-Voice and video calls are handled entirely over HTTP — there is no WebRTC
-peer-to-peer connection, no STUN server, and no UDP.  Media is relayed
-through Flask, which makes calls work even behind NAT and restrictive
-corporate firewalls.
+Voice, video, and screen-share calls are handled entirely over HTTP — there
+is no WebRTC peer-to-peer connection, no STUN server, and no UDP.  All media
+is relayed through Flask, which makes calls work even behind NAT and
+restrictive corporate firewalls.
 
 **Why HTTP relay instead of WebRTC?**
 
@@ -317,30 +317,55 @@ server that handles chat.
     Caller                            Server                         Callee
       │                                 │                               │
       │  POST /calls/initiate           │                               │
-      │ ──────────────────────────────► │  INSERT calls (ringing)       │
+      │ ─────────────────────────► │  INSERT calls (ringing)       │
       │                                 │  INSERT call_participants     │
-      │  ◄──────────────────────────── │  { call_id }                  │
+      │  ◄──────────────────────── │  { call_id }                  │
       │                                 │                               │
-      │  GET /calls/<id>/state (3 s)   │  GET /calls/incoming (1 s)   │
-      │ ──────────────────────────────► │ ◄──────────────────────────── │
+      │  GET /calls/<id>/state (3 s)    │  GET /calls/incoming (1 s)    │
+      │ ─────────────────────────► │ ◄─────────────────────── │
       │                                 │                               │
-      │                                 │  ───────────────────────────► │
+      │                                 │  ───────────────────────► │
       │                                 │  incoming call overlay shown  │
       │                                 │                               │
       │  [user answers]                 │                               │
       │                                 │  POST /calls/<id>/accept      │
-      │                                 │ ◄──────────────────────────── │
+      │                                 │ ◄──────────────────────── │
       │                                 │  UPDATE calls (active)        │
       │                                 │                               │
-      │  ◄── state: active ──────────── │                               │
+      │  ◄── state: active ────────── │                               │
       │                                 │                               │
       │  POST /calls/<id>/media (500ms) │  GET /calls/<id>/media (500ms)│
-      │ ──────────────────────────────► │ ◄──────────────────────────── │
-      │  (MediaRecorder chunks)         │  (SourceBuffer playback)      │
+      │ ─────────────────────────► │ ◄──────────────────────── │
+      │  X-Track: video                 │  (camera/mic SourceBuffer)    │
+      │                                 │                               │
+      │  [user starts screen share]     │                               │
+      │                                 │                               │
+      │  POST /calls/<id>/media (500ms) │  GET /calls/<id>/media (500ms)│
+      │ ─────────────────────────► │ ◄──────────────────────── │
+      │  X-Track: screen                │  ?sender=user:screen          │
+      │                                 │  (screen SourceBuffer)        │
       │                                 │                               │
       │  POST /calls/<id>/end           │                               │
-      │ ──────────────────────────────► │  UPDATE calls (ended)         │
+      │ ─────────────────────────► │  UPDATE calls (ended)         │
       │                                 │  DELETE call_media            │
+
+**Track multiplexing:**
+
+A single ``call_media`` table carries both the camera/mic stream and the
+screen-share stream simultaneously.  The ``sender`` column is used as a
+namespace: camera chunks are stored as ``"username"`` and screen chunks as
+``"username:screen"``.  The receiver fetches each track independently using
+the ``?sender=`` query parameter.  No additional tables or columns are needed.
+
+**Screen sharing layout:**
+
+When screen sharing is active, the browser adds the ``screen-share-active``
+CSS class to the call panel.  The shared screen occupies the main area of the
+call overlay and the camera feed shrinks to a picture-in-picture corner.
+Removing the class restores the camera to full size.  Stopping the
+browser's native screen-capture (via its built-in stop button) fires the
+``"ended"`` event on the video track, which calls ``toggleScreenShare()``
+automatically to keep the UI in sync.
 
 **Ring timeout:**
 
