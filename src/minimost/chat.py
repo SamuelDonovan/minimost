@@ -95,27 +95,27 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 AVATAR_DIR = _PROJECT_ROOT / "avatars"
 AVATAR_DIR.mkdir(exist_ok=True)
 
-_CHANNELS_FILE = _PROJECT_ROOT / "channels.json"
+_SETTINGS_FILE = _PROJECT_ROOT / "settings.json"
 
 
 def _load_channels() -> List[str]:
-    """Load the list of public channels from ``channels.json``.
+    """Load the list of public channels from ``settings.json``.
 
-    Reads and parses ``channels.json`` from the project root.  If the file
-    does not exist or contains invalid JSON the function falls back to a
-    single ``"general"`` channel so the application always has at least one
-    usable channel.
-
-    This function is called once at module import time to populate the
-    module-level :data:`CHANNELS` constant.
+    Reads and parses ``settings.json`` from the project root and returns the
+    value of the ``"channels"`` key.  Falls back to a single ``"general"``
+    channel if the file is absent, malformed, or missing the key.
 
     :returns: Ordered list of public channel name strings.
     :rtype: list of str
     """
     try:
-        return json.loads(_CHANNELS_FILE.read_text())
+        data = json.loads(_SETTINGS_FILE.read_text())
+        channels = data.get("channels")
+        if isinstance(channels, list) and channels:
+            return channels
     except (OSError, json.JSONDecodeError):
-        return ["general"]
+        pass
+    return ["general"]
 
 
 CHANNELS = _load_channels()
