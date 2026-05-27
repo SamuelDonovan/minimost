@@ -723,7 +723,7 @@ def get_media(call_id):
             subq = db.execute(
                 "SELECT id, data FROM call_media"
                 " WHERE call_id = ? AND sender = ? AND is_init = 0"
-                " ORDER BY id DESC LIMIT 10",
+                " ORDER BY id DESC LIMIT 20",
                 (call_id, sender),
             ).fetchall()
             chunk_rows = list(reversed(subq))
@@ -994,7 +994,7 @@ def get_share_media(share_id):
             subq = db.execute(
                 "SELECT id, data FROM share_media"
                 " WHERE share_id = ? AND is_init = 0"
-                " ORDER BY id DESC LIMIT 10",
+                " ORDER BY id DESC LIMIT 20",
                 (share_id,),
             ).fetchall()
             chunk_rows = list(reversed(subq))
