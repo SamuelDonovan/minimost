@@ -98,6 +98,11 @@
         </div>
     </div>
 
+    <!-- Private channel name bar -->
+    <div id="private-ch-name-bar" style="display:none;">
+        <span id="private-ch-name-bar-text"></span>
+    </div>
+
     <!-- Shown when a channel member is sharing their screen -->
     <div id="screenshare-banner" style="display:none;">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0;">
@@ -758,7 +763,7 @@ async function loadSidebar() {
         privateChannels.forEach(pc => {
             privateChannelMap[pc.channel] = pc.name;
             privateChannelMembers[pc.channel] = pc.members || [];
-            const el = sidebarEntry("$ " + pc.name, pc.channel, pc.unread);
+            const el = sidebarEntry(pc.name, pc.channel, pc.unread);
             bindPCTooltip(el);
         });
 
@@ -835,7 +840,7 @@ function refreshPrivateChannels() {
             channels.forEach(pc => {
                 privateChannelMap[pc.channel] = pc.name;
                 privateChannelMembers[pc.channel] = pc.members || [];
-                const el = sidebarEntry("$ " + pc.name, pc.channel, pc.unread);
+                const el = sidebarEntry(pc.name, pc.channel, pc.unread);
                 bindPCTooltip(el);
                 seen.add(pc.channel);
                 sb.insertBefore(el, insertAfter.nextSibling);
@@ -850,7 +855,10 @@ function refreshPrivateChannels() {
             updateTitleBadge(channelUnreadCount + privateChannelUnreadCount + lastUnreadCount);
 
             if (channel.startsWith("private:") && privateChannelMap[channel]) {
-                document.getElementById("chan").innerText = privateChannelMap[channel];
+                const updatedName = privateChannelMap[channel];
+                document.getElementById("chan").innerText = "";
+                const nbt = document.getElementById("private-ch-name-bar-text");
+                if (nbt) nbt.textContent = updatedName;
             }
 
             if (privateChannelUnreadCount > 0 || hasUnreadChannels) {
@@ -1202,10 +1210,17 @@ function switchChannel(c) {
     readReceiptsMap = {};
     document.querySelector(`[data-channel="${c}"]`)?.querySelector(".unread-badge")?.remove();
     const isPrivate = c.startsWith("private:");
-    document.getElementById("chan").innerText = isPrivate ? (privateChannelMap[c] || c) : c;
-    document.querySelector(".chan-hash").textContent = isPrivate ? "$" : "#";
+    const channelDisplayName = isPrivate ? (privateChannelMap[c] || c) : c;
+    document.getElementById("chan").innerText = isPrivate ? "" : channelDisplayName;
+    const chanHash = document.querySelector(".chan-hash");
+    if (chanHash) chanHash.style.visibility = isPrivate ? "hidden" : "visible";
     const pcControls = document.getElementById("private-ch-controls");
     if (pcControls) pcControls.style.display = isPrivate ? "flex" : "none";
+    const nameBar = document.getElementById("private-ch-name-bar");
+    if (nameBar) {
+        nameBar.style.display = isPrivate ? "flex" : "none";
+        if (isPrivate) document.getElementById("private-ch-name-bar-text").textContent = channelDisplayName;
+    }
 
     forceScrollToBottom = true;
 
@@ -1770,7 +1785,9 @@ function hidePCTooltip() {
 function bindPCTooltip(el) {
     el.onmouseenter = () => {
         _cancelPCTooltipHide();
-        _pcTooltipShowTimer = setTimeout(() => showPCTooltip(el), 3000);
+        _pcTooltipShowTimer = setTimeout(() => {
+            if (el.matches(":hover")) showPCTooltip(el);
+        }, 3000);
     };
     el.onmouseleave = _schedulePCTooltipHide;
 }
@@ -2144,7 +2161,9 @@ document.getElementById("rename-ch-submit-btn").onclick = async () => {
     }
 
     privateChannelMap[channel] = name;
-    document.getElementById("chan").innerText = name;
+    document.getElementById("chan").innerText = "";
+    const nameBarText = document.getElementById("private-ch-name-bar-text");
+    if (nameBarText) nameBarText.textContent = name;
     renamePrivateChModal.style.display = "none";
     refreshPrivateChannels();
 };

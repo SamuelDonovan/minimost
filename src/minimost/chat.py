@@ -2105,7 +2105,7 @@ def rename_private_channel(channel_id):
 
     now = time()
     ch = f"private:{channel_id}"
-    sys_content = f"{user} has renamed the channel to {name}"
+    sys_content = f'{user} has renamed the channel to "{name}"'
     for recipient in get_private_channel_members(channel_id):
         db = get_db(recipient)
         db.execute(

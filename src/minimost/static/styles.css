@@ -327,10 +327,8 @@ body {
     gap: 10px;
     margin: 16px 0;
     color: #666;
-    font-size: 0.78em;
+    font-size: 0.85em;
     font-weight: 500;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
 }
 .date-divider::before,
 .date-divider::after {
@@ -519,6 +517,16 @@ body {
     bottom: 1px;
     right: 1px;
     border-width: 2px;
+}
+#private-ch-name-bar {
+    align-items: center;
+    justify-content: center;
+    padding: 5px 12px;
+    background: #252526;
+    border-bottom: 1px solid #333;
+    font-size: 12px;
+    font-weight: 600;
+    color: #aaa;
 }
 #private-ch-controls {
     display: none;
