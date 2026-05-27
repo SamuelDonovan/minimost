@@ -1711,6 +1711,7 @@ async function closeDm(dmChannel) {
 // ── Private Channel Tooltip ────────────────────────────────────��──────────────
 
 let _pcTooltipHideTimer = null;
+let _pcTooltipShowTimer = null;
 
 function _cancelPCTooltipHide() {
     if (_pcTooltipHideTimer) {
@@ -1719,7 +1720,15 @@ function _cancelPCTooltipHide() {
     }
 }
 
+function _cancelPCTooltipShow() {
+    if (_pcTooltipShowTimer) {
+        clearTimeout(_pcTooltipShowTimer);
+        _pcTooltipShowTimer = null;
+    }
+}
+
 function _schedulePCTooltipHide() {
+    _cancelPCTooltipShow();
     _cancelPCTooltipHide();
     _pcTooltipHideTimer = setTimeout(() => {
         const tooltip = document.getElementById("pc-member-tooltip");
@@ -1728,6 +1737,7 @@ function _schedulePCTooltipHide() {
 }
 
 function showPCTooltip(el) {
+    _cancelPCTooltipShow();
     _cancelPCTooltipHide();
     const tooltip = document.getElementById("pc-member-tooltip");
     if (!tooltip) return;
@@ -1758,7 +1768,10 @@ function hidePCTooltip() {
 }
 
 function bindPCTooltip(el) {
-    el.onmouseenter = () => showPCTooltip(el);
+    el.onmouseenter = () => {
+        _cancelPCTooltipHide();
+        _pcTooltipShowTimer = setTimeout(() => showPCTooltip(el), 3000);
+    };
     el.onmouseleave = _schedulePCTooltipHide;
 }
 
