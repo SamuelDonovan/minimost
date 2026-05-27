@@ -4061,6 +4061,7 @@ let viewShareMediaSource  = null;
 let viewShareSourceBuffer = null;
 let viewSharePending      = [];
 let viewShareAbortCtrl    = null;
+let viewSharePollingActive = false;
 // Shared: the most recently polled active share (other than ours) for this channel
 let _currentRemoteShare   = null;
 
@@ -4666,8 +4667,9 @@ function _appendNextScreenChunk() {
         if (e.name === "QuotaExceededError" && screenSourceBuffer.buffered.length > 0) {
             screenPendingChunks.unshift(buf);
             try {
-                const start = screenSourceBuffer.buffered.start(0);
-                const end   = screenSourceBuffer.buffered.end(0);
+                const last  = screenSourceBuffer.buffered.length - 1;
+                const start = screenSourceBuffer.buffered.start(last);
+                const end   = screenSourceBuffer.buffered.end(last);
                 if (end - start > 10) screenSourceBuffer.remove(start, end - 5);
             } catch { /* ignore */ }
         } else {
@@ -4702,7 +4704,22 @@ function _initScreenMediaSource(mimeType) {
         try {
             screenSourceBuffer = screenMediaSource.addSourceBuffer(mimeType);
             screenSourceBuffer.addEventListener("updateend", () => {
-                _appendNextScreenChunk();
+                if (screenPendingChunks.length > 0) {
+                    _appendNextScreenChunk();
+                } else if (screenSourceBuffer.buffered.length > 0) {
+                    // Queue drained — seek to live edge if significantly behind.
+                    const last = screenSourceBuffer.buffered.length - 1;
+                    const end  = screenSourceBuffer.buffered.end(last);
+                    if (end - videoEl.currentTime > 1.5) {
+                        videoEl.currentTime = end - 0.1;
+                    }
+                    const head   = screenSourceBuffer.buffered.start(last);
+                    const cutoff = end - 3.0;
+                    if (cutoff > head + 0.05) {
+                        try { screenSourceBuffer.remove(head, cutoff); } catch { /* ignore */ }
+                        return;
+                    }
+                }
                 videoEl.play().catch(() => {});
             }, { signal });
             _appendNextScreenChunk();
@@ -4785,14 +4802,15 @@ function _startScreenCapture(callId, displayStream) {
     }
     screenRecorder.ondataavailable = (evt) => {
         if (!evt.data || evt.data.size === 0 || !activeCallId) return;
-        const blobPromise = evt.data.arrayBuffer();
-        screenChain = screenChain.then(async () => {
-            try {
-                const buf = await blobPromise;
-                if (screenFirstChunk) {
-                    screenFirstChunk = false;
-                    const mime = screenRecorder.mimeType || "video/webm";
-                    await fetch(`/calls/${callId}/media`, {
+        const isFirst = screenFirstChunk;
+        if (isFirst) screenFirstChunk = false;
+        evt.data.arrayBuffer().then(buf => {
+            if (isFirst) {
+                // Init segment must arrive before any data chunk so the remote
+                // can bootstrap its SourceBuffer.  Only init is sequenced.
+                const mime = screenRecorder?.mimeType || "video/webm";
+                screenChain = screenChain.then(() =>
+                    fetch(`/calls/${callId}/media`, {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/octet-stream",
@@ -4801,15 +4819,17 @@ function _startScreenCapture(callId, displayStream) {
                             "X-Mime": mime,
                         },
                         body: buf,
-                    });
-                } else {
-                    await fetch(`/calls/${callId}/media`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/octet-stream", "X-Track": "screen" },
-                        body: buf,
-                    });
-                }
-            } catch { /* ignore network errors */ }
+                    }).catch(() => {})
+                );
+            } else {
+                // Data chunks are fire-and-forget so a slow upload cannot
+                // cause subsequent chunks to accumulate upload delay.
+                fetch(`/calls/${callId}/media`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/octet-stream", "X-Track": "screen" },
+                    body: buf,
+                }).catch(() => {});
+            }
         });
     };
     // Handle the user clicking the browser's native "Stop sharing" button
@@ -4968,6 +4988,14 @@ async function _startStandaloneShare(displayStream) {
 
     standaloneShareRec.start(500);
 
+    // Force the browser to flush the init segment early so the viewer can
+    // bootstrap its SourceBuffer ~400 ms sooner than the first 500 ms tick.
+    setTimeout(() => {
+        if (standaloneShareRec && standaloneShareRec.state === "recording") {
+            standaloneShareRec.requestData();
+        }
+    }, 100);
+
     const sbtn = document.getElementById("topbar-share-btn");
     if (sbtn) { sbtn.classList.add("active"); sbtn.title = "Stop sharing"; }
 }
@@ -5036,10 +5064,11 @@ async function refreshScreenShares() {
 function openShareViewer() {
     const share = _currentRemoteShare;
     if (!share) return;
-    viewShareId           = share.share_id;
-    viewShareLastSeq      = -1;
-    viewShareInitReceived = false;
-    viewSharePending      = [];
+    viewShareId            = share.share_id;
+    viewShareLastSeq       = -1;
+    viewShareInitReceived  = false;
+    viewSharePending       = [];
+    viewSharePollingActive = false;
 
     document.getElementById("screenshare-viewer-label").textContent =
         `${share.sharer} is sharing their screen`;
@@ -5056,11 +5085,12 @@ function closeShareViewer() {
     if (viewShareMediaSource && viewShareMediaSource.readyState === "open") {
         try { viewShareMediaSource.endOfStream(); } catch { /* ignore */ }
     }
-    viewShareId           = null;
-    viewShareMediaSource  = null;
-    viewShareSourceBuffer = null;
-    viewSharePending      = [];
-    viewShareInitReceived = false;
+    viewShareId            = null;
+    viewShareMediaSource   = null;
+    viewShareSourceBuffer  = null;
+    viewSharePending       = [];
+    viewShareInitReceived  = false;
+    viewSharePollingActive = false;
     const el = document.getElementById("screenshare-viewer-video");
     if (el.src && el.src.startsWith("blob:")) URL.revokeObjectURL(el.src);
     el.removeAttribute("src");
@@ -5080,8 +5110,17 @@ function _initShareMediaSource() {
     viewShareMediaSource = ms;
     if (videoEl.src?.startsWith("blob:")) URL.revokeObjectURL(videoEl.src);
     videoEl.src = URL.createObjectURL(ms);
-    // SourceBuffer is created lazily on the first poll so we can use the exact
-    // MIME type reported by the sender's MediaRecorder (avoids codec mismatches).
+
+    // Fire first poll as soon as MediaSource is open instead of waiting up to
+    // 500 ms for the setInterval tick, cutting initial latency significantly.
+    ms.addEventListener("sourceopen", () => { _pollShareViewerMedia(); }, { once: true });
+
+    // If the video stalls (e.g. pending queue was temporarily empty), drive
+    // any queued chunks through and resume playback.
+    videoEl.addEventListener("waiting", () => {
+        _appendNextShareChunk();
+        if (videoEl.paused) videoEl.play().catch(() => {});
+    }, { signal: ctrl.signal });
 }
 
 // Called once, after the first poll response supplies the real MIME type.
@@ -5104,10 +5143,16 @@ function _createShareSourceBuffer(mimeType) {
         //    If we called _appendNextShareChunk() first it would set
         //    sb.updating = true and the seek check would never execute.
         if (sb.buffered.length > 0) {
-            const end = sb.buffered.end(0);
-            if (end - videoEl.currentTime > 0.5) videoEl.currentTime = end - 0.1;
-            const head   = sb.buffered.start(0);
-            const cutoff = videoEl.currentTime - 1.0;
+            // Use the LAST buffered range — the init segment always has timestamps
+            // near 0 while late-joiner data chunks sit at a much later timestamp,
+            // producing two separate ranges. end(0) would point to the init range,
+            // not the live edge.
+            const last = sb.buffered.length - 1;
+            const end  = sb.buffered.end(last);
+            if (end - videoEl.currentTime > 0.2) videoEl.currentTime = end - 0.05;
+            // Trim old data from the start of the live range (last range).
+            const head   = sb.buffered.start(last);
+            const cutoff = end - 2.0;
             if (cutoff > head + 0.05) {
                 // ② remove() triggers another updateend which then appends.
                 try { sb.remove(head, cutoff); } catch { /* ignore */ }
@@ -5115,7 +5160,16 @@ function _createShareSourceBuffer(mimeType) {
             }
         }
         _appendNextShareChunk();
-        videoEl.play().catch(() => {});
+        if (videoEl.paused) videoEl.play().catch(() => {});
+    }, signal ? { signal } : {});
+
+    // Safety net: if the player drifts behind the live edge jump it forward.
+    videoEl.addEventListener("timeupdate", () => {
+        if (!viewShareSourceBuffer || viewShareSourceBuffer.updating) return;
+        if (sb.buffered.length === 0) return;
+        const last = sb.buffered.length - 1;
+        const end  = sb.buffered.end(last);
+        if (end - videoEl.currentTime > 1.0) videoEl.currentTime = end - 0.05;
     }, signal ? { signal } : {});
 
     return true;
@@ -5133,8 +5187,9 @@ function _appendNextShareChunk() {
         viewSharePending.shift();
     } catch (e) {
         if (e.name === "QuotaExceededError" && sb.buffered.length > 0) {
-            const start = sb.buffered.start(0);
-            const end   = sb.buffered.end(0);
+            const last  = sb.buffered.length - 1;
+            const start = sb.buffered.start(last);
+            const end   = sb.buffered.end(last);
             if (end - start > 2) {
                 try { sb.remove(start, end - 1); } catch { /* ignore */ }
             }
@@ -5144,12 +5199,15 @@ function _appendNextShareChunk() {
 
 async function _pollShareViewerMedia() {
     if (!viewShareId) return;
+    if (viewSharePollingActive) return;
+    viewSharePollingActive = true;
     let payload;
     try {
         const resp = await fetch(`/screenshare/${viewShareId}/media?after=${viewShareLastSeq}`);
-        if (!resp.ok) return;
+        if (!resp.ok) { viewSharePollingActive = false; return; }
         payload = await resp.json();
-    } catch { return; }
+    } catch { viewSharePollingActive = false; return; }
+    viewSharePollingActive = false;
 
     if (payload.active === false) { closeShareViewer(); return; }
 

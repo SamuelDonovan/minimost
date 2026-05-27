@@ -717,12 +717,23 @@ def get_media(call_id):
             (call_id, sender),
         ).fetchone()
 
-        chunk_rows = db.execute(
-            "SELECT id, data FROM call_media"
-            " WHERE call_id = ? AND sender = ? AND is_init = 0 AND id > ?"
-            " ORDER BY id ASC LIMIT 20",
-            (call_id, sender, after_seq),
-        ).fetchall()
+        if after_seq == -1 and sender.endswith(":screen"):
+            # Late-joining viewer of an in-call screen share: skip to the live
+            # edge instead of replaying from the beginning.
+            subq = db.execute(
+                "SELECT id, data FROM call_media"
+                " WHERE call_id = ? AND sender = ? AND is_init = 0"
+                " ORDER BY id DESC LIMIT 10",
+                (call_id, sender),
+            ).fetchall()
+            chunk_rows = list(reversed(subq))
+        else:
+            chunk_rows = db.execute(
+                "SELECT id, data FROM call_media"
+                " WHERE call_id = ? AND sender = ? AND is_init = 0 AND id > ?"
+                " ORDER BY id ASC LIMIT 30",
+                (call_id, sender, after_seq),
+            ).fetchall()
     finally:
         db.close()
 
@@ -924,6 +935,11 @@ def upload_share_media(share_id):
             (share_id, data, now),
         )
         seq = cursor.lastrowid
+        # Prune chunks older than 30 s so the table doesn't grow unboundedly.
+        db.execute(
+            "DELETE FROM share_media WHERE share_id = ? AND is_init = 0 AND ts < ?",
+            (share_id, now - 30.0),
+        )
         db.commit()
     finally:
         db.close()
@@ -972,11 +988,23 @@ def get_share_media(share_id):
             " WHERE share_id = ? AND is_init = 1 ORDER BY id DESC LIMIT 1",
             (share_id,),
         ).fetchone()
-        chunk_rows = db.execute(
-            "SELECT id, data FROM share_media"
-            " WHERE share_id = ? AND is_init = 0 AND id > ? ORDER BY id ASC LIMIT 20",
-            (share_id, after_seq),
-        ).fetchall()
+        if after_seq == -1:
+            # Late-joining viewer: skip to the live edge by fetching the most
+            # recent chunks in reverse order, then reversing back to ASC.
+            subq = db.execute(
+                "SELECT id, data FROM share_media"
+                " WHERE share_id = ? AND is_init = 0"
+                " ORDER BY id DESC LIMIT 10",
+                (share_id,),
+            ).fetchall()
+            chunk_rows = list(reversed(subq))
+        else:
+            chunk_rows = db.execute(
+                "SELECT id, data FROM share_media"
+                " WHERE share_id = ? AND is_init = 0 AND id > ?"
+                " ORDER BY id ASC LIMIT 30",
+                (share_id, after_seq),
+            ).fetchall()
     finally:
         db.close()
     init_b64 = base64.b64encode(bytes(init_row["data"])).decode() if init_row else None
