@@ -588,10 +588,15 @@ def get_settings():
     db.execute(_WAL)
     db.row_factory = sqlite3.Row
     row = db.execute(
-        "SELECT name_color FROM user_settings WHERE username = ?", (user,)
+        "SELECT name_color, bio FROM user_settings WHERE username = ?", (user,)
     ).fetchone()
     db.close()
-    return jsonify({"name_color": row["name_color"] if row else None})
+    return jsonify(
+        {
+            "name_color": row["name_color"] if row else None,
+            "bio": row["bio"] if row else None,
+        }
+    )
 
 
 @chat_bp.route("/settings", methods=["POST"])
@@ -616,16 +621,41 @@ def save_settings():
         if not _COLOR_RE.match(name_color):
             return "invalid color", 400
 
+    bio = data.get("bio")
+    if bio is not None:
+        bio = bio.strip()[:160]
+
     db = sqlite3.connect(auth.AUTH_DB)
     db.execute(_WAL)
     db.execute(
-        "INSERT INTO user_settings (username, name_color) VALUES (?, ?)"
-        " ON CONFLICT(username) DO UPDATE SET name_color = excluded.name_color",
-        (user, name_color),
+        "INSERT INTO user_settings (username, name_color, bio) VALUES (?, ?, ?)"
+        " ON CONFLICT(username) DO UPDATE SET"
+        "  name_color = excluded.name_color,"
+        "  bio = excluded.bio",
+        (user, name_color, bio),
     )
     db.commit()
     db.close()
     return "ok"
+
+
+@chat_bp.route("/profile/<username>", methods=["GET"])
+@auth.login_required
+def get_profile(username):
+    db = sqlite3.connect(auth.AUTH_DB)
+    db.execute(_WAL)
+    db.row_factory = sqlite3.Row
+    row = db.execute(
+        "SELECT name_color, bio FROM user_settings WHERE username = ?", (username,)
+    ).fetchone()
+    db.close()
+    return jsonify(
+        {
+            "username": username,
+            "name_color": row["name_color"] if row else None,
+            "bio": row["bio"] if row else None,
+        }
+    )
 
 
 @chat_bp.route("/user_avatars", methods=["GET"])

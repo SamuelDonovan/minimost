@@ -244,6 +244,14 @@
             </div>
         </div>
 
+        <p class="settings-section-title">Profile</p>
+
+        <div class="settings-row">
+            <label for="settings-bio">Bio</label>
+            <textarea id="settings-bio" maxlength="160" rows="3" placeholder="Tell people a little about yourself…"></textarea>
+            <div class="settings-bio-counter"><span id="settings-bio-count">0</span>/160</div>
+        </div>
+
         <p class="settings-section-title">Appearance</p>
 
         <div class="settings-row">
@@ -256,6 +264,21 @@
                 <button class="settings-reset-btn" id="settings-color-reset">Reset to default</button>
             </div>
             <div class="color-swatches" id="color-swatches"></div>
+        </div>
+
+        <div class="settings-row">
+            <label for="settings-font-size">Font Size <span id="settings-font-size-label"></span></label>
+            <input type="range" id="settings-font-size" min="11" max="22" step="1">
+        </div>
+
+        <p class="settings-section-title">Messaging</p>
+
+        <div class="settings-row">
+            <label for="settings-enter-key">Enter key</label>
+            <select id="settings-enter-key">
+                <option value="send">Send message</option>
+                <option value="newline">New line (use Ctrl+Enter to send)</option>
+            </select>
         </div>
 
         <div class="modal-actions">
@@ -404,6 +427,7 @@
 <div id="dm-hover-card">
     <div id="dm-hover-avatar"></div>
     <span id="dm-hover-name"></span>
+    <p id="dm-hover-bio"></p>
 </div>
 
 <!-- Standalone Screen Share Viewer Overlay -->
@@ -569,9 +593,12 @@ helpOverlay.addEventListener("click", (e) => {
 });
 
 msgBox.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
+    if (e.key === "Enter") {
+        const enterToSend = localStorage.getItem("enterToSend") !== "false";
+        if (enterToSend ? !e.shiftKey : e.ctrlKey) {
+            e.preventDefault();
+            send();
+        }
     }
 });
 
@@ -722,6 +749,7 @@ function defaultUserColor(name) {
 }
 
 let usersWithAvatars = new Set();
+const profileCache = {};
 
 function _setInitials(el, username, size) {
     const div = document.createElement("div");
@@ -775,20 +803,53 @@ function makeAvatarWrap(username, size = 28, channelKey = null) {
 }
 
 function _showDmHoverCard(el, username) {
-    const card = document.getElementById("dm-hover-card");
-    const rect  = el.getBoundingClientRect();
+    const card    = document.getElementById("dm-hover-card");
+    const rect    = el.getBoundingClientRect();
+    const bioEl   = document.getElementById("dm-hover-bio");
     const container = document.getElementById("dm-hover-avatar");
+
     container.innerHTML = "";
     container.appendChild(makeAvatarWrap(username, 64));
     document.getElementById("dm-hover-name").textContent = username;
+
+    const cached = profileCache[username];
+    bioEl.textContent = (cached && cached.bio) ? cached.bio : "";
+    bioEl.style.display = (cached && cached.bio) ? "" : "none";
+
     card.style.left = (rect.right + 10) + "px";
     card.style.top  = Math.round(rect.top + rect.height / 2) + "px";
     card.classList.add("visible");
+
+    if (!cached) {
+        profileCache[username] = null;
+        fetch(`/profile/${encodeURIComponent(username)}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data) return;
+                profileCache[username] = data;
+                if (card.classList.contains("visible") &&
+                    document.getElementById("dm-hover-name").textContent === username) {
+                    bioEl.textContent = data.bio || "";
+                    bioEl.style.display = data.bio ? "" : "none";
+                }
+            });
+    }
 }
 
 function _hideDmHoverCard() {
     document.getElementById("dm-hover-card").classList.remove("visible");
 }
+
+document.getElementById("chat").addEventListener("mouseover", e => {
+    const span = e.target.closest(".user[data-username]");
+    if (span && span.dataset.username !== "system") {
+        _showDmHoverCard(span, span.dataset.username);
+    }
+});
+document.getElementById("chat").addEventListener("mouseout", e => {
+    const span = e.target.closest(".user[data-username]");
+    if (span) _hideDmHoverCard();
+});
 
 function _refreshUserAvatar(username) {
     document.querySelectorAll(`.avatar-wrap[data-username="${username}"]`).forEach(wrap => {
@@ -1360,7 +1421,7 @@ function _ensureDateDivider(chat, dateKey, msgDate) {
 
 function _buildMsgHtml(m, time, fullTime, color) {
     const displayName = m.sender === "system" ? "MiniMost" : m.sender;
-    let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}">${displayName}</span>`;
+    let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}" data-username="${m.sender}">${displayName}</span>`;
     headerHtml += `<span class="time" title="${fullTime}">${time}</span>`;
 
     let actionsHtml = "";
@@ -2059,8 +2120,31 @@ async function openSettings() {
     _updateColorPreview(currentColor);
     _buildColorSwatches(cfg.name_color);
     _populateAvatarPreview(null);
+
+    const bio = cfg.bio || "";
+    const bioEl = document.getElementById("settings-bio");
+    bioEl.value = bio;
+    document.getElementById("settings-bio-count").textContent = bio.length;
+
+    const fontSize = Number.parseFloat(localStorage.getItem("chatFontSize")) || CHAT_FONT_DEFAULT;
+    const fontSlider = document.getElementById("settings-font-size");
+    fontSlider.value = Math.round(Math.min(CHAT_FONT_MAX, Math.max(CHAT_FONT_MIN, fontSize)));
+    document.getElementById("settings-font-size-label").textContent = `(${fontSlider.value}px)`;
+
+    const enterToSend = localStorage.getItem("enterToSend") !== "false";
+    document.getElementById("settings-enter-key").value = enterToSend ? "send" : "newline";
+
     settingsModal.style.display = "flex";
 }
+
+document.getElementById("settings-bio").addEventListener("input", e => {
+    document.getElementById("settings-bio-count").textContent = e.target.value.length;
+});
+
+document.getElementById("settings-font-size").addEventListener("input", e => {
+    document.getElementById("settings-font-size-label").textContent = `(${e.target.value}px)`;
+    applyChatFontSize(Number(e.target.value));
+});
 
 document.getElementById("settings-name-color").addEventListener("input", e => {
     _settingsUseDefault = false;
@@ -2102,18 +2186,30 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
         _removeAvatar = false;
     }
 
-    // Name color
+    // Font size
+    const fontSize = Number(document.getElementById("settings-font-size").value);
+    localStorage.setItem("chatFontSize", fontSize);
+    applyChatFontSize(fontSize);
+
+    // Enter key behavior
+    const enterToSend = document.getElementById("settings-enter-key").value === "send";
+    localStorage.setItem("enterToSend", enterToSend);
+
+    // Name color + bio
     const color = _settingsUseDefault ? null : document.getElementById("settings-name-color").value;
+    const bio = document.getElementById("settings-bio").value.trim().slice(0, 160) || null;
     const resp = await fetch("/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name_color: color })
+        body: JSON.stringify({ name_color: color, bio })
     });
 
     if (!resp.ok) {
         alert("Failed to save settings.");
         return;
     }
+
+    delete profileCache[CURRENT_USER];
 
     if (color) {
         userColorOverrides[CURRENT_USER] = color;
@@ -4131,21 +4227,19 @@ async function attachPreview(msgEl) {
 }
 
 // Pinch-to-zoom adjusts message font size rather than scaling the page.
+const CHAT_FONT_MIN = 11;
+const CHAT_FONT_MAX = 22;
+const CHAT_FONT_DEFAULT = 14;
+
+function applyChatFontSize(size) {
+    document.getElementById("chat").style.fontSize = size + "px";
+    document.getElementById("msg").style.fontSize  = size + "px";
+}
+
 (function () {
-    const FONT_MIN = 11;
-    const FONT_MAX = 22;
-    const FONT_DEFAULT = 14;
-    const chatEl = document.getElementById("chat");
-    const msgEl  = document.getElementById("msg");
-
-    function applyFontSize(size) {
-        chatEl.style.fontSize = size + "px";
-        msgEl.style.fontSize  = size + "px";
-    }
-
-    let fontSize = Number.parseFloat(localStorage.getItem("chatFontSize")) || FONT_DEFAULT;
-    fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, fontSize));
-    applyFontSize(fontSize);
+    let fontSize = Number.parseFloat(localStorage.getItem("chatFontSize")) || CHAT_FONT_DEFAULT;
+    fontSize = Math.min(CHAT_FONT_MAX, Math.max(CHAT_FONT_MIN, fontSize));
+    applyChatFontSize(fontSize);
 
     let startDist = null;
     let startSize = fontSize;
@@ -4155,6 +4249,8 @@ async function attachPreview(msgEl) {
         const dy = touches[0].clientY - touches[1].clientY;
         return Math.hypot(dx, dy);
     }
+
+    const chatEl = document.getElementById("chat");
 
     chatEl.addEventListener("touchstart", (e) => {
         if (e.touches.length === 2) {
@@ -4167,8 +4263,8 @@ async function attachPreview(msgEl) {
         if (e.touches.length !== 2 || startDist === null) return;
         e.preventDefault();
         const scale = pinchDist(e.touches) / startDist;
-        fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, startSize * scale));
-        applyFontSize(fontSize);
+        fontSize = Math.min(CHAT_FONT_MAX, Math.max(CHAT_FONT_MIN, startSize * scale));
+        applyChatFontSize(fontSize);
     }, { passive: false });
 
     chatEl.addEventListener("touchend", (e) => {
@@ -4181,8 +4277,8 @@ async function attachPreview(msgEl) {
     chatEl.addEventListener("wheel", (e) => {
         if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
-        fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, fontSize - e.deltaY * 0.05));
-        applyFontSize(fontSize);
+        fontSize = Math.min(CHAT_FONT_MAX, Math.max(CHAT_FONT_MIN, fontSize - e.deltaY * 0.05));
+        applyChatFontSize(fontSize);
         localStorage.setItem("chatFontSize", fontSize);
     }, { passive: false });
 }());

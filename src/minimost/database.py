@@ -86,6 +86,10 @@ def init_auth_db():
         db.execute("ALTER TABLE user_settings ADD COLUMN avatar_file TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        db.execute("ALTER TABLE user_settings ADD COLUMN bio TEXT")
+    except sqlite3.OperationalError:
+        pass
     db.commit()
     db.close()
 

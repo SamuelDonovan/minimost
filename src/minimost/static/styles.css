@@ -592,7 +592,18 @@ body {
     font-weight: 600;
     white-space: nowrap;
 }
+#dm-hover-card #dm-hover-bio {
+    font-size: 12px;
+    color: #aaa;
+    text-align: center;
+    max-width: 200px;
+    margin: 0;
+    line-height: 1.4;
+    white-space: normal;
+    word-break: break-word;
+}
 #dm-hover-card .avatar-wrap { cursor: default; }
+.user[data-username]:not(.system-msg-name) { cursor: pointer; }
 .sidebar-dm .avatar-wrap { cursor: pointer; }
 #dm-hover-card .avatar-presence {
     width: 14px;
@@ -1225,6 +1236,37 @@ a { color: #9cdcfe; }
     font-size: 13px;
     margin-bottom: 8px;
     color: #bbb;
+}
+#settings-bio {
+    width: 100%;
+    box-sizing: border-box;
+    background: #2a2a2a;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 13px;
+    resize: vertical;
+}
+#settings-bio:focus { outline: none; border-color: #007acc; }
+.settings-bio-counter {
+    text-align: right;
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+}
+#settings-font-size {
+    width: 100%;
+    accent-color: #007acc;
+}
+#settings-enter-key {
+    width: 100%;
+    background: #2a2a2a;
+    color: #ddd;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 13px;
 }
 .settings-color-preview {
     background: #2d2d2d;
