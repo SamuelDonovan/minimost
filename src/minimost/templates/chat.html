@@ -2059,7 +2059,7 @@ async function openSettings() {
     _updateColorPreview(currentColor);
     _buildColorSwatches(cfg.name_color);
     _populateAvatarPreview(null);
-    settingsModal.style.display = "block";
+    settingsModal.style.display = "flex";
 }
 
 document.getElementById("settings-name-color").addEventListener("input", e => {
@@ -2474,8 +2474,8 @@ function startEdit(msgId) {
     textDiv.innerHTML = `
         <textarea id="edit-input-${msgId}" rows="3" style="width:100%;">${escapeHtml(originalText)}</textarea>
         <div class="edit-actions">
-            <button id="save-${msgId}">Save</button>
-            <button id="cancel-${msgId}">Cancel</button>
+            <button id="save-${msgId}" class="edit-save-btn">Save</button>
+            <button id="cancel-${msgId}" class="edit-cancel-btn">Cancel</button>
         </div>
     `;
 

@@ -426,13 +426,32 @@ body {
 
 /* Normalize buttons */
 .edit-actions button {
-    min-width: 64px;
-    height: 32px;
-    padding: 0 10px;
-    font-size: 0.9em;
-    border-radius: 4px;
-    border: 1px solid #ccc;
+    padding: 7px 18px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
     cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+}
+.edit-actions button:active { transform: scale(0.97); }
+.edit-save-btn {
+    background: #007acc;
+    color: #fff;
+    border: 1px solid #007acc;
+}
+.edit-save-btn:hover {
+    background: #1a8ce0;
+    border-color: #1a8ce0;
+}
+.edit-cancel-btn {
+    background: transparent;
+    color: #ccc;
+    border: 1px solid #555;
+}
+.edit-cancel-btn:hover {
+    background: #2d2d2d;
+    border-color: #888;
+    color: #fff;
 }
 
 .reply-btn:hover {
@@ -1178,6 +1197,17 @@ a { color: #9cdcfe; }
 #settings-avatar-preview .avatar-wrap { cursor: default; }
 
 /* Settings modal */
+#settings-modal {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+#settings-modal .modal-content {
+    margin: 0;
+    max-height: 85vh;
+    overflow-y: auto;
+}
 .settings-section-title {
     font-size: 11px;
     text-transform: uppercase;
