@@ -3213,7 +3213,13 @@ let currentPickerMsgId = null;
 
 function openReactionPicker(msgId, event) {
     event.stopPropagation();
+    if (currentPickerMsgId !== null) {
+        const prev = document.getElementById("msg-" + currentPickerMsgId);
+        if (prev) prev.classList.remove("reaction-picker-open");
+    }
     currentPickerMsgId = msgId;
+    const msgEl = document.getElementById("msg-" + msgId);
+    if (msgEl) msgEl.classList.add("reaction-picker-open");
     const picker = document.getElementById("reaction-picker");
     picker.style.display = "block";
     const btn = event.currentTarget;
@@ -3231,6 +3237,10 @@ function openReactionPicker(msgId, event) {
 
 function closeReactionPicker() {
     document.getElementById("reaction-picker").style.display = "none";
+    if (currentPickerMsgId !== null) {
+        const msgEl = document.getElementById("msg-" + currentPickerMsgId);
+        if (msgEl) msgEl.classList.remove("reaction-picker-open");
+    }
     currentPickerMsgId = null;
 }
 
