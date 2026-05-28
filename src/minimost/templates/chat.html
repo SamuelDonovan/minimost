@@ -296,11 +296,14 @@
 <!-- Users Modal -->
 <div id="users-modal" class="modal">
     <div class="modal-content" style="max-width:480px">
-        <h3 style="margin-top:0">Members</h3>
-        <div id="users-list"></div>
-        <div class="modal-actions">
-            <button onclick="closeUsersModal()">Close</button>
+        <div class="modal-header">
+            <h3 style="margin:0">Members</h3>
+            <button class="modal-close-x" onclick="closeUsersModal()" title="Close">&#x2715;</button>
         </div>
+        <input id="users-modal-search" type="text" placeholder="Search members…"
+               autocomplete="off" oninput="filterUsersModal(this.value)"
+               style="width:100%;margin-bottom:10px">
+        <div id="users-list"></div>
     </div>
 </div>
 
@@ -2281,9 +2284,12 @@ settingsModal.addEventListener("click", e => {
 // ── Users Modal ───────────────────────────────────────────────────────────────
 
 const usersModal = document.getElementById("users-modal");
+let _usersModalRows = []; // { username, nameEl, row } — populated after fetch
 
 async function openUsersModal() {
     usersModal.style.display = "block";
+    const searchEl = document.getElementById("users-modal-search");
+    searchEl.value = "";
     const list = document.getElementById("users-list");
     list.innerHTML = '<div class="users-list-loading">Loading…</div>';
 
@@ -2307,6 +2313,7 @@ async function openUsersModal() {
     }));
 
     list.innerHTML = "";
+    _usersModalRows = [];
     allUsernames.forEach((u, i) => {
         const profile = profiles[i];
         const color = userColor(u);
@@ -2325,6 +2332,7 @@ async function openUsersModal() {
         name.style.color = color;
         name.textContent = u + (u === CURRENT_USER ? " (you)" : "");
         info.appendChild(name);
+        _usersModalRows.push({ username: u, nameEl: name, row });
 
         if (profile?.bio) {
             const bio = document.createElement("p");
@@ -2368,6 +2376,26 @@ async function openUsersModal() {
 
         list.appendChild(row);
     });
+    document.getElementById("users-modal-search").focus();
+}
+
+function filterUsersModal(query) {
+    for (const { username, nameEl, row } of _usersModalRows) {
+        const isSelf = username === CURRENT_USER;
+        const suffix = isSelf ? " (you)" : "";
+        if (!query) {
+            row.style.display = "";
+            nameEl.innerHTML = escapeHtml(username) + suffix;
+            continue;
+        }
+        const result = fuzzySearch(query, username);
+        if (!result) {
+            row.style.display = "none";
+        } else {
+            row.style.display = "";
+            nameEl.innerHTML = highlightFuzzyMatch(username, result.indices) + suffix;
+        }
+    }
 }
 
 function closeUsersModal() {
