@@ -54,7 +54,9 @@ _HEADERS : dict
     browser-like ``User-Agent`` to avoid bot-detection blocks.
 
 _PRIVATE_RANGES : re.Pattern
-    Regex that matches hostnames resolving to private or loopback addresses.
+    Regex that matches hostnames known to be private or loopback addresses
+    (used as a fast pre-filter before the DNS-based ``_resolves_to_public_ip``
+    check).
 """
 
 import re
@@ -73,9 +75,6 @@ _HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
 }
 _BB_CLOUD_HOST = "bitbucket.org"
-_ALLOWED_PREVIEW_HOSTS = {
-    _BB_CLOUD_HOST,
-}
 
 _PRIVATE_RANGES = re.compile(
     r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1)"
@@ -259,22 +258,6 @@ def _resolves_to_public_ip(hostname):
     return True
 
 
-def _is_allowed_host(hostname):
-    """Return True if *hostname* is in the preview allowlist.
-
-    Allows exact matches and subdomains of entries in
-    :data:`_ALLOWED_PREVIEW_HOSTS`.
-    """
-    if not hostname:
-        return False
-    host = hostname.rstrip(".").lower()
-    for allowed in _ALLOWED_PREVIEW_HOSTS:
-        allowed_host = allowed.rstrip(".").lower()
-        if host == allowed_host or host.endswith("." + allowed_host):
-            return True
-    return False
-
-
 def _fetch(url, max_bytes=65536):
     """Fetch the body of an HTTP/HTTPS URL with safety limits.
 
@@ -301,8 +284,8 @@ def _fetch(url, max_bytes=65536):
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Unsupported scheme: {url}")
-    if not parsed.hostname or not _is_allowed_host(parsed.hostname):
-        raise ValueError(f"Disallowed host: {url}")
+    if not parsed.hostname:
+        raise ValueError(f"Missing host: {url}")
     if not _resolves_to_public_ip(parsed.hostname):
         raise ValueError(f"Unsafe URL: {url}")
 

@@ -1449,7 +1449,7 @@ function _buildMsgHtml(m, time, fullTime, color) {
     }
 
     if (m.content?.trim()) {
-        bodyHtml += `<span class="text" id="msg-text-${m.id}">${formatText(m.content)}</span>`;
+        bodyHtml += `<div class="text" id="msg-text-${m.id}" data-raw="${escapeHtml(m.content)}">${formatText(m.content)}</div>`;
     }
 
     if (m.filename) {
@@ -2560,12 +2560,11 @@ document.getElementById("add-member-submit-btn").onclick = async () => {
 // Edit Messages
 function startEdit(msgId) {
     const textDiv = document.getElementById(`msg-text-${msgId}`);
-    const originalText = textDiv.innerText;
+    const originalText = textDiv.dataset.raw || textDiv.innerText;
 
     // Prevent double-edit
     if (textDiv.dataset.editing === "true") return;
     textDiv.dataset.editing = "true";
-    textDiv.dataset.originalText = originalText; // store it here
 
     textDiv.innerHTML = `
         <textarea id="edit-input-${msgId}" rows="3" style="width:100%;">${escapeHtml(originalText)}</textarea>
@@ -2601,10 +2600,9 @@ function startEdit(msgId) {
 
 function cancelEdit(msgId) {
     const textDiv = document.getElementById(`msg-text-${msgId}`);
-    const originalText = textDiv.dataset.originalText || "";
-    textDiv.innerText = originalText;
+    const originalText = textDiv.dataset.raw || "";
+    textDiv.innerHTML = formatText(originalText);
     delete textDiv.dataset.editing;
-    delete textDiv.dataset.originalText;
 }
 
 function saveEdit(msgId) {
@@ -2629,7 +2627,8 @@ function saveEdit(msgId) {
     })
     .then(() => {
         const textDiv = document.getElementById(`msg-text-${msgId}`);
-        textDiv.innerText = newText;
+        textDiv.dataset.raw = newText;
+        textDiv.innerHTML = formatText(newText);
         delete textDiv.dataset.editing;
     })
     .catch(err => {
@@ -3505,22 +3504,44 @@ function strikethrough(text) {
 }
 
 function formatText(text) {
-    // 1. Escape HTML
+    // 1. Extract fenced code blocks before any escaping.
+    // Strip the newline immediately before/after each fence so the block
+    // element doesn't double up with the pre-wrap newline character.
+    const blocks = [];
+    let s = text.replace(/\n?```(\w*)\n?([\s\S]*?)```\n?/g, (_, lang, code) => {
+        const idx = blocks.length;
+        blocks.push({ lang: lang.trim(), code });
+        return `\x02${idx}\x03`;
+    });
+
+    // 2. Escape HTML for the non-code portions
     const div = document.createElement("div");
-    div.textContent = text;
+    div.textContent = s;
     let safe = div.innerHTML;
 
-    // 2. Text formatting
-    safe = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    safe = safe.replace(/__(.+?)__/g, "<u>$1</u>");
-    safe = safe.replace(/~~(.+?)~~/g, "<s>$1</s>");
-    safe = safe.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    // 3. Inline code
+    safe = safe.replace(/`([^`\n]+)`/g, '<code class="msg-inline-code">$1</code>');
 
-    // 3. Links last
+    // 4. Text formatting
+    safe = safe.replace(/\*\*(.+?)\*\*/gs, "<strong>$1</strong>");
+    safe = safe.replace(/__(.+?)__/gs, "<u>$1</u>");
+    safe = safe.replace(/~~(.+?)~~/gs, "<s>$1</s>");
+    safe = safe.replace(/\*(.+?)\*/gs, "<em>$1</em>");
+
+    // 5. Links
     safe = safe.replace(
         /((https?:\/\/|www\.)[^\s]+)/g,
         url => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
     );
+
+    // 6. Restore code blocks with syntax highlighting
+    safe = safe.replace(/\x02(\d+)\x03/g, (_, i) => {
+        const { lang, code } = blocks[Number(i)];
+        const trimmed = code.replace(/^\n/, '').replace(/\n$/, '');
+        const highlighted = _syntaxHighlight(trimmed, lang);
+        const label = lang ? `<span class="msg-code-lang">${escapeHtml(lang)}</span>` : '';
+        return `<div class="msg-code-block">${label}<pre class="msg-code-pre"><code>${highlighted}</code></pre></div>`;
+    });
 
     return safe;
 }
@@ -3907,15 +3928,18 @@ function _previewOgEl(data) {
 // ── Syntax highlighter ───────────────────────────────────────────────────────
 
 const _EXT_TO_LANG = {
-    py: 'python', pyx: 'python', pyi: 'python',
+    py: 'python', pyx: 'python', pyi: 'python', python: 'python', python3: 'python',
     js: 'js', mjs: 'js', cjs: 'js', ts: 'js', tsx: 'js', jsx: 'js',
+    javascript: 'js', typescript: 'js',
     c: 'c', h: 'c', cpp: 'c', cc: 'c', cxx: 'c', hpp: 'c', hxx: 'c',
-    sh: 'sh', bash: 'sh', zsh: 'sh',
-    makefile: 'make', mk: 'make',
+    cplusplus: 'c', 'c++': 'c',
+    sh: 'sh', bash: 'sh', zsh: 'sh', shell: 'sh',
+    makefile: 'make', mk: 'make', make: 'make',
     cmake: 'cmake',
     vhd: 'vhdl', vhdl: 'vhdl',
-    v: 'verilog', sv: 'verilog', svh: 'verilog',
-    java: 'java', go: 'go', rs: 'rust',
+    v: 'verilog', sv: 'verilog', svh: 'verilog', verilog: 'verilog',
+    java: 'java', go: 'go', golang: 'go', rs: 'rust', rust: 'rust',
+    xml: 'xml', xsl: 'xml', xslt: 'xml', xsd: 'xml', svg: 'xml', html: 'xml', htm: 'xml',
 };
 
 const _HL_RULES = (() => {
@@ -3930,6 +3954,8 @@ const _HL_RULES = (() => {
     const CM_VAR   = /\$(?:ENV|CACHE)?\{[^}]*\}/y;
     const VL_NUM   = /\d+\s*'\s*[bBoOdDhH][0-9a-fA-FxXzZ_]*/y;
     const VL_DIR   = /`\w+/y;
+    const PP_DIR   = /#\s*\w+/y;
+    const INCL_ANG = /<[^\s>\n][^>\n]*>/y;
     const kw  = (...ws) => new RegExp(String.raw`\b(?:${ws.join('|')})\b`, 'y');
     const kwi = (...ws) => new RegExp(String.raw`\b(?:${ws.join('|')})\b`, 'yi');
 
@@ -3958,6 +3984,8 @@ const _HL_RULES = (() => {
         c: [
             [STR,     'str'],
             [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [PP_DIR,   'kw'],
+            [INCL_ANG, 'str'],
             [kw('auto','bool','break','case','char','class','const','continue',
                'default','delete','do','double','else','enum','extern',
                'false','float','for','goto','if','inline','int','long','new',
@@ -4097,6 +4125,15 @@ const _HL_RULES = (() => {
                'f32','f64','bool','char','str','String','Option','Result',
                'Some','None','Ok','Err','Vec','Box','Arc','Rc'), 'kw'],
             [NUM_HEX, 'num'], [NUM_DEC, 'num'],
+        ],
+        xml: [
+            [/<!--[\s\S]*?-->/y,          'cmt'],  // comments
+            [/<!\[CDATA\[[\s\S]*?\]\]>/y, 'cmt'],  // CDATA sections
+            [/<\?[\s\S]*?\?>/y,           'kw'],   // processing instructions <?...?>
+            [/<!(?!--)[^>]*>/y,           'kw'],   // DOCTYPE / other declarations
+            [/<\/?[\w:.-]+/y,             'kw'],   // <tagName or </tagName
+            [/\/?>/y,                     'kw'],   // > or />
+            [/"[^"]*"|'[^']*'/y,          'str'],  // attribute values
         ],
     };
 })();

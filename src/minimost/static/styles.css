@@ -978,6 +978,43 @@ a { color: #9cdcfe; }
 .hl-cmt { color: #6a9955; font-style: italic; }
 .hl-num { color: #b5cea8; }
 
+/* Message code blocks */
+.msg-code-block {
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 6px 0;
+    font-size: 0.88em;
+}
+.msg-code-lang {
+    display: block;
+    background: #252526;
+    padding: 3px 10px;
+    color: #888;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 0.85em;
+    border-bottom: 1px solid #3a3a3a;
+    user-select: none;
+}
+.msg-code-pre {
+    margin: 0;
+    padding: 10px 14px;
+    overflow-x: auto;
+    background: #1e1e1e;
+    line-height: 1.5;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;
+    white-space: pre;
+}
+.msg-inline-code {
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 0.9em;
+    color: #d4d4d4;
+}
+
 /* Reactions */
 .react-btn {
     display: inline-flex;
