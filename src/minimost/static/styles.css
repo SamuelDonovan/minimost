@@ -977,9 +977,13 @@ a { color: #9cdcfe; }
 }
 /* Syntax token colors (VS Code Dark+ inspired) */
 .hl-kw  { color: #569cd6; }
-.hl-str { color: #ce9178; }
-.hl-cmt { color: #6a9955; font-style: italic; }
-.hl-num { color: #b5cea8; }
+.hl-str  { color: #ce9178; }
+.hl-cmt  { color: #6a9955; font-style: italic; }
+.hl-num  { color: #b5cea8; }
+.hl-type { color: #4ec9b0; }
+.hl-dec  { color: #c586c0; }
+.hl-var  { color: #9cdcfe; }
+.hl-bi   { color: #dcdcaa; }
 
 /* Message code blocks */
 .msg-code-block {
