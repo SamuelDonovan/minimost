@@ -93,6 +93,20 @@ def _max_upload_size_bytes() -> int:
     return 25 * 1024 * 1024
 
 
+def _check_upload_sizes(files, max_bytes: int):
+    """Return an error tuple if any file exceeds *max_bytes*, else ``None``."""
+    for f in files:
+        if not hasattr(f, "filename") or not f.filename:
+            continue
+        f.stream.seek(0, 2)
+        size = f.stream.tell()
+        f.stream.seek(0)
+        if size > max_bytes:
+            mb = max_bytes // (1024 * 1024)
+            return f"file too large (max {mb} MB)", 413
+    return None
+
+
 def _max_avatar_size_bytes() -> int:
     """Return the configured max avatar size in bytes (default 5 MiB)."""
     try:
@@ -998,18 +1012,12 @@ def send(channel):
     except (ValueError, TypeError):
         reply_to_id = None
 
-    max_bytes = _max_upload_size_bytes()
-    for f in request.files.getlist("files"):
-        if not hasattr(f, "filename") or not f.filename:
-            continue
-        f.stream.seek(0, 2)
-        size = f.stream.tell()
-        f.stream.seek(0)
-        if size > max_bytes:
-            mb = max_bytes // (1024 * 1024)
-            return f"file too large (max {mb} MB)", 413
+    files = request.files.getlist("files")
+    size_err = _check_upload_sizes(files, _max_upload_size_bytes())
+    if size_err:
+        return size_err
 
-    filenames = _save_uploaded_files(request.files.getlist("files"))
+    filenames = _save_uploaded_files(files)
 
     if not text and not filenames:
         return "empty", 400

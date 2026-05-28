@@ -29,6 +29,26 @@ import time
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
+def _maybe_delete_file(
+    path: Path, image_cutoff: float, file_cutoff: float, dry_run: bool
+) -> None:
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return
+    cutoff = image_cutoff if path.suffix.lower() in _IMAGE_EXTENSIONS else file_cutoff
+    if mtime >= cutoff:
+        return
+    if dry_run:
+        print(f"[DRY RUN] Would delete: {path}")
+        return
+    try:
+        path.unlink()
+        print(f"Deleted: {path}")
+    except FileNotFoundError:
+        pass  # already removed by another process
+
+
 def delete_files_older_than(
     directory: str,
     image_days: int,
@@ -60,26 +80,8 @@ def delete_files_older_than(
         raise ValueError(f"{directory} is not a valid directory")
 
     for path in dirpath.iterdir():
-        if not path.is_file():
-            continue
-
-        try:
-            mtime = path.stat().st_mtime
-        except OSError:
-            continue
-
-        ext = path.suffix.lower()
-        cutoff = image_cutoff if ext in _IMAGE_EXTENSIONS else file_cutoff
-
-        if mtime < cutoff:
-            if dry_run:
-                print(f"[DRY RUN] Would delete: {path}")
-            else:
-                try:
-                    path.unlink()
-                    print(f"Deleted: {path}")
-                except FileNotFoundError:
-                    pass  # already removed by another process
+        if path.is_file():
+            _maybe_delete_file(path, image_cutoff, file_cutoff, dry_run)
 
 
 def delete_messages_older_than(users_dir: str, days: int, dry_run: bool = False):
@@ -107,25 +109,27 @@ def delete_messages_older_than(users_dir: str, days: int, dry_run: bool = False)
 
     for db_file in sorted(dirpath.glob("*.db")):
         try:
-            conn = sqlite3.connect(str(db_file))
-            conn.execute("PRAGMA journal_mode=WAL")
-            if dry_run:
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM messages WHERE ts < ?", (cutoff,)
-                ).fetchone()
-                count = row[0] if row else 0
-                if count > 0:
-                    print(
-                        f"[DRY RUN] Would delete {count} messages from {db_file.name}"
-                    )
-            else:
-                cur = conn.execute("DELETE FROM messages WHERE ts < ?", (cutoff,))
-                if cur.rowcount > 0:
-                    print(f"Deleted {cur.rowcount} messages from {db_file.name}")
-                conn.commit()
-            conn.close()
+            _clean_user_db(db_file, cutoff, dry_run)
         except Exception:  # nosec B110 — one bad DB must not stop the rest
             pass
+
+
+def _clean_user_db(db_file: Path, cutoff: float, dry_run: bool) -> None:
+    conn = sqlite3.connect(str(db_file))
+    conn.execute("PRAGMA journal_mode=WAL")
+    if dry_run:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE ts < ?", (cutoff,)
+        ).fetchone()
+        count = row[0] if row else 0
+        if count > 0:
+            print(f"[DRY RUN] Would delete {count} messages from {db_file.name}")
+    else:
+        cur = conn.execute("DELETE FROM messages WHERE ts < ?", (cutoff,))
+        if cur.rowcount > 0:
+            print(f"Deleted {cur.rowcount} messages from {db_file.name}")
+        conn.commit()
+    conn.close()
 
 
 if __name__ == "__main__":

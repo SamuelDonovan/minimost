@@ -49,6 +49,8 @@ _SQL_PARTICIPANT = (
     "SELECT state FROM call_participants WHERE call_id = ? AND username = ?"
 )
 _ERR_NOT_FOUND = "call not found"
+_ERR_CHANNEL_REQUIRED = "channel required"
+_ERR_ACCESS_DENIED = "access denied"
 
 
 def _db():
@@ -145,11 +147,11 @@ def initiate_call():
     channel = data.get("channel", "").strip()
 
     if not channel:
-        return jsonify({"error": "channel required"}), 400
+        return jsonify({"error": _ERR_CHANNEL_REQUIRED}), 400
 
     participants = _participants_for_channel(channel)
     if not participants or user not in participants:
-        return jsonify({"error": "access denied"}), 403
+        return jsonify({"error": _ERR_ACCESS_DENIED}), 403
 
     others = [p for p in participants if p != user]
     if not others:
@@ -883,10 +885,10 @@ def start_screenshare():
     data = request.get_json(silent=True) or {}
     channel = data.get("channel", "").strip()
     if not channel:
-        return jsonify({"error": "channel required"}), 400
+        return jsonify({"error": _ERR_CHANNEL_REQUIRED}), 400
     participants = _participants_for_channel(channel)
     if participants and user not in participants:
-        return jsonify({"error": "access denied"}), 403
+        return jsonify({"error": _ERR_ACCESS_DENIED}), 403
     now = time.time()
     share_id = str(uuid.uuid4())
     db = _db()
@@ -933,7 +935,7 @@ def stop_screenshare(share_id):
         if not share:
             return jsonify({"error": "share not found"}), 404
         if share["sharer"] != user:
-            return jsonify({"error": "access denied"}), 403
+            return jsonify({"error": _ERR_ACCESS_DENIED}), 403
         db.execute(
             "UPDATE screenshares SET state = 'ended', ended_ts = ? WHERE share_id = ?",
             (now, share_id),
@@ -966,10 +968,10 @@ def active_screenshares():
     user = session["user"]
     channel = request.args.get("channel", "").strip()
     if not channel:
-        return jsonify({"error": "channel required"}), 400
+        return jsonify({"error": _ERR_CHANNEL_REQUIRED}), 400
     participants = _participants_for_channel(channel)
     if participants and user not in participants:
-        return jsonify({"error": "access denied"}), 403
+        return jsonify({"error": _ERR_ACCESS_DENIED}), 403
     db = _db()
     rows = db.execute(
         "SELECT share_id, channel, sharer, started_ts"
@@ -1086,7 +1088,7 @@ def get_share_media(share_id):
             return jsonify({"error": "not found"}), 404
         participants = _participants_for_channel(share["channel"])
         if participants and user not in participants:
-            return jsonify({"error": "access denied"}), 403
+            return jsonify({"error": _ERR_ACCESS_DENIED}), 403
         init_row = db.execute(
             "SELECT mime_type, data FROM share_media"
             " WHERE share_id = ? AND is_init = 1 ORDER BY id DESC LIMIT 1",
