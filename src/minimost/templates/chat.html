@@ -4670,6 +4670,7 @@ let callStatePollId     = null;
 let audioMuted          = false;
 let cameraEnabled       = false;
 let ringAudio           = null;
+let callingAudio        = null;
 let ringTimeoutId       = null;
 let incomingRingTimeout = null;
 const RING_TIMEOUT_MS   = 30000;
@@ -4746,7 +4747,7 @@ function openIncomingCallUI(callData) {
     document.getElementById("call-caller-name").textContent = callData.initiator;
     document.getElementById("call-incoming").style.display = "flex";
     if (!notifMuted) {
-        const a = new Audio("/static/notification.mp3");
+        const a = new Audio("/static/receiving_call.mp3");
         a.loop = true;
         a.play().catch(() => {});
         ringAudio = a;
@@ -5931,6 +5932,12 @@ async function startCall() {
         openActiveCallUI();
         _initCallAvatarView(peers);
         _startCallTimer();
+        if (!notifMuted) {
+            callingAudio = new Audio("/static/calling.mp3");
+            callingAudio.volume = 0.4;
+            callingAudio.loop = true;
+            callingAudio.play().catch(() => {});
+        }
         await _startMediaCapture(activeCallId);
         _startRelayPolling(peers);
         _startCallStatePolling();
@@ -5951,6 +5958,7 @@ async function _handleRingTimeout() {
     activeCallId = null;
     await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
     document.getElementById("call-timer").textContent = "No answer";
+    const hu2 = new Audio("/static/hang_up.mp3"); hu2.volume = 0.4; hu2.play().catch(() => {});
     setTimeout(_cleanupCall, 2000);
 }
 
@@ -5994,10 +6002,12 @@ async function endCall() {
     const callId = activeCallId;
     activeCallId = null;
     await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
+    const hu1 = new Audio("/static/hang_up.mp3"); hu1.volume = 0.4; hu1.play().catch(() => {});
     _cleanupCall();
 }
 
 function _cleanupCall() {
+    if (callingAudio) { callingAudio.pause(); callingAudio = null; }
     if (ringTimeoutId) { clearTimeout(ringTimeoutId); ringTimeoutId = null; }
     _stopCallTimer();
     clearInterval(callStatePollId); callStatePollId = null;
@@ -6036,9 +6046,12 @@ async function _pollCallState() {
         if (data.state === "active" && ringTimeoutId) {
             clearTimeout(ringTimeoutId);
             ringTimeoutId = null;
+            if (callingAudio) { callingAudio.pause(); callingAudio = null; }
+            const ca1 = new Audio("/static/call_accepted.mp3"); ca1.volume = 0.4; ca1.play().catch(() => {});
         }
         if (data.state === "ended" || data.state === "rejected") {
             activeCallId = null;
+            const hu3 = new Audio("/static/hang_up.mp3"); hu3.volume = 0.4; hu3.play().catch(() => {});
             _cleanupCall();
         }
     } catch { /* ignore transient errors */ }
