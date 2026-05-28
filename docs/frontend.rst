@@ -56,7 +56,7 @@ Key JavaScript variables maintained in the module scope:
    * - ``seen``
      - ``Set`` of message IDs already rendered (deduplication guard).
    * - ``CURRENT_USER``
-     - Injected from the Jinja2 template: ``{{ session['user'] }}``.
+     - Injected from the Jinja2 template: ``{{ session.user }}``.
    * - ``notifMuted``
      - Boolean loaded from ``localStorage['notifMuted']``; persists across
        page reloads.
@@ -114,6 +114,25 @@ loop calls a different API endpoint and updates the DOM based on the response.
    * - ``refreshTotalUnreadCount()``
      - 5 s
      - Calls ``/unread_count`` and updates the browser tab title.
+   * - ``pollIncomingCalls()``
+     - 1 s
+     - Calls ``/calls/incoming`` and surfaces incoming call notifications
+       for both ringing calls and active-call invitations.
+   * - ``_pollCallState()``
+     - 3 s
+     - During an active call: diffs the participant list, detects call end,
+       and tracks ``screenshare_user`` changes. Started by ``startCall()``
+       and ``acceptCall()``; stopped by ``_cleanupCall()``.
+   * - Per-participant audio poll
+     - 100 ms
+     - One interval per remote participant; polls
+       ``/calls/<id>/media?sender=<user>:audio`` and schedules PCM chunks
+       on the shared ``AudioContext``.
+   * - Screen media poll (``_pollScreenMedia``)
+     - 500 ms
+     - Polls ``/calls/<id>/media?sender=<screenshare_user>:screen`` and
+       feeds chunks into the screen ``MediaSource`` pipeline. Active only
+       while ``currentScreenSender`` is set to a remote user.
    * - Presence heartbeat
      - 30 s
      - Re-sends the current presence state to keep ``last_seen`` fresh.
@@ -403,85 +422,171 @@ The "New DM" modal provides username autocomplete:
 Calling
 -------
 
-Voice and video calls are initiated from a phone icon displayed in the
-topbar when the active channel is a DM or private channel.
+Voice calls (audio only) are initiated from a phone icon displayed in the
+topbar when the active channel is a DM or private channel.  Calls support
+any number of participants; any member of an active call can invite additional
+registered users.
 
 **Caller flow:**
 
-1. ``startCall()`` posts ``{ channel }`` to ``POST /calls/initiate`` and
+1. The microphone is acquired via ``getUserMedia`` *before* the call is
+   created on the server.  This ensures the call is never created and then
+   immediately abandoned due to a permission denial or browser timeout.
+2. ``startCall()`` posts ``{ channel }`` to ``POST /calls/initiate`` and
    receives a ``call_id``.
-2. A call overlay appears showing a "Calling…" status and a hang-up button.
-3. A 30-second ``setTimeout`` (``ringTimeoutId``) is armed; if the callee
-   does not answer in time, ``_handleRingTimeout()`` posts
-   ``POST /calls/<id>/end`` and shows "No answer" before cleaning up.
-4. ``_pollCallState()`` runs every 3 seconds polling
-   ``GET /calls/<id>/state``; when ``state === "active"`` the call is live
-   and the ring timeout is cleared.
-5. ``MediaRecorder`` captures the local camera/microphone stream; each
-   ``dataavailable`` chunk is uploaded via ``POST /calls/<id>/media`` with
-   ``X-Track: video``.
-6. A 500 ms interval polls ``GET /calls/<id>/media?sender=<callee>`` for
-   the remote participant's chunks and feeds them into a ``MediaSource`` /
-   ``SourceBuffer`` for playback.
+3. A call panel appears; ``callingAudio`` (``calling.mp3``) loops while
+   waiting for the first participant to answer.
+4. A 30-second ``setTimeout`` (``ringTimeoutId``) is armed; if nobody
+   answers in time, ``_handleRingTimeout()`` posts ``POST /calls/<id>/end``
+   and shows "No answer" before cleaning up.
+5. ``_startCallStatePolling()`` polls ``GET /calls/<id>/state`` every 3
+   seconds.  When ``state === "active"`` the ring timeout is cleared and
+   ``call_accepted.mp3`` plays.
 
-**Callee flow:**
+**Callee / invite flow:**
 
 1. ``pollIncomingCalls()`` runs every second, polling
-   ``GET /calls/incoming``.
-2. When a ringing call is returned, ``openIncomingCallUI(callData)`` shows
-   an overlay with the caller's name and Accept/Decline buttons.
-3. A client-side timeout (``incomingRingTimeout``) is set to
-   ``RING_TIMEOUT_MS − elapsed`` (where elapsed is computed from the
-   server-supplied ``started_ts``); it closes the UI when the ring period
-   expires even if the caller does not explicitly end the call.
-4. The polling continues while the overlay is visible; if the call
-   disappears from the ringing list (caller hung up or timed out),
-   ``closeIncomingCallUI()`` is called automatically.
-5. Accepting calls ``POST /calls/<id>/accept`` and starts the same media
-   relay pipeline used by the caller.
-6. Declining calls ``POST /calls/<id>/reject``.
+   ``GET /calls/incoming``.  This endpoint returns both fresh ringing calls
+   *and* active-call invitations (a pending participant row on an active call).
+2. When a call is returned, ``openIncomingCallUI(callData)`` shows an overlay
+   with the caller's name and Accept / Decline buttons; ``receiving_call.mp3``
+   loops.  The client-side ring timeout is always the full ``RING_TIMEOUT_MS``
+   (30 seconds) regardless of how long the call has been ringing on the server,
+   so invited users always get the full window.
+3. Accepting posts to ``POST /calls/<id>/accept``; declining posts to
+   ``POST /calls/<id>/reject``.
+
+**Group call — state polling and participant diffing:**
+
+``_pollCallState()`` is the engine that keeps the call panel in sync with
+server state.  On every tick it:
+
+1. Checks the overall call state.  ``"ended"`` or ``"rejected"`` triggers
+   ``_cleanupCall()`` and plays ``hang_up.mp3``.
+2. Diffs the accepted participant list against ``remoteParticipants`` (a
+   ``Map<username, state>``).  New accepted participants get a tile added via
+   ``_addRemoteParticipant()``; departed participants are removed via
+   ``_removeRemoteParticipant()``, which also plays ``left_call.mp3`` while
+   the call is still active.
+3. Reads ``screenshare_user`` from the response and triggers screen-receive
+   transitions (see below).
+
+**Per-participant audio and voice activity detection:**
+
+Each remote participant has independent polling state:
+
+- A 100 ms ``setInterval`` polls ``GET /calls/<id>/media?sender=<user>:audio``
+  and schedules decoded PCM chunks on a shared ``AudioContext`` using the Web
+  Audio API for gapless, drift-free playback.
+- An ``AnalyserNode`` connected to the participant's audio output drives a
+  100 ms VAD interval that toggles the ``speaking`` CSS class on their tile's
+  ring element.
+
+**Participant tile grid:**
+
+``_createParticipantTile(username)`` builds a DOM tile containing a speaking
+ring (``div.call-speaking-ring`` inside ``div.call-participant-avatar``),
+an avatar (``makeAvatarWrap``), and a name label.  The ring uses
+``inset: -6px`` on the avatar container so it is always perfectly centred
+regardless of tile size.  ``_updateCallGrid()`` sets the CSS grid
+``grid-template-columns`` based on the number of remote participants:
+
+- 1 participant: ``1fr`` (centred, full width).
+- 2 or more participants: ``1fr 1fr`` (equal columns).
+
+**Inviting participants during a call:**
+
+The "Add person" button in the call controls bar opens a panel with a fuzzy-
+search input (backed by ``fuzzySearch`` / ``highlightFuzzyMatch``) that lists
+all registered users not already in the call.  Clicking a name posts to
+``POST /calls/<id>/invite``, which adds a ``call_participants`` row with
+``state = 'pending'``.  The invited user sees the standard incoming-call
+notification; the call is already active so they join immediately on accept.
+
+**Leave vs. end:**
+
+Clicking the hang-up button calls ``endCall()``, which posts to
+``POST /calls/<id>/end``.  The server marks the participant as ``'left'`` and
+only transitions the overall call to ``'ended'`` if no other accepted
+participants remain.  Participants still in the call detect the departure on
+their next ``_pollCallState`` tick (the departed user's entry changes to
+``state: "left"``), remove their tile, and play ``left_call.mp3``.
 
 **Screen sharing flow:**
 
-Screen sharing is available during an active call via a monitor-icon button
-in the call controls bar.
+Screen sharing is available during an active call.  Only one participant may
+share at a time; the server tracks the current sharer in the ``screenshare_user``
+column of the ``calls`` table.
 
 1. ``toggleScreenShare()`` is invoked directly by the button's ``onclick``
    handler.  ``navigator.mediaDevices.getDisplayMedia()`` is called
-   immediately inside this function — without any intermediate async calls —
-   so the browser's user-gesture activation token is preserved.
-2. The resulting ``displayStream`` is passed to ``_startScreenCapture()``,
-   which sets up a separate ``MediaRecorder`` for the screen track.
-3. Screen chunks are uploaded via ``POST /calls/<id>/media`` with
-   ``X-Track: screen``, which the server stores as ``sender = "user:screen"``
-   in ``call_media``.
-4. A dedicated poll interval fetches ``GET /calls/<id>/media?sender=<user>:screen``
-   and feeds chunks into a second ``MediaSource`` / ``SourceBuffer`` pipeline
-   connected to ``#call-screen-video``.
-5. When screen sharing is active, the ``#call-panel`` gains the
-   ``screen-share-active`` CSS class: the screen video takes over as the
-   main view and the camera video shrinks to a picture-in-picture corner.
-6. When the user stops sharing (button click or browser capture end),
-   ``_stopScreenCapture()`` stops the recorder and tracks; the
-   ``screen-share-active`` class is removed and the camera view is restored.
-7. If the browser's native screen-capture stop button is used,
-   the ``"ended"`` event on the video track calls ``toggleScreenShare()``
-   automatically to keep UI state in sync.
+   immediately — without any intermediate async calls — so the browser's
+   user-gesture activation token is preserved.
+2. The resulting stream is passed to ``_startScreenCapture()``, which sets up
+   a ``MediaRecorder`` for the screen track.  Chunks are uploaded via
+   ``POST /calls/<id>/media`` with ``X-Track: screen``.
+3. When the first screen init segment arrives, the server sets
+   ``screenshare_user = <sender>``; any existing sharer is atomically
+   replaced (takeover).
+4. On the receiver side, ``_pollCallState()`` reads ``screenshare_user``.
+   When it differs from ``currentScreenSender`` the old ``MediaSource`` /
+   ``SourceBuffer`` pipeline is torn down and a new one is started for the
+   new sender.  If the local user was sharing, ``_stopScreenCapture()`` is
+   called automatically.
+5. When ``screenshare_user`` becomes ``null`` (sharer left or stopped),
+   ``_stopScreenReceiving()`` removes the ``screen-share-active`` CSS class
+   and the participant grid returns to the full-panel layout.
+6. If a participant who is screensharing leaves the call,
+   ``_removeRemoteParticipant()`` immediately calls ``_stopScreenReceiving()``
+   without waiting for the next state poll.
 
-**Key variables:**
+**Sound effects:**
+
+All call audio respects the notification mute toggle.
 
 .. list-table::
    :header-rows: 1
    :widths: 30 70
 
+   * - File
+     - When played
+   * - ``receiving_call.mp3``
+     - Loops on the callee side while the incoming-call overlay is visible.
+   * - ``calling.mp3``
+     - Loops on the caller side while waiting for the first answer.
+   * - ``call_accepted.mp3``
+     - Played once on the caller side when ``state`` transitions to
+       ``"active"``.
+   * - ``hang_up.mp3``
+     - Played when the local user hangs up, when the call ends for all
+       participants (detected via ``_pollCallState``), or when a ring times
+       out with no answer.
+   * - ``left_call.mp3``
+     - Played when a remote participant leaves while the call is still active.
+
+**Key variables:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
    * - Variable
      - Purpose
    * - ``activeCallId``
      - UUID of the call currently in progress; ``null`` when idle.
+   * - ``remoteParticipants``
+     - ``Map<username, state>`` holding per-participant polling state
+       (audio intervals, VAD analyser, tile DOM element, etc.).
+   * - ``sharedAudioCtx``
+     - A single ``AudioContext`` shared across all remote participants for
+       gapless PCM playback.
+   * - ``currentScreenSender``
+     - Username of the participant whose ``:screen`` track is currently
+       being received; ``null`` when no screen share is active.
    * - ``ringTimeoutId``
      - Handle for the caller-side 30-second ring timeout.
    * - ``incomingRingTimeout``
-     - Handle for the callee-side ring timeout.
+     - Handle for the callee-side ring timeout (always ``RING_TIMEOUT_MS``).
    * - ``RING_TIMEOUT_MS``
      - Ring timeout in milliseconds (30 000); matches the backend
        ``_RINGING_TIMEOUT`` of 30 s.
@@ -494,7 +599,7 @@ in the call controls bar.
    * - ``screenRecorder``
      - The ``MediaRecorder`` instance for the screen track.
    * - ``screenEnabled``
-     - ``true`` while screen sharing is active.
+     - ``true`` while the local user is screensharing.
    * - ``screenPollId``
      - Handle for the screen-relay download poll interval.
 

@@ -66,11 +66,17 @@ Messaging
 Real-time Interaction
 ~~~~~~~~~~~~~~~~~~~~~
 
-- **Voice & video calling** — one-click calls directly in any DM or private
-  channel.  Audio and video are captured with ``MediaRecorder`` and relayed
-  through the server as binary chunks, so calls work even behind strict
-  firewalls with no UDP or peer-to-peer connectivity.  Unanswered calls time
-  out and cancel automatically.
+- **Voice calling** — one-click calls directly in any DM or private channel.
+  Audio is captured with ``MediaRecorder`` and relayed through the server as
+  binary chunks, so calls work even behind strict firewalls with no UDP or
+  peer-to-peer connectivity.  Unanswered calls time out and cancel automatically.
+- **Group calling** — any participant in an active call can invite additional
+  registered users via an in-call "Add person" button with fuzzy-search.
+  Participants join or leave independently; the call ends only when the last
+  person leaves.  Avatar tiles reflow dynamically: one caller fills the panel,
+  two split 50/50, three or more tile in a grid.  Each tile shows an
+  independent speaking-ring animation driven by per-participant voice activity
+  detection.
 - **Emoji reactions** — react to any message with one of 477 emoji; reactions
   are toggled atomically and sync instantly across all users.
 - **Typing indicators** — see when other users are composing a message.
@@ -110,7 +116,9 @@ Interface
   pinch-to-zoom font sizing.
 - **Desktop notifications** — browser push notifications when a new message
   arrives and the tab is in the background; mutable per session.
-- **Sound notifications** — configurable audio alert on new messages.
+- **Sound notifications** — configurable audio alerts: new messages, incoming
+  calls, call answered, hang-up, and participant-left tones; all mutable with
+  one click.
 
 Security
 ~~~~~~~~

@@ -36,8 +36,10 @@
 - **Editing & deletion** — edit or delete your own messages; changes propagate in real time
 - **Emoji reactions** — react to any message; reactions sync across all users instantly
 - **Read receipts** — see who has read your messages
-- **Voice & video calling** — one-click calls in any DM or private channel; audio and video are relayed through the server so calls work even behind restrictive firewalls; unanswered calls time out and cancel automatically
-- **Screen sharing** — share your screen during a call with one click; the shared screen takes over as the main view while the camera shrinks to a picture-in-picture corner; stopping the browser capture automatically ends the share
+- **Voice calling** — one-click calls in any DM or private channel; audio is relayed through the server so calls work even behind restrictive firewalls; unanswered calls time out and cancel automatically
+- **Group calling** — any participant in an active call can invite additional registered users via the in-call "Add person" button; up to any number of callers can share the same call; participants can leave individually without ending the call for others; the last person to leave ends the call
+- **Dynamic call layout** — participants appear as avatar tiles that reflow automatically: one caller fills the panel, two callers split 50/50, three or more tile in a grid; each tile has an independent speaking-ring animation driven by per-participant voice activity detection
+- **Screen sharing** — share your screen during a call with one click; the shared screen takes the majority of the panel while participant avatars move to a right-hand sidebar; only one participant may share at a time — starting a new share automatically stops any existing one; stopping the browser capture ends the share
 - **Presence indicators** — active, idle, away, and offline states updated automatically; overlaid on user avatars
 - **User avatars** — default initials avatar for every account; upload a custom image via Settings; displayed in the DM sidebar, private channel tooltips, and the member list
 - **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
