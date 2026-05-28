@@ -184,7 +184,8 @@ def test_incoming_excludes_expired_calls(alice_and_bob, app):
     assert data == []
 
 
-def test_incoming_excludes_accepted_calls(alice_and_bob, app):
+def test_incoming_shows_active_call_invite(alice_and_bob, app):
+    """Pending participant in an active call (group invite) sees it as incoming."""
     call_id = str(uuid.uuid4())
     _insert_call(call_id, "dm:alice:bob", "alice", state="active")
     _insert_participant(call_id, "bob", role="participant", state="pending")
@@ -194,7 +195,8 @@ def test_incoming_excludes_accepted_calls(alice_and_bob, app):
         sess["user"] = "bob"
 
     data = bob_client.get("/calls/incoming").get_json()
-    assert data == []
+    assert len(data) == 1
+    assert data[0]["call_id"] == call_id
 
 
 def test_incoming_excludes_calls_where_already_responded(alice_and_bob, app):
@@ -378,11 +380,13 @@ def test_end_unknown_call_returns_404(alice):
     assert resp.status_code == 404
 
 
-def test_end_sets_call_ended(alice_and_bob):
+def test_end_last_participant_ends_call(alice_and_bob):
+    """When the last accepted participant leaves the call ends."""
     call_id = str(uuid.uuid4())
     _insert_call(call_id, "dm:alice:bob", "alice", state="active")
     _insert_participant(call_id, "alice", role="initiator", state="accepted")
-    _insert_participant(call_id, "bob", role="participant", state="accepted")
+    # bob already left, alice is the last one
+    _insert_participant(call_id, "bob", role="participant", state="left")
 
     resp = alice_and_bob.post(f"/calls/{call_id}/end")
     assert resp.status_code == 200
@@ -397,6 +401,23 @@ def test_end_sets_call_ended(alice_and_bob):
     assert alice_p["left_ts"] is not None
 
 
+def test_end_with_remaining_participants_keeps_call_active(alice_and_bob, app):
+    """When a participant leaves but others remain, the call stays active."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/end")
+    assert resp.status_code == 200
+
+    call = _get_call(call_id)
+    assert call["state"] == "active"
+
+    alice_p = _get_participant(call_id, "alice")
+    assert alice_p["state"] == "left"
+
+
 def test_end_ringing_call_cancels_it(alice_and_bob):
     call_id = str(uuid.uuid4())
     _insert_call(call_id, "dm:alice:bob", "alice", state="ringing")
@@ -407,6 +428,101 @@ def test_end_ringing_call_cancels_it(alice_and_bob):
 
     call = _get_call(call_id)
     assert call["state"] == "ended"
+
+
+# ── POST /calls/<id>/invite ──────────────────────────────────────────────────
+
+
+def test_invite_unauthenticated_redirects(client):
+    resp = client.post("/calls/fake-id/invite", json={"username": "bob"})
+    assert resp.status_code == 302
+
+
+def test_invite_missing_username_returns_400(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/invite", json={})
+    assert resp.status_code == 400
+
+
+def test_invite_unknown_call_returns_404(alice_and_bob):
+    resp = alice_and_bob.post("/calls/no-such-id/invite", json={"username": "bob"})
+    assert resp.status_code == 404
+
+
+def test_invite_non_active_call_returns_409(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="ringing")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/invite", json={"username": "bob"})
+    assert resp.status_code == 409
+
+
+def test_invite_non_participant_caller_returns_403(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    # alice has no participant row
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/invite", json={"username": "bob"})
+    assert resp.status_code == 403
+
+
+def test_invite_unknown_target_returns_404(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+
+    resp = alice_and_bob.post(
+        f"/calls/{call_id}/invite", json={"username": "nosuchuser"}
+    )
+    assert resp.status_code == 404
+
+
+def test_invite_adds_pending_participant(alice_and_bob, app):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/invite", json={"username": "bob"})
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
+
+    bob_p = _get_participant(call_id, "bob")
+    assert bob_p is not None
+    assert bob_p["state"] == "pending"
+
+    # Bob now sees it as incoming
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+    incoming = bob_client.get("/calls/incoming").get_json()
+    assert any(c["call_id"] == call_id for c in incoming)
+
+
+def test_invite_already_accepted_returns_409(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/invite", json={"username": "bob"})
+    assert resp.status_code == 409
+
+
+def test_invite_reinvites_rejected_participant(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="rejected")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/invite", json={"username": "bob"})
+    assert resp.status_code == 200
+
+    bob_p = _get_participant(call_id, "bob")
+    assert bob_p["state"] == "pending"
 
 
 # ── POST /calls/<id>/signal ───────────────────────────────────────────────────
@@ -681,14 +797,15 @@ def test_full_call_lifecycle(alice_and_bob, app):
     assert len(signals_to_alice) == 1
     assert signals_to_alice[0]["payload"] == bob_answer
 
-    # Alice ends the call
+    # Alice leaves — call stays active (Bob is still in it)
     resp = alice_and_bob.post(f"/calls/{call_id}/end")
     assert resp.status_code == 200
 
     state = alice_and_bob.get(f"/calls/{call_id}/state").get_json()
-    assert state["state"] == "ended"
+    assert state["state"] == "active"
 
-    # Bob polls state and sees ended
+    # Bob leaves — now call ends (last participant)
+    bob_client.post(f"/calls/{call_id}/end")
     state = bob_client.get(f"/calls/{call_id}/state").get_json()
     assert state["state"] == "ended"
 

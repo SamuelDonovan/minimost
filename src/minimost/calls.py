@@ -218,10 +218,12 @@ def incoming_calls():
         SELECT c.call_id, c.channel, c.initiator, c.started_ts
           FROM calls c
           JOIN call_participants cp ON c.call_id = cp.call_id
-         WHERE cp.username   = ?
-           AND cp.state      = 'pending'
-           AND c.state       = 'ringing'
-           AND c.started_ts >= ?
+         WHERE cp.username = ?
+           AND cp.state   = 'pending'
+           AND (
+               (c.state = 'ringing' AND c.started_ts >= ?)
+               OR c.state = 'active'
+           )
         """,
         (user, cutoff),
     ).fetchall()
@@ -383,12 +385,104 @@ def end_call(call_id):
             " WHERE call_id = ? AND username = ?",
             (now, call_id, user),
         )
+
+        # If the leaver was screensharing, clear it so remaining participants
+        # stop receiving their frozen last frame.
         db.execute(
-            "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
-            (now, call_id),
+            "UPDATE calls SET screenshare_user = NULL"
+            " WHERE call_id = ? AND screenshare_user = ?",
+            (call_id, user),
         )
-        # Free stored media so presence.db doesn't grow unboundedly
-        db.execute("DELETE FROM call_media WHERE call_id = ?", (call_id,))
+
+        # End the call only when no other accepted participants remain.
+        remaining = db.execute(
+            "SELECT COUNT(*) FROM call_participants"
+            " WHERE call_id = ? AND state = 'accepted' AND username != ?",
+            (call_id, user),
+        ).fetchone()[0]
+
+        if remaining == 0:
+            db.execute(
+                "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
+                (now, call_id),
+            )
+            db.execute("DELETE FROM call_media WHERE call_id = ?", (call_id,))
+
+        db.commit()
+    finally:
+        db.close()
+
+    return jsonify({"status": "ok"})
+
+
+@calls_bp.route("/calls/<call_id>/invite", methods=["POST"])
+@auth.login_required
+def invite_to_call(call_id):
+    """Invite a registered user to an active call.
+
+    Route: ``POST /calls/<call_id>/invite``
+
+    Any accepted participant may invite any registered user.  If the target
+    was previously a participant (rejected or left) their row is reset to
+    ``'pending'`` so they receive an incoming-call notification again.
+
+    Request body (JSON):
+        **username** (str): The user to invite.
+
+    :param call_id: UUID of the call.
+    :type call_id: str
+    :returns: JSON with ``status``.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+    target = data.get("username", "").strip()
+
+    if not target:
+        return jsonify({"error": "username required"}), 400
+    if target == user:
+        return jsonify({"error": "cannot invite yourself"}), 400
+
+    db = _db()
+    try:
+        call = db.execute(_SQL_CALL_STATE, (call_id,)).fetchone()
+        if not call:
+            return jsonify({"error": _ERR_NOT_FOUND}), 404
+        if call["state"] != "active":
+            return jsonify({"error": "call is not active"}), 409
+
+        caller_p = db.execute(_SQL_PARTICIPANT, (call_id, user)).fetchone()
+        if not caller_p or caller_p["state"] != "accepted":
+            return jsonify({"error": "not a participant"}), 403
+
+        # Verify target user exists
+        auth_db = sqlite3.connect(auth.AUTH_DB)
+        auth_db.row_factory = sqlite3.Row
+        target_row = auth_db.execute(
+            "SELECT username FROM users WHERE username = ?", (target,)
+        ).fetchone()
+        auth_db.close()
+        if not target_row:
+            return jsonify({"error": "user not found"}), 404
+
+        existing = db.execute(_SQL_PARTICIPANT, (call_id, target)).fetchone()
+        if existing:
+            if existing["state"] == "accepted":
+                return jsonify({"error": "user already in call"}), 409
+            if existing["state"] == "pending":
+                return jsonify({"status": "ok"})
+            # Reset rejected/left participant so they ring again
+            db.execute(
+                "UPDATE call_participants SET state = 'pending', left_ts = NULL"
+                " WHERE call_id = ? AND username = ?",
+                (call_id, target),
+            )
+        else:
+            db.execute(
+                "INSERT INTO call_participants (call_id, username, role, state)"
+                " VALUES (?, ?, 'participant', 'pending')",
+                (call_id, target),
+            )
         db.commit()
     finally:
         db.close()
@@ -525,11 +619,12 @@ def call_state(call_id):
     :rtype: flask.Response (application/json)
     """
     db = _db()
-    call = db.execute(
-        "SELECT call_id, channel, initiator, state, started_ts, answered_ts, ended_ts"
-        " FROM calls WHERE call_id = ?",
-        (call_id,),
-    ).fetchone()
+    _CALL_COLS = (
+        "SELECT call_id, channel, initiator, state, started_ts,"
+        " answered_ts, ended_ts, screenshare_user"
+        " FROM calls WHERE call_id = ?"
+    )
+    call = db.execute(_CALL_COLS, (call_id,)).fetchone()
     if not call:
         db.close()
         return jsonify({"error": _ERR_NOT_FOUND}), 404
@@ -549,11 +644,7 @@ def call_state(call_id):
             (now, call_id),
         )
         db.commit()
-        call = db.execute(
-            "SELECT call_id, channel, initiator, state, started_ts, answered_ts, ended_ts"
-            " FROM calls WHERE call_id = ?",
-            (call_id,),
-        ).fetchone()
+        call = db.execute(_CALL_COLS, (call_id,)).fetchone()
 
     participants = db.execute(
         "SELECT username, role, state, joined_ts, left_ts"
@@ -571,6 +662,7 @@ def call_state(call_id):
             "started_ts": call["started_ts"],
             "answered_ts": call["answered_ts"],
             "ended_ts": call["ended_ts"],
+            "screenshare_user": call["screenshare_user"],
             "participants": [
                 {
                     "username": p["username"],
@@ -648,6 +740,18 @@ def upload_media(call_id):
                 " VALUES (?, ?, 1, ?, ?, ?)",
                 (call_id, sender, mime_type, data, now),
             )
+            if track == "screen":
+                if mime_type == "screen/off":
+                    db.execute(
+                        "UPDATE calls SET screenshare_user = NULL"
+                        " WHERE call_id = ? AND screenshare_user = ?",
+                        (call_id, user),
+                    )
+                else:
+                    db.execute(
+                        "UPDATE calls SET screenshare_user = ? WHERE call_id = ?",
+                        (user, call_id),
+                    )
             db.commit()
             return jsonify({"status": "ok", "seq": -1})
 

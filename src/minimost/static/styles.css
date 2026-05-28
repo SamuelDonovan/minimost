@@ -1558,6 +1558,7 @@ a { color: #9cdcfe; }
 .call-btn-reject { background: #c62828; }
 .call-btn-reject:hover { background: #d32f2f; }
 
+/* ── Call panel ──────────────────────────────────────────────────────────── */
 #call-panel {
     position: fixed;
     inset: 0;
@@ -1565,41 +1566,43 @@ a { color: #9cdcfe; }
     background: #0d0d17;
     display: flex;
     flex-direction: column;
+    padding-bottom: 80px;
 }
-#call-avatar-view {
+/* Participant tile grid — fills available space */
+#call-participants-grid {
     flex: 1;
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: center;
+    justify-items: center;
+    gap: 20px;
+    padding: 24px;
+    overflow: auto;
+    min-height: 0;
+}
+.call-participant-tile {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 18px;
-    background: #0d0d17;
+    gap: 10px;
+    padding: 16px;
 }
-#call-avatar-container {
+/* Speaking ring — lives inside .call-participant-avatar so inset always
+   positions it relative to the avatar, never to the tile padding. */
+.call-participant-tile .call-participant-avatar {
     position: relative;
-    width: 120px;
-    height: 120px;
 }
-#call-avatar-container .avatar-wrap {
-    width: 120px !important;
-    height: 120px !important;
-}
-#call-avatar-container .avatar-initials {
-    font-size: 42px !important;
-}
-#call-avatar-container .avatar-presence {
-    display: none;
-}
-#call-speaking-ring {
+.call-participant-tile .call-speaking-ring {
     position: absolute;
-    inset: -8px;
+    inset: -6px;
     border-radius: 50%;
     border: 4px solid transparent;
     pointer-events: none;
     transition: border-color 0.15s, box-shadow 0.15s;
     z-index: 1;
 }
-#call-speaking-ring.speaking {
+.call-participant-tile .call-speaking-ring.speaking {
     border-color: #4a9eff;
     box-shadow: 0 0 20px rgba(74,158,255,0.55);
     animation: speaking-pulse 1s ease-in-out infinite;
@@ -1608,30 +1611,57 @@ a { color: #9cdcfe; }
     0%, 100% { box-shadow: 0 0 12px rgba(74,158,255,0.4); }
     50%       { box-shadow: 0 0 28px rgba(74,158,255,0.75); }
 }
-#call-remote-name {
+.call-participant-tile .avatar-wrap {
+    width: 100px !important;
+    height: 100px !important;
+}
+.call-participant-tile .avatar-initials { font-size: 34px !important; }
+.call-participant-tile .avatar-presence { display: none; }
+.call-participant-name {
     color: #eee;
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.01em;
 }
-#call-remote-video {
-    flex: 1;
-    width: 100%;
-    object-fit: cover;
+/* Screen share layout: switch panel to row, grid becomes right sidebar */
+#call-screen-video {
+    display: none;
+    object-fit: contain;
     background: #111;
+    min-height: 0;
+}
+#call-panel.screen-share-active {
+    flex-direction: row;
+}
+#call-panel.screen-share-active #call-screen-video {
     display: block;
+    flex: 1;
 }
-#call-local-video {
-    position: absolute;
-    bottom: 90px;
-    right: 16px;
-    width: 160px;
-    height: 120px;
-    object-fit: cover;
-    border: 2px solid #555;
-    border-radius: 8px;
-    background: #1a1a2e;
+#call-panel.screen-share-active #call-participants-grid {
+    flex: none;
+    width: 176px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    overflow-y: auto;
+    padding: 8px 4px;
+    gap: 8px;
+    border-left: 1px solid #2a2a3e;
 }
+#call-panel.screen-share-active .call-participant-tile {
+    padding: 6px;
+    gap: 4px;
+}
+#call-panel.screen-share-active .call-participant-tile .avatar-wrap {
+    width: 56px !important;
+    height: 56px !important;
+}
+#call-panel.screen-share-active .call-participant-tile .avatar-initials {
+    font-size: 18px !important;
+}
+#call-panel.screen-share-active .call-participant-name { font-size: 11px; }
+/* Controls bar */
 #call-controls {
     position: absolute;
     bottom: 0;
@@ -1644,6 +1674,7 @@ a { color: #9cdcfe; }
     gap: 16px;
     background: rgba(0,0,0,0.75);
     backdrop-filter: blur(6px);
+    z-index: 10;
 }
 #call-timer {
     color: #ccc;
@@ -1672,29 +1703,6 @@ a { color: #9cdcfe; }
 #call-end-btn:hover { background: #d32f2f; }
 #call-screen-btn.active { background: #1565c0; }
 #call-screen-btn.active:hover { background: #1976d2; }
-#call-screen-video {
-    display: none;
-    width: 100%;
-    object-fit: contain;
-    background: #111;
-}
-#call-panel.screen-share-active #call-screen-video {
-    display: block;
-    flex: 1;
-}
-#call-panel.screen-share-active #call-avatar-view { display: none !important; }
-#call-panel.screen-share-active #call-remote-video {
-    flex: none;
-    position: absolute;
-    bottom: 90px;
-    left: 16px;
-    width: 160px;
-    height: 120px;
-    object-fit: cover;
-    border: 2px solid #555;
-    border-radius: 8px;
-    z-index: 10;
-}
 #call-mute-audio-btn { position: relative; overflow: hidden; }
 #call-mic-level {
     position: absolute;
@@ -1708,6 +1716,51 @@ a { color: #9cdcfe; }
     z-index: 0;
 }
 #call-mute-audio-btn svg { position: relative; z-index: 1; }
+/* Invite panel */
+#call-invite-panel {
+    position: absolute;
+    bottom: 88px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a2e;
+    border: 1px solid #3a3a5e;
+    border-radius: 10px;
+    width: 240px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 20;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+#call-invite-search {
+    width: 100%;
+    box-sizing: border-box;
+    background: #111122;
+    border: none;
+    border-bottom: 1px solid #3a3a5e;
+    border-radius: 10px 10px 0 0;
+    color: #eee;
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+}
+.call-invite-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #ddd;
+    transition: background 0.1s;
+}
+.call-invite-item:hover { background: #2a2a4e; }
+.call-invite-item .avatar-presence { display: none; }
+.call-invite-item span { flex: 1; }
+.call-invite-item .invite-status {
+    font-size: 11px;
+    color: #888;
+    flex: none;
+}
 .color-swatch.selected { border-color: #fff; }
 
 /* Users modal */

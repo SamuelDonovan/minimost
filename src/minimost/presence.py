@@ -150,15 +150,21 @@ def _init_tables():
     """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS calls (
-            call_id     TEXT PRIMARY KEY,
-            channel     TEXT NOT NULL,
-            initiator   TEXT NOT NULL,
-            state       TEXT NOT NULL DEFAULT 'ringing',
-            started_ts  REAL NOT NULL,
-            answered_ts REAL,
-            ended_ts    REAL
+            call_id        TEXT PRIMARY KEY,
+            channel        TEXT NOT NULL,
+            initiator      TEXT NOT NULL,
+            state          TEXT NOT NULL DEFAULT 'ringing',
+            started_ts     REAL NOT NULL,
+            answered_ts    REAL,
+            ended_ts       REAL,
+            screenshare_user TEXT
         )
     """)
+    # Migration: add screenshare_user for existing databases that predate group calling
+    try:
+        db.execute("ALTER TABLE calls ADD COLUMN screenshare_user TEXT")
+    except Exception:
+        pass
     db.execute("""
         CREATE TABLE IF NOT EXISTS call_participants (
             call_id   TEXT NOT NULL,
