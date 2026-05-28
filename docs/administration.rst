@@ -4,30 +4,33 @@ Administration
 This page covers tasks a server administrator may need to perform to keep
 MiniMost running smoothly.
 
+Automatic Cleanup
+-----------------
+
+MiniMost runs a background cleanup thread that starts 5 minutes after startup
+and repeats every 24 hours. No cron job or external scheduler is required. It
+performs two jobs:
+
+1. **File cleanup** — removes old attachments from ``uploads/``.
+2. **Message cleanup** — permanently deletes old rows from every ``users/*.db``.
+
+All retention periods are read from ``settings.json`` on each run, so changes
+take effect at the next scheduled run without restarting the server. See
+:doc:`configuration` for the full list of keys and defaults.
+
 File Cleanup
-------------
+~~~~~~~~~~~~
 
-MiniMost automatically purges old file attachments from ``uploads/`` while
-the server is running. A background thread starts 5 minutes after startup and
-repeats every 24 hours. No cron job or external scheduler is required.
-
-Separate retention periods apply to different file types, both configured in
-``settings.json`` (defaults: 30 days each):
+Separate retention periods apply to different file types (both default: 30 days):
 
 - ``"image_retention_days"`` — images (jpg, jpeg, png, gif, webp)
 - ``"file_retention_days"`` — all other file types (pdf, zip, docx, etc.)
 
-Changes to either value take effect at the next scheduled run without
-restarting the server — see :doc:`configuration`.
-
-**Running cleanup manually** (e.g. to reclaim disk space immediately):
+**Running file cleanup manually:**
 
 .. code-block:: bash
 
     python3 src/minimost/clean.py
-
-This deletes files in ``uploads/`` using the default retention of 30 days for
-both images and other file types.
 
 **Dry run (preview without deleting):**
 
@@ -36,20 +39,47 @@ both images and other file types.
     from minimost.clean import delete_files_older_than
     delete_files_older_than("uploads", image_days=30, file_days=30, dry_run=True)
 
-**Custom retention periods:**
+**Custom retention:**
 
 .. code-block:: python
 
     from minimost.clean import delete_files_older_than
-    # Keep images for 90 days, but delete other files after 7 days
+    # Keep images for 90 days, delete other files after 7 days
     delete_files_older_than("uploads", image_days=90, file_days=7)
 
 .. note::
 
-   Cleanup operates on filesystem ``mtime`` values, not on the database
-   ``expires_ts`` column. Deleted files leave behind orphan database rows;
-   this is intentional — messages referencing deleted files show a "File
-   deleted" indicator rather than being removed from chat history.
+   File cleanup operates on filesystem ``mtime`` values. Deleted files leave
+   behind orphan database rows — messages referencing deleted files show a
+   "File deleted" indicator rather than being removed from chat history.
+
+Message Cleanup
+~~~~~~~~~~~~~~~
+
+Old messages are permanently deleted from every ``users/*.db`` to prevent
+database files from growing without bound. The retention period is set by
+``"message_retention_days"`` in ``settings.json`` (default: 770 days).
+
+**Running message cleanup manually:**
+
+.. code-block:: python
+
+    from minimost.clean import delete_messages_older_than
+    delete_messages_older_than("users", days=770)
+
+**Dry run (preview without deleting):**
+
+.. code-block:: python
+
+    from minimost.clean import delete_messages_older_than
+    delete_messages_older_than("users", days=770, dry_run=True)
+
+.. warning::
+
+   Message cleanup is a **permanent hard delete** — rows are removed from the
+   database entirely and cannot be recovered. Ensure your ``message_retention_days``
+   value is set to a period that comfortably covers how far back your users
+   ever need to scroll before lowering it.
 
 User Management
 ---------------
@@ -135,10 +165,10 @@ Run ``minimost reset-password --help`` for the full list of options.
 Edit the ``"channels"`` list in ``settings.json`` and restart the server::
 
     # settings.json (before)
-    {"channels": ["general", "software"], "image_retention_days": 30, "file_retention_days": 30}
+    {"channels": ["general", "software"], "image_retention_days": 30, "file_retention_days": 30, "message_retention_days": 770}
 
     # settings.json (after)
-    {"channels": ["general", "software", "design"], "image_retention_days": 30, "file_retention_days": 30}
+    {"channels": ["general", "software", "design"], "image_retention_days": 30, "file_retention_days": 30, "message_retention_days": 770}
 
 **Remove a channel:**
 

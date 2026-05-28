@@ -200,7 +200,9 @@ def create_app():
     return app
 
 
-def _start_cleanup_scheduler(interval_hours: int = 24, days: int = 30) -> None:
+def _start_cleanup_scheduler(
+    interval_hours: int = 24, days: int = 30, message_days: int = 770
+) -> None:
     """Start a daemon thread that periodically purges old upload files.
 
     Runs :func:`minimost.clean.delete_files_older_than` once shortly after
@@ -222,6 +224,7 @@ def _start_cleanup_scheduler(interval_hours: int = 24, days: int = 30) -> None:
         not specify ``"image_retention_days"``.  Defaults to ``30``.
     """
     upload_dir = _PROJECT_ROOT / "uploads"
+    users_dir = _PROJECT_ROOT / "users"
     settings_file = _PROJECT_ROOT / "settings.json"
 
     def _read_retention() -> tuple:
@@ -231,23 +234,26 @@ def _start_cleanup_scheduler(interval_hours: int = 24, days: int = 30) -> None:
             data = json.loads(settings_file.read_text())
             img = data.get("image_retention_days")
             fil = data.get("file_retention_days")
+            msg = data.get("message_retention_days")
             img = img if isinstance(img, int) and img > 0 else days
             fil = fil if isinstance(fil, int) and fil > 0 else days
-            return img, fil
-        return days, days
+            msg = msg if isinstance(msg, int) and msg > 0 else message_days
+            return img, fil, msg
+        return days, days, message_days
 
     def _loop() -> None:
         time.sleep(300)  # short initial delay — let the server finish starting
         while True:
             try:
-                from .clean import delete_files_older_than
+                from .clean import delete_files_older_than, delete_messages_older_than
 
-                image_days, file_days = _read_retention()
+                image_days, file_days, msg_days = _read_retention()
                 delete_files_older_than(
                     str(upload_dir),
                     image_days=image_days,
                     file_days=file_days,
                 )
+                delete_messages_older_than(str(users_dir), days=msg_days)
             except (
                 Exception
             ):  # nosec B110 — cleanup failure must not crash the daemon thread

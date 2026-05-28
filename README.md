@@ -43,6 +43,7 @@
 - **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
 - **Close DM conversations** — hide a DM thread from the sidebar with one click; it reappears automatically if a new message arrives
 - **File attachments** — paste, drag-and-drop, or use the paperclip button to attach any file type; images are displayed inline, other files appear as a download link; uploaded files auto-delete after a configurable retention period
+- **Automatic message retention** — a background thread permanently removes messages older than a configurable threshold (default: 770 days) so database files never grow without bound; runs every 24 hours with no cron job required
 - **Desktop & sound notifications** — configurable per session, mutable with one click
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing
 - **Dark theme** — easy on the eyes
@@ -126,6 +127,7 @@ Edit `settings.json` in the project root to configure MiniMost. All keys are opt
     "channels": ["general", "software", "firmware", "systems", "off-topic"],
     "image_retention_days": 30,
     "file_retention_days": 30,
+    "message_retention_days": 770,
     "max_upload_size_mb": 25,
     "max_avatar_size_mb": 5
 }
@@ -136,6 +138,7 @@ Edit `settings.json` in the project root to configure MiniMost. All keys are opt
 | `channels` | `["general"]` | Public channel names shown in the sidebar. Restart required. |
 | `image_retention_days` | `30` | Days before image attachments are auto-deleted. No restart needed. |
 | `file_retention_days` | `30` | Days before non-image attachments are auto-deleted. No restart needed. |
+| `message_retention_days` | `770` | Days before messages are permanently deleted from the database. No restart needed. |
 | `max_upload_size_mb` | `25` | Maximum size in MB for a single file attachment. Restart required. |
 | `max_avatar_size_mb` | `5` | Maximum size in MB for a profile avatar upload. Restart required. |
 
@@ -161,7 +164,7 @@ Edit `settings.json` in the project root to configure MiniMost. All keys are opt
 | `j` / `k` | Scroll down / up |
 | `d` / `u` | Scroll down / up (2×) |
 | `G` | Jump to bottom |
-| `gg` | Jump to top |
+| `g` | Jump to top |
 | `Ctrl + J` / `Ctrl + K` | Next / previous channel |
 | `?` | Open help menu |
 

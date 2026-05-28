@@ -67,7 +67,8 @@ Key JavaScript variables maintained in the module scope:
    * - ``idleSent``
      - Boolean flag — prevents sending repeated ``"idle"`` presence updates.
    * - ``ggTimer``
-     - Timeout handle for the ``gg`` (go-to-top) keyboard chord.
+     - Timer handle used to detect the ``gg`` (jump-to-top) double-keypress
+       sequence; cleared after the timeout window expires.
    * - ``userColorOverrides``
      - Object mapping username → hex colour string, populated from
        ``GET /user_colors`` on sidebar load.
@@ -208,9 +209,7 @@ implementation details:
 
 - ``Ctrl+B/I/U/S`` — format shortcuts wrap the selected text or toggle
   prefix/suffix markers at the cursor position.
-- ``gg`` — implemented as a timeout: the first ``g`` keypress starts a
-  500 ms timer; a second ``g`` before the timeout fires goes to the top.
-- Navigation shortcuts (``j/k/d/u/G``) scroll the ``.messages`` container
+- Navigation shortcuts (``j/k/d/u/G/g``) scroll the ``.messages`` container
   by a fixed number of pixels.
 - ``Ctrl+J/Ctrl+K`` — cycle through the channel list by finding the current
   channel's index in the sidebar and activating the next/previous sibling.

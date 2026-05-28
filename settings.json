@@ -2,6 +2,7 @@
     "channels": ["general", "software", "firmware", "systems", "off-topic"],
     "image_retention_days": 30,
     "file_retention_days": 30,
+    "message_retention_days": 770,
     "max_upload_size_mb": 25,
     "max_avatar_size_mb": 5
 }

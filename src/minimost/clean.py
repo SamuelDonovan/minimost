@@ -2,32 +2,27 @@
 minimost.clean
 ==============
 
-Maintenance utility for purging old uploads.
+Maintenance utilities for purging old uploads and messages.
 
-MiniMost stores file attachments in the ``uploads/`` directory.
-:func:`delete_files_older_than` is called automatically by a background daemon
-thread started in :func:`minimost.create_app` — no cron job or external
+:func:`delete_files_older_than` removes old file attachments from ``uploads/``.
+:func:`delete_messages_older_than` hard-deletes old rows from every per-user
+message database in ``users/``.  Both are called automatically by a background
+daemon thread started in :func:`minimost.create_app` — no cron job or external
 scheduler is required.  The thread runs 5 minutes after startup and repeats
 every 24 hours.  Retention periods are read from ``settings.json`` on each run:
 
-* ``"image_retention_days"`` — applies to image files (default: 30 days).
-* ``"file_retention_days"`` — applies to all other file types (default: 30 days).
+* ``"image_retention_days"`` — image file attachments (default: 30 days).
+* ``"file_retention_days"`` — all other file attachments (default: 30 days).
+* ``"message_retention_days"`` — messages in user databases (default: 770 days).
 
 This module can also be invoked directly for ad-hoc cleanup:
 
 .. code-block:: bash
 
     python3 src/minimost/clean.py
-
-.. note::
-
-   This script operates on filesystem modification times (``mtime``), not on
-   the ``expires_ts`` column in the database.  Deleting a file makes its URL
-   return 404 but does not remove the corresponding database row.  This is
-   intentional — the soft-delete approach means historical metadata is
-   preserved even when the binary data is gone.
 """
 
+import sqlite3
 from pathlib import Path
 import time
 
@@ -87,5 +82,52 @@ def delete_files_older_than(
                     pass  # already removed by another process
 
 
+def delete_messages_older_than(users_dir: str, days: int, dry_run: bool = False):
+    """Hard-delete messages older than *days* from every user database.
+
+    Iterates every ``*.db`` file in *users_dir* and removes rows from the
+    ``messages`` table whose ``ts`` timestamp predates the cutoff.  Each
+    database is processed independently so a single corrupted file does not
+    abort the run.
+
+    :param users_dir: Path to the directory containing per-user ``.db`` files.
+    :type users_dir: str
+    :param days: Messages older than this many days are deleted.
+    :type days: int
+    :param dry_run: If ``True``, print what would be deleted without making
+        any changes.  Defaults to ``False``.
+    :type dry_run: bool
+    :raises ValueError: If *users_dir* does not exist or is not a directory.
+    """
+    cutoff = time.time() - (days * 86400)
+    dirpath = Path(users_dir)
+
+    if not dirpath.is_dir():
+        raise ValueError(f"{users_dir} is not a valid directory")
+
+    for db_file in sorted(dirpath.glob("*.db")):
+        try:
+            conn = sqlite3.connect(str(db_file))
+            conn.execute("PRAGMA journal_mode=WAL")
+            if dry_run:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM messages WHERE ts < ?", (cutoff,)
+                ).fetchone()
+                count = row[0] if row else 0
+                if count > 0:
+                    print(
+                        f"[DRY RUN] Would delete {count} messages from {db_file.name}"
+                    )
+            else:
+                cur = conn.execute("DELETE FROM messages WHERE ts < ?", (cutoff,))
+                if cur.rowcount > 0:
+                    print(f"Deleted {cur.rowcount} messages from {db_file.name}")
+                conn.commit()
+            conn.close()
+        except Exception:  # nosec B110 — one bad DB must not stop the rest
+            pass
+
+
 if __name__ == "__main__":
     delete_files_older_than(directory="uploads", image_days=30, file_days=30)
+    delete_messages_older_than(users_dir="users", days=770)

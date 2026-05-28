@@ -19,6 +19,7 @@ Example (showing all available keys with their defaults)::
         "channels": ["general", "software", "firmware", "systems", "off-topic"],
         "image_retention_days": 30,
         "file_retention_days": 30,
+        "message_retention_days": 770,
         "max_upload_size_mb": 25,
         "max_avatar_size_mb": 5
     }
@@ -42,6 +43,20 @@ Example (showing all available keys with their defaults)::
     separate from ``image_retention_days`` so administrators can apply
     different retention policies to images versus documents, archives, etc.
     Changes take effect at the next scheduled cleanup run — no restart required.
+
+``message_retention_days``
+    How many days to keep messages in the per-user SQLite databases before
+    they are permanently deleted. Unlike the soft-delete used when a user
+    deletes a message, this removes the database rows entirely so the
+    ``users/*.db`` files do not grow without bound over time. Defaults to
+    ``770`` (approximately two years). Changes take effect at the next
+    scheduled cleanup run — no restart required.
+
+    .. note::
+
+       Messages deleted by this process are gone permanently — they cannot
+       be recovered. Set this value to a period that comfortably covers how
+       far back your users ever need to scroll.
 
 ``max_upload_size_mb``
     Maximum size in megabytes allowed for a single file attachment uploaded
