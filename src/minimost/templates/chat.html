@@ -14,7 +14,7 @@
 
 <!-- expose current user to JS -->
 <script>
-    const CURRENT_USER = "{{ session['user'] }}";
+    const CURRENT_USER = "{{ session.user }}";
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
     const MAX_AVATAR_MB = {{ max_avatar_mb }};
 </script>
@@ -1949,7 +1949,7 @@ async function closeDm(dmChannel) {
     document.querySelector(`[data-channel="${dmChannel}"]`)?.remove();
 }
 
-// ── Private Channel Tooltip ────────────────────────────────────��──────────────
+// ── Private Channel Tooltip ──────────────────────────────────────────────────
 
 let _pcTooltipHideTimer = null;
 let _pcTooltipShowTimer = null;
