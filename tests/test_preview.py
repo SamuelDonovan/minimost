@@ -159,22 +159,6 @@ def test_resolves_to_public_ip_invalid_addr():
 # ── _is_allowed_host ─────────────────────────────────────────────────────────
 
 
-def test_is_allowed_host_exact_match():
-    assert preview._is_allowed_host("bitbucket.org") is True
-
-
-def test_is_allowed_host_subdomain():
-    assert preview._is_allowed_host("api.bitbucket.org") is True
-
-
-def test_is_allowed_host_no_match():
-    assert preview._is_allowed_host("github.com") is False
-
-
-def test_is_allowed_host_empty():
-    assert preview._is_allowed_host("") is False
-
-
 # ── _fetch ────────────────────────────────────────────────────────────────────
 
 
@@ -183,9 +167,16 @@ def test_fetch_invalid_scheme():
         preview._fetch("ftp://example.com/file")
 
 
-def test_fetch_disallowed_host_raises():
-    with pytest.raises(ValueError, match="Disallowed host"):
-        preview._fetch("https://example.com/")
+def test_fetch_any_public_host_allowed():
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.read.return_value = b"data"
+
+    with patch.object(preview, "_resolves_to_public_ip", return_value=True):
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = preview._fetch("https://example.com/")
+    assert result == b"data"
 
 
 def test_fetch_success():
@@ -243,7 +234,7 @@ def test_build_code_result_no_lines():
     assert result["first_line_num"] == 1
     assert result["highlight_start"] is None
     assert result["total_lines"] == 29
-    assert len(result["code"].splitlines()) == 25
+    assert len(result["code"].splitlines()) == 29  # all lines fit within _MAX_LINES=1000
 
 
 def test_build_code_result_with_line_range():
