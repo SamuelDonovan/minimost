@@ -1598,7 +1598,7 @@ function fetchMessages() {
                     }
                     existing.innerHTML = html;
                     _injectMsgAvatar(existing, m.sender);
-                    attachPreview(existing);
+                    schedulePreview(existing);
                     _checkDeletedFiles(existing);
                 } else {
                     const d = document.createElement("div");
@@ -1607,7 +1607,7 @@ function fetchMessages() {
                     d.innerHTML = html;
                     _injectMsgAvatar(d, m.sender);
                     chat.appendChild(d);
-                    attachPreview(d);
+                    schedulePreview(d);
                     _checkDeletedFiles(d);
                     appended = true;
                     if (m.sender !== CURRENT_USER) playNewMsgSound = true;
@@ -4233,6 +4233,27 @@ function _previewCodeEl(data) {
     }
 
     return wrap;
+}
+
+const _previewObserver = new IntersectionObserver(
+    (entries) => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            _previewObserver.unobserve(entry.target);
+            attachPreview(entry.target);
+        });
+    },
+    {
+        root: document.getElementById("chat"),
+        rootMargin: "300px 0px 300px 0px",
+        threshold: 0,
+    }
+);
+
+function schedulePreview(msgEl) {
+    // Skip if no link in the message — avoids unnecessary observer entries
+    if (!msgEl.querySelector(".text a[href^='http']")) return;
+    _previewObserver.observe(msgEl);
 }
 
 async function attachPreview(msgEl) {
