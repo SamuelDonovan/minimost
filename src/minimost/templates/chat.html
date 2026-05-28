@@ -1466,7 +1466,7 @@ function _buildMsgHtml(m, time, fullTime, color) {
     }
 
     if (m.sender === CURRENT_USER) {
-        bodyHtml += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
+        headerHtml += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
     }
 
     bodyHtml += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
