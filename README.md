@@ -235,8 +235,3 @@ This prints a URL valid for 60 minutes (configurable with `--expires`) and sends
 **Does it have feature X from Slack/Discord/Mattermost?**
 
 Probably not. Those products have hundreds of engineers and years of development. MiniMost is intentionally minimal — the goal is something that runs anywhere with zero infrastructure overhead.
-
-**Can I run this on Windows?**
-
-Yes. Replace `python3` with `py` and `pip` with `py -m pip`. Everything else is the same.
-
