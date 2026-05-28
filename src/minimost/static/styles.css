@@ -368,6 +368,15 @@ body {
 .msg > .avatar-wrap {
     align-self: flex-start;
 }
+.msg-grouped {
+    margin-top: 1px;
+}
+.msg-grouped .msg-header {
+    display: none;
+}
+.msg-grouped > .avatar-wrap {
+    visibility: hidden;
+}
 .msg.visual-selected {
     background: rgba(0, 122, 204, 0.18);
     border-left: 3px solid #007acc;
@@ -1012,15 +1021,33 @@ a { color: #9cdcfe; }
     margin: 6px 0;
     font-size: 0.88em;
 }
-.msg-code-lang {
-    display: block;
+.msg-code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     background: #252526;
-    padding: 3px 10px;
+    padding: 3px 6px 3px 10px;
+    border-bottom: 1px solid #3a3a3a;
+}
+.msg-code-lang {
     color: #888;
     font-family: 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;
     font-size: 0.85em;
-    border-bottom: 1px solid #3a3a3a;
     user-select: none;
+}
+.code-copy-btn {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.78em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    line-height: 1.4;
+}
+.code-copy-btn:hover {
+    color: #ccc;
+    background: rgba(255,255,255,0.07);
 }
 .msg-code-pre {
     margin: 0;

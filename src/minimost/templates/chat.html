@@ -1392,7 +1392,10 @@ function isNearBottom(el, threshold = 120) {
 
 function _removeDeletedMsg(existing, ts) {
     if (!existing) return;
+    let nextMsg = existing.nextElementSibling;
+    while (nextMsg && !nextMsg.classList.contains("msg")) nextMsg = nextMsg.nextElementSibling;
     existing.remove();
+    if (nextMsg && !nextMsg.classList.contains("system-msg")) _applyGrouping(nextMsg);
     const divider = document.getElementById(`date-${new Date(ts * 1000).toDateString()}`);
     if (!divider) return;
     let next = divider.nextElementSibling;
@@ -1402,6 +1405,33 @@ function _removeDeletedMsg(existing, ts) {
         next = next.nextElementSibling;
     }
     if (!hasMessages) divider.remove();
+}
+
+function _prevMsg(el) {
+    let prev = el.previousElementSibling;
+    while (prev) {
+        if (prev.classList.contains("date-divider")) return null;
+        if (prev.classList.contains("msg") && !prev.classList.contains("system-msg")) return prev;
+        prev = prev.previousElementSibling;
+    }
+    return null;
+}
+
+function _applyGrouping(msgEl) {
+    if (!msgEl || msgEl.classList.contains("system-msg")) return;
+    const sender = msgEl.dataset.sender;
+    const ts = parseFloat(msgEl.dataset.ts);
+    const isReply = !!msgEl.querySelector(".quoted-msg");
+    const prev = _prevMsg(msgEl);
+    const shouldGroup = !isReply && !!prev && prev.dataset.sender === sender && (ts - parseFloat(prev.dataset.ts)) < 300;
+    msgEl.classList.toggle("msg-grouped", shouldGroup);
+    // Re-evaluate the immediately following message too
+    let next = msgEl.nextElementSibling;
+    while (next) {
+        if (next.classList.contains("date-divider")) break;
+        if (next.classList.contains("msg") && !next.classList.contains("system-msg")) { _applyGrouping(next); break; }
+        next = next.nextElementSibling;
+    }
 }
 
 function _ensureDateDivider(chat, dateKey, msgDate) {
@@ -1597,16 +1627,22 @@ function fetchMessages() {
                         return;
                     }
                     existing.innerHTML = html;
+                    existing.dataset.sender = m.sender;
+                    existing.dataset.ts = m.ts;
                     _injectMsgAvatar(existing, m.sender);
+                    _applyGrouping(existing);
                     schedulePreview(existing);
                     _checkDeletedFiles(existing);
                 } else {
                     const d = document.createElement("div");
                     d.className = "msg";
                     d.id = msgId;
+                    d.dataset.sender = m.sender;
+                    d.dataset.ts = m.ts;
                     d.innerHTML = html;
                     _injectMsgAvatar(d, m.sender);
                     chat.appendChild(d);
+                    _applyGrouping(d);
                     schedulePreview(d);
                     _checkDeletedFiles(d);
                     appended = true;
@@ -3549,11 +3585,20 @@ function formatText(text) {
         const { lang, code } = blocks[Number(i)];
         const trimmed = code.replace(/^\n/, '').replace(/\n$/, '');
         const highlighted = _syntaxHighlight(trimmed, lang);
-        const label = lang ? `<span class="msg-code-lang">${escapeHtml(lang)}</span>` : '';
-        return `<div class="msg-code-block">${label}<pre class="msg-code-pre"><code>${highlighted}</code></pre></div>`;
+        const langLabel = lang ? `<span class="msg-code-lang">${escapeHtml(lang)}</span>` : `<span></span>`;
+        const copyBtn = `<button class="code-copy-btn" onclick="copyCodeBlock(this)" title="Copy code">Copy</button>`;
+        return `<div class="msg-code-block"><div class="msg-code-header">${langLabel}${copyBtn}</div><pre class="msg-code-pre"><code>${highlighted}</code></pre></div>`;
     });
 
     return safe;
+}
+
+function copyCodeBlock(btn) {
+    const code = btn.closest(".msg-code-block").querySelector("code");
+    navigator.clipboard.writeText(code.textContent).then(() => {
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+    }).catch(() => {});
 }
 
 function wrapSelection(el, wrapper) {
@@ -4408,12 +4453,7 @@ function _attachPreviewEl(msgEl, data) {
     } else if (data.type === "code") {
         previewEl.appendChild(_previewCodeEl(data));
     }
-    const receipt = msgEl.querySelector(".read-receipt");
-    if (receipt) {
-        receipt.before(previewEl);
-    } else {
-        (msgEl.querySelector(".msg-body") || msgEl).appendChild(previewEl);
-    }
+    (msgEl.querySelector(".msg-body") || msgEl).appendChild(previewEl);
 }
 
 async function attachPreview(msgEl) {
