@@ -76,6 +76,88 @@ _HEADERS = {
 }
 _BB_CLOUD_HOST = "bitbucket.org"
 
+_TEXT_EXTENSIONS = frozenset(
+    {
+        "c",
+        "cc",
+        "cpp",
+        "cxx",
+        "h",
+        "hpp",
+        "py",
+        "pyw",
+        "js",
+        "mjs",
+        "cjs",
+        "jsx",
+        "ts",
+        "tsx",
+        "java",
+        "kt",
+        "scala",
+        "rs",
+        "go",
+        "rb",
+        "php",
+        "pl",
+        "lua",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "cmake",
+        "mk",
+        "make",
+        "xml",
+        "xsl",
+        "xslt",
+        "xsd",
+        "svg",
+        "html",
+        "htm",
+        "css",
+        "scss",
+        "sass",
+        "less",
+        "json",
+        "yaml",
+        "yml",
+        "toml",
+        "ini",
+        "cfg",
+        "conf",
+        "txt",
+        "md",
+        "rst",
+        "csv",
+        "sql",
+        "r",
+        "swift",
+        "m",
+        "ex",
+        "exs",
+        "erl",
+        "tf",
+        "hcl",
+        "proto",
+    }
+)
+
+_TEXT_FILENAMES = frozenset(
+    {
+        "dockerfile",
+        "makefile",
+        "cmakelists.txt",
+        "gemfile",
+        "rakefile",
+        "vagrantfile",
+        "procfile",
+        "brewfile",
+        ".env",
+        "requirements.txt",
+    }
+)
+
 _PRIVATE_RANGES = re.compile(
     r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1)"
 )
@@ -576,6 +658,35 @@ def _og_preview(url):
     }
 
 
+def _text_file_preview(url):
+    """Generate a code preview for a direct link to a text/source file.
+
+    Checks the URL path's file extension (or filename) against
+    :data:`_TEXT_EXTENSIONS` / :data:`_TEXT_FILENAMES`.  If it matches,
+    fetches the raw content and passes it through :func:`_build_code_result`.
+
+    :param url: The URL to inspect and potentially fetch.
+    :type url: str
+    :returns: A code preview dict on success, or ``{}`` if the URL does not
+        point to a recognised text file or the fetch fails.
+    :rtype: dict
+    """
+    parsed = urllib.parse.urlparse(url)
+    filename = parsed.path.rstrip("/").rsplit("/", 1)[-1]
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext not in _TEXT_EXTENSIONS and filename.lower() not in _TEXT_FILENAMES:
+        return {}
+
+    filepath = parsed.path.lstrip("/") or filename
+    try:
+        raw = _fetch(url, max_bytes=512 * 1024).decode("utf-8", errors="replace")
+    except Exception:
+        return {}
+
+    return _build_code_result(raw, filepath, None, None, url)
+
+
 def fetch_preview(url):
     """Return a preview dict for a URL, using the cache when available.
 
@@ -619,7 +730,7 @@ def fetch_preview(url):
     elif _parse_bb_server(url) is not None:
         result = _bitbucket_server_preview(url)
     else:
-        result = {}
+        result = _text_file_preview(url)
 
     if not result:
         result = _og_preview(url)

@@ -1106,6 +1106,43 @@ def files(filename):
     return send_from_directory(UPLOAD_DIR, filename)
 
 
+@chat_bp.route("/file_preview/<path:filename>", methods=["GET"])
+@auth.login_required
+def file_preview(filename):
+    """Return a code preview for an uploaded text file.
+
+    Route: ``GET /file_preview/<filename>``
+
+    Reads the file from :data:`UPLOAD_DIR`, checks its extension against the
+    known text-file extension set, and returns the same code-preview dict shape
+    used by the Bitbucket preview routes.  Returns ``{}`` for unrecognised
+    extensions or unreadable files.
+    """
+    path = UPLOAD_DIR / filename
+    ext = Path(filename).suffix.lstrip(".").lower()
+    base = Path(filename).name.lower()
+
+    if (
+        ext not in preview_mod._TEXT_EXTENSIONS
+        and base not in preview_mod._TEXT_FILENAMES
+    ):
+        return jsonify({})
+
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return jsonify({})
+
+    # Strip the 32-char UUID prefix to show the original filename in the header
+    display_name = (
+        filename[33:] if len(filename) > 33 and filename[32] == "_" else filename
+    )
+    result = preview_mod._build_code_result(
+        raw, display_name, None, None, f"/files/{filename}"
+    )
+    return jsonify(result)
+
+
 @chat_bp.route("/search_messages", methods=["GET"])
 @auth.login_required
 def search_messages():

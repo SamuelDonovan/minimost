@@ -234,7 +234,9 @@ def test_build_code_result_no_lines():
     assert result["first_line_num"] == 1
     assert result["highlight_start"] is None
     assert result["total_lines"] == 29
-    assert len(result["code"].splitlines()) == 29  # all lines fit within _MAX_LINES=1000
+    assert (
+        len(result["code"].splitlines()) == 29
+    )  # all lines fit within _MAX_LINES=1000
 
 
 def test_build_code_result_with_line_range():
@@ -453,6 +455,79 @@ def test_og_preview_truncates_long_description():
     with patch.object(preview, "_fetch", return_value=html):
         result = preview._og_preview("https://example.com/")
     assert len(result["description"]) == 400
+
+
+# ── _text_file_preview ───────────────────────────────────────────────────────
+
+
+def test_text_file_preview_known_extension():
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.read.return_value = b"x = 1\ny = 2\n"
+
+    with patch.object(preview, "_resolves_to_public_ip", return_value=True):
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = preview._text_file_preview("https://example.com/src/foo.py")
+
+    assert result["type"] == "code"
+    assert result["filename"] == "foo.py"
+    assert result["language"] == "py"
+    assert "x = 1" in result["code"]
+
+
+def test_text_file_preview_unknown_extension():
+    result = preview._text_file_preview("https://example.com/page.html5")
+    assert result == {}
+
+
+def test_text_file_preview_no_extension():
+    result = preview._text_file_preview("https://example.com/somepage")
+    assert result == {}
+
+
+def test_text_file_preview_known_filename():
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.read.return_value = b"FROM ubuntu\nRUN apt-get update\n"
+
+    with patch.object(preview, "_resolves_to_public_ip", return_value=True):
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = preview._text_file_preview("https://example.com/repo/Dockerfile")
+
+    assert result["type"] == "code"
+    assert result["filename"] == "Dockerfile"
+
+
+def test_text_file_preview_fetch_fails():
+    with patch.object(preview, "_resolves_to_public_ip", return_value=True):
+        with patch("urllib.request.urlopen", side_effect=Exception("timeout")):
+            result = preview._text_file_preview("https://example.com/main.py")
+    assert result == {}
+
+
+def test_fetch_preview_text_file_used_for_non_bb():
+    url = "https://example.com/src/utils.cpp"
+    with patch.object(
+        preview,
+        "_text_file_preview",
+        return_value={"type": "code", "code": "int main(){}"},
+    ) as mock_tf:
+        result = preview.fetch_preview(url)
+    mock_tf.assert_called_once_with(url)
+    assert result["type"] == "code"
+
+
+def test_fetch_preview_text_file_falls_through_to_og():
+    url = "https://example.com/page"
+    with patch.object(preview, "_text_file_preview", return_value={}) as mock_tf:
+        with patch.object(
+            preview, "_og_preview", return_value={"type": "og", "title": "X"}
+        ):
+            result = preview.fetch_preview(url)
+    mock_tf.assert_called_once_with(url)
+    assert result["type"] == "og"
 
 
 # ── fetch_preview ─────────────────────────────────────────────────────────────

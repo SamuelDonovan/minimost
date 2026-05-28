@@ -4250,48 +4250,83 @@ const _previewObserver = new IntersectionObserver(
     }
 );
 
+// Extensions the client checks before registering an uploaded file for preview.
+// Kept in sync with _TEXT_EXTENSIONS in preview.py (client-side guard only —
+// the server performs the authoritative check).
+const _PREVIEWABLE_EXTENSIONS = new Set([
+    "c","cc","cpp","cxx","h","hpp",
+    "py","pyw",
+    "js","mjs","cjs","jsx","ts","tsx",
+    "java","kt","scala","rs","go","rb","php","pl","lua",
+    "sh","bash","zsh","fish",
+    "cmake","mk","make",
+    "xml","xsl","xslt","xsd","svg",
+    "html","htm","css","scss","sass","less",
+    "json","yaml","yml","toml","ini","cfg","conf",
+    "txt","md","rst","csv","sql",
+    "r","swift","m","ex","exs","erl","tf","hcl","proto",
+]);
+
+function _msgHasPreviewableContent(msgEl) {
+    if (msgEl.querySelector(".text a[href^='http']")) return true;
+    const fn = msgEl.querySelector("a.file-download[data-fn]")?.dataset.fn;
+    if (fn) {
+        const ext = fn.includes(".") ? fn.split(".").pop().toLowerCase() : "";
+        if (_PREVIEWABLE_EXTENSIONS.has(ext)) return true;
+    }
+    return false;
+}
+
 function schedulePreview(msgEl) {
-    // Skip if no link in the message — avoids unnecessary observer entries
-    if (!msgEl.querySelector(".text a[href^='http']")) return;
+    if (!_msgHasPreviewableContent(msgEl)) return;
     _previewObserver.observe(msgEl);
 }
 
-async function attachPreview(msgEl) {
-    if (msgEl.querySelector(".link-preview")) return;
-
-    const textSpan = msgEl.querySelector(".text");
-    if (!textSpan) return;
-
-    const firstLink = textSpan.querySelector("a[href^='http']");
-    if (!firstLink) return;
-
-    const url = firstLink.href;
-
-    let data;
-    try {
-        const resp = await fetch(`/link_preview?url=${encodeURIComponent(url)}`);
-        data = await resp.json();
-    } catch {
-        return;
-    }
-
-    if (!data || !data.type) return;
-
+function _attachPreviewEl(msgEl, data) {
+    if (!data?.type) return;
     const previewEl = document.createElement("div");
     previewEl.className = "link-preview";
-
     if (data.type === "og") {
         previewEl.appendChild(_previewOgEl(data));
     } else if (data.type === "code") {
         previewEl.appendChild(_previewCodeEl(data));
     }
-
     const receipt = msgEl.querySelector(".read-receipt");
     if (receipt) {
         receipt.before(previewEl);
     } else {
         (msgEl.querySelector(".msg-body") || msgEl).appendChild(previewEl);
     }
+}
+
+async function attachPreview(msgEl) {
+    if (msgEl.querySelector(".link-preview")) return;
+
+    // Priority 1: HTTP link in message text (Bitbucket / text-file / OG)
+    const firstLink = msgEl.querySelector(".text a[href^='http']");
+    if (firstLink) {
+        let data;
+        try {
+            const resp = await fetch(`/link_preview?url=${encodeURIComponent(firstLink.href)}`);
+            data = await resp.json();
+        } catch { return; }
+        _attachPreviewEl(msgEl, data);
+        return;
+    }
+
+    // Priority 2: uploaded text file attachment
+    const fileLink = msgEl.querySelector("a.file-download[data-fn]");
+    if (!fileLink) return;
+    const fn = fileLink.dataset.fn;
+    const ext = fn.includes(".") ? fn.split(".").pop().toLowerCase() : "";
+    if (!_PREVIEWABLE_EXTENSIONS.has(ext)) return;
+
+    let data;
+    try {
+        const resp = await fetch(`/file_preview/${encodeURIComponent(fn)}`);
+        data = await resp.json();
+    } catch { return; }
+    _attachPreviewEl(msgEl, data);
 }
 
 // Pinch-to-zoom adjusts message font size rather than scaling the page.
