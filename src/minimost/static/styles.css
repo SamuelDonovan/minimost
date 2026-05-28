@@ -1230,6 +1230,42 @@ a { color: #9cdcfe; }
     padding: 0;
 }
 .settings-reset-btn:hover { color: #bbb; }
+.modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #333;
+}
+.modal-actions button {
+    padding: 7px 18px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+}
+.modal-actions button:active { transform: scale(0.97); }
+#settings-save-btn {
+    background: #007acc;
+    color: #fff;
+    border: 1px solid #007acc;
+}
+#settings-save-btn:hover {
+    background: #1a8ce0;
+    border-color: #1a8ce0;
+}
+#settings-cancel-btn {
+    background: transparent;
+    color: #ccc;
+    border: 1px solid #555;
+}
+#settings-cancel-btn:hover {
+    background: #2d2d2d;
+    border-color: #888;
+    color: #fff;
+}
 .color-swatches {
     display: flex;
     flex-wrap: wrap;
