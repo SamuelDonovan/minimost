@@ -1755,3 +1755,16 @@ a { color: #9cdcfe; }
     color: #999;
     overflow-wrap: break-word;
 }
+.users-list-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s;
+}
+.users-list-row:hover .users-list-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
