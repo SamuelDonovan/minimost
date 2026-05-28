@@ -163,7 +163,7 @@ def _init_tables():
     # Migration: add screenshare_user for existing databases that predate group calling
     try:
         db.execute("ALTER TABLE calls ADD COLUMN screenshare_user TEXT")
-    except Exception:
+    except sqlite3.OperationalError:
         pass
     db.execute("""
         CREATE TABLE IF NOT EXISTS call_participants (
