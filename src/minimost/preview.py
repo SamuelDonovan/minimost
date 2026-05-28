@@ -356,14 +356,15 @@ def _build_code_result(raw, filepath, line_start, line_end, url):
     filename = filepath.rsplit("/", 1)[-1]
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
+    _MAX_LINES = 1000
     if line_start is not None:
-        ctx = 3
+        ctx = _MAX_LINES // 2
         show_start = max(0, line_start - 1 - ctx)
-        show_end = min(total, (line_end or line_start) + ctx)
+        show_end = min(total, show_start + _MAX_LINES)
         snippet = all_lines[show_start:show_end]
         first_num = show_start + 1
     else:
-        snippet = all_lines[:25]
+        snippet = all_lines[:_MAX_LINES]
         first_num = 1
 
     return {

@@ -950,7 +950,10 @@ a { color: #9cdcfe; }
 .preview-code-body {
     margin: 0;
     padding: 4px 0;
+    max-height: 300px;
     overflow-x: auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: #1e1e1e;
     line-height: 1.5;
     font-family: 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;

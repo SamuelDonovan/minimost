@@ -4222,6 +4222,16 @@ function _previewCodeEl(data) {
     });
 
     wrap.appendChild(pre);
+
+    if (hlStart) {
+        requestAnimationFrame(() => {
+            const hlRow = pre.querySelector(".code-row.hl");
+            if (hlRow) {
+                pre.scrollTop = hlRow.offsetTop - pre.clientHeight / 2 + hlRow.clientHeight / 2;
+            }
+        });
+    }
+
     return wrap;
 }
 
