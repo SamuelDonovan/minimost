@@ -1709,3 +1709,49 @@ a { color: #9cdcfe; }
 }
 #call-mute-audio-btn svg { position: relative; z-index: 1; }
 .color-swatch.selected { border-color: #fff; }
+
+/* Users modal */
+#users-modal .modal-content {
+    max-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    margin: 40px auto;
+}
+#users-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -20px;
+    padding: 0 20px;
+}
+.users-list-loading {
+    color: #888;
+    padding: 12px 0;
+}
+.users-list-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #2a2a2a;
+}
+.users-list-row:last-child {
+    border-bottom: none;
+}
+.users-list-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.users-list-name {
+    font-weight: 600;
+    font-size: 0.95em;
+}
+.users-list-bio {
+    margin: 0;
+    font-size: 0.82em;
+    color: #999;
+    overflow-wrap: break-word;
+}

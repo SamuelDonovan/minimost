@@ -75,6 +75,12 @@
                 </svg>
                 <span class="icon-text">Call</span>
             </button>
+            <button class="icon-btn" title="Members" onclick="openUsersModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M15 14s1 0 1-1-1-4-5-4-5 3-5 4 1 1 1 1h8zm-7.978-1A.261.261 0 0 1 7 12.996c.001-.264.167-1.03.76-1.72C8.312 10.629 9.282 10 11 10c1.717 0 2.687.63 3.24 1.276.593.69.758 1.457.76 1.72l-.008.002-.014.002H7.022zM11 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm3-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM6.936 9.28a5.88 5.88 0 0 0-1.23-.247A7.35 7.35 0 0 0 5 9c-4 0-5 3-5 4 0 .667.333 1 1 1h4.216A2.238 2.238 0 0 1 5 13c0-1.01.377-2.042 1.09-2.904.243-.294.526-.569.846-.816zM4.92 10A5.493 5.493 0 0 0 4 13H1c0-.26.164-1.03.76-1.724.545-.636 1.492-1.256 3.16-1.275zM1.5 5.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0zm3-2a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+                </svg>
+                <span class="icon-text">People</span>
+            </button>
             <button id="msg-search-btn" class="icon-btn" title="Search messages">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242 1.106a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
@@ -283,6 +289,17 @@
         <div class="modal-actions">
             <button id="settings-save-btn">Save</button>
             <button id="settings-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Users Modal -->
+<div id="users-modal" class="modal">
+    <div class="modal-content" style="max-width:480px">
+        <h3 style="margin-top:0">Members</h3>
+        <div id="users-list"></div>
+        <div class="modal-actions">
+            <button onclick="closeUsersModal()">Close</button>
         </div>
     </div>
 </div>
@@ -2262,6 +2279,75 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
 
 settingsModal.addEventListener("click", e => {
     if (e.target === settingsModal) settingsModal.style.display = "none";
+});
+
+// ── Users Modal ───────────────────────────────────────────────────────────────
+
+const usersModal = document.getElementById("users-modal");
+
+async function openUsersModal() {
+    usersModal.style.display = "block";
+    const list = document.getElementById("users-list");
+    list.innerHTML = '<div class="users-list-loading">Loading…</div>';
+
+    let others;
+    try {
+        const r = await fetch("/users");
+        others = await r.json();
+    } catch {
+        list.innerHTML = '<div class="users-list-loading">Failed to load members.</div>';
+        return;
+    }
+
+    const allUsernames = [CURRENT_USER, ...others];
+
+    const profiles = await Promise.all(allUsernames.map(u => {
+        if (profileCache[u]) return Promise.resolve(profileCache[u]);
+        return fetch(`/profile/${encodeURIComponent(u)}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) profileCache[u] = d; return d; })
+            .catch(() => null);
+    }));
+
+    list.innerHTML = "";
+    allUsernames.forEach((u, i) => {
+        const profile = profiles[i];
+        const color = userColor(u);
+
+        const row = document.createElement("div");
+        row.className = "users-list-row";
+
+        const avatarWrap = makeAvatarWrap(u, 40);
+        avatarWrap.style.flexShrink = "0";
+
+        const info = document.createElement("div");
+        info.className = "users-list-info";
+
+        const name = document.createElement("span");
+        name.className = "users-list-name";
+        name.style.color = color;
+        name.textContent = u + (u === CURRENT_USER ? " (you)" : "");
+        info.appendChild(name);
+
+        if (profile?.bio) {
+            const bio = document.createElement("p");
+            bio.className = "users-list-bio";
+            bio.textContent = profile.bio;
+            info.appendChild(bio);
+        }
+
+        row.appendChild(avatarWrap);
+        row.appendChild(info);
+        list.appendChild(row);
+    });
+}
+
+function closeUsersModal() {
+    usersModal.style.display = "none";
+}
+
+usersModal.addEventListener("click", e => {
+    if (e.target === usersModal) usersModal.style.display = "none";
 });
 
 // ── Private Channels ──────────────────────────────────────────────────────────
