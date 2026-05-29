@@ -50,6 +50,7 @@
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing
 - **Dark theme** — easy on the eyes
 - **Password security** — salted hashes (PBKDF2), enforced complexity requirements
+- **Account self-deletion** — users can delete their own account from Settings; soft delete removes login credentials and re-attributes messages to "Deleted User" while preserving chat history; hard delete removes the account and every message the user ever sent across all channels and conversations; both require password confirmation
 - **Admin password reset** — generate a one-time, time-limited reset URL from the CLI; the user receives an in-app notification when a reset is requested
 
 ---

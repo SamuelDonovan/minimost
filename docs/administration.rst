@@ -130,35 +130,64 @@ Run ``minimost reset-password --help`` for the full list of options.
 
        sqlite3 auth.db "DELETE FROM password_reset_tokens WHERE used = 1 OR expires_ts < unixepoch();"
 
-**Delete a user:**
+Account Deletion
+~~~~~~~~~~~~~~~~
 
-1. Remove the user's record and settings from ``auth.db``::
+Users can delete their own account from **Settings → Danger Zone**. Two modes
+are available, both requiring the user to enter their current password before
+anything is changed.
 
+**Soft delete**
+
+Removes the user's login credentials, settings, and avatar. Every message they
+sent is re-attributed to ``Deleted User`` across all recipient databases.
+Chat history remains intact and visible to other users. The account cannot be
+recovered, but a new account with the same username can be registered later.
+
+**Hard delete**
+
+Removes the user's login credentials, settings, and avatar, and additionally
+deletes every message they ever sent from every channel and conversation across
+all user databases. Private channels the user created are left intact (other
+members' messages are unaffected); only the deleted user's own messages are
+removed.
+
+.. note::
+
+   After either deletion the user's session is immediately invalidated and
+   they are redirected to the login page. Private channel memberships and
+   presence records are cleaned up automatically in both cases.
+
+**Manual deletion (admin override)**
+
+If an account must be removed by an administrator without the user's
+co-operation, replicate the hard delete steps directly against the databases.
+The self-service flow above is the recommended path whenever possible.
+
+.. code-block:: bash
+
+    # 1. Remove credentials and settings
     sqlite3 auth.db "DELETE FROM users WHERE username = 'alice';"
     sqlite3 auth.db "DELETE FROM user_settings WHERE username = 'alice';"
+    sqlite3 auth.db "DELETE FROM password_reset_tokens WHERE username = 'alice';"
 
-2. Delete the user's database file::
+    # 2. Remove messages from every user database
+    for db in users/*.db; do
+        sqlite3 "$db" "DELETE FROM messages WHERE sender = 'alice';"
+    done
 
-    rm users/alice.db
+    # 3. Delete the user's own database file and avatar
+    rm -f users/alice.db
+    # avatar filename is stored in user_settings.avatar_file — check before deleting
+    rm -f avatars/<avatar_filename>
 
-3. Remove the user's avatar image (if one exists)::
-
-    # The filename is stored in user_settings.avatar_file; delete it from avatars/
-    rm -f avatars/alice_*.jpg   # or check auth.db for the exact filename
-
-4. Remove the user's presence records (optional)::
-
+    # 4. Remove presence records
     sqlite3 presence.db "DELETE FROM presence WHERE user = 'alice';"
     sqlite3 presence.db "DELETE FROM typing WHERE user = 'alice';"
     sqlite3 presence.db "DELETE FROM read_receipts WHERE reader = 'alice';"
     sqlite3 presence.db "DELETE FROM message_reactions WHERE reactor = 'alice';"
-
-.. warning::
-
-   Deleting a user does **not** remove their messages from other users'
-   databases. Their messages will still appear in other users' chat history,
-   attributed to their username. There is no automatic cascade-delete across
-   per-user databases.
+    sqlite3 presence.db "DELETE FROM private_channel_members WHERE username = 'alice';"
+    sqlite3 presence.db "DELETE FROM call_participants WHERE username = 'alice';"
 
 **Add a channel:**
 
