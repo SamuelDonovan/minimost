@@ -61,6 +61,7 @@ from typing import List
 
 # From Flask
 from flask import (
+    abort,
     request,
     jsonify,
     render_template,
@@ -1126,9 +1127,13 @@ def file_preview(filename):
     used by the Bitbucket preview routes.  Returns ``{}`` for unrecognised
     extensions or unreadable files.
     """
-    path = UPLOAD_DIR / filename
-    ext = Path(filename).suffix.lstrip(".").lower()
-    base = Path(filename).name.lower()
+    path = (UPLOAD_DIR / filename).resolve()
+    try:
+        path.relative_to(UPLOAD_DIR.resolve())
+    except ValueError:
+        abort(404)
+    ext = path.suffix.lstrip(".").lower()
+    base = path.name.lower()
 
     if (
         ext not in preview_mod._TEXT_EXTENSIONS
