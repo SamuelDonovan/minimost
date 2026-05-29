@@ -1127,11 +1127,10 @@ def file_preview(filename):
     used by the Bitbucket preview routes.  Returns ``{}`` for unrecognised
     extensions or unreadable files.
     """
-    path = (UPLOAD_DIR / filename).resolve()
-    try:
-        path.relative_to(UPLOAD_DIR.resolve())
-    except ValueError:
+    safe_name = _secure_filename(filename)
+    if not safe_name:
         abort(404)
+    path = UPLOAD_DIR / safe_name
     ext = path.suffix.lstrip(".").lower()
     base = path.name.lower()
 

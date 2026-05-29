@@ -73,6 +73,14 @@ cd minimost
 pip install -e .
 ```
 
+### From wheel (latest build)
+
+Download the latest `.whl` from the [releases page](https://github.com/SamuelDonovan/minimost/releases/tag/dev), then:
+
+```bash
+pip install minimost-*.whl
+```
+
 ### Dependencies only (no internet access)
 
 Download the Flask wheel and its dependencies, then:
