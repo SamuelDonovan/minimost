@@ -11,6 +11,8 @@ jobs:
     name: Build Sphinx docs
     runs-on: ubuntu-latest
 
+    permissions:
+      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -27,12 +29,24 @@ jobs:
         # -W  treats warnings as errors (catches broken cross-references, etc.)
         # --keep-going  reports all errors rather than stopping on the first
 
-      - name: Upload built docs as artifact
+      - name: Zip docs
+        run: zip -r docs.zip docs/_build/html/
+
+      - name: Delete previous docs artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ids=$(gh api repos/${{ github.repository }}/actions/artifacts \
+            --paginate --jq '.artifacts[] | select(.name=="html-docs") | .id')
+          for id in $ids; do
+            gh api repos/${{ github.repository }}/actions/artifacts/$id -X DELETE || true
+          done
+
+      - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:
           name: html-docs
-          path: docs/_build/html/
-          retention-days: 7
+          path: docs.zip
 
   deploy:
     name: Trigger Read the Docs build

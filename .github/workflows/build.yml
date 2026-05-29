@@ -5,6 +5,8 @@ on: [push]
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -13,6 +15,15 @@ jobs:
       - run: pip install build black
       - run: black --check src/
       - run: python -m build --wheel
+      - name: Delete previous wheel artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ids=$(gh api repos/${{ github.repository }}/actions/artifacts \
+            --paginate --jq '.artifacts[] | select(.name=="minimost-wheel") | .id')
+          for id in $ids; do
+            gh api repos/${{ github.repository }}/actions/artifacts/$id -X DELETE || true
+          done
       - uses: actions/upload-artifact@v6
         with:
           name: minimost-wheel
