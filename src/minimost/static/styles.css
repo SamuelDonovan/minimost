@@ -1838,3 +1838,67 @@ a { color: #9cdcfe; }
     opacity: 1;
     pointer-events: auto;
 }
+
+/* Account deletion danger zone */
+.settings-danger-zone {
+    margin-top: 20px;
+    border-top: 1px solid #5a2020;
+    padding-top: 4px;
+}
+.settings-danger-title {
+    color: #e05c5c !important;
+}
+.settings-danger-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+.settings-danger-btn {
+    background: #7a1f1f;
+    color: #f5c0c0;
+    border: 1px solid #a33030;
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    transition: background 0.15s, border-color 0.15s;
+}
+.settings-danger-btn:hover {
+    background: #9b2626;
+    border-color: #c03c3c;
+}
+.settings-danger-btn-hard {
+    background: #5a0f0f;
+    border-color: #7a1f1f;
+}
+.settings-danger-btn-hard:hover {
+    background: #7a1f1f;
+    border-color: #a33030;
+}
+.settings-danger-btn-confirm {
+    text-align: center;
+}
+.settings-delete-warning {
+    background: #3a1515;
+    border: 1px solid #7a1f1f;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: #e8b8b8;
+    line-height: 1.5;
+    margin-top: 8px;
+}
+.settings-delete-warning p {
+    margin: 0 0 8px;
+}
+.settings-delete-warning p:last-child {
+    margin-bottom: 0;
+}
+.settings-delete-error {
+    color: #e05c5c;
+    font-size: 12px;
+    margin-top: 6px;
+}

@@ -97,6 +97,7 @@ def _init_tables():
     :returns: None
     """
     db = sqlite3.connect(PRESENCE_DB)
+    db.execute("PRAGMA auto_vacuum = INCREMENTAL")
     db.execute(_WAL)
     db.execute("""
         CREATE TABLE IF NOT EXISTS presence (
@@ -228,6 +229,10 @@ def _init_tables():
             ON share_media (share_id, is_init, id)
     """)
     db.commit()
+    # One-time migration: if auto_vacuum was never enabled, VACUUM to compact
+    # the database and permanently store the new auto_vacuum setting.
+    if db.execute("PRAGMA auto_vacuum").fetchone()[0] == 0:
+        db.execute("VACUUM")
     db.close()
 
 

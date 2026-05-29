@@ -157,6 +157,7 @@ def init_user_db(username: str):
     DB_DIR.mkdir(exist_ok=True)
     path = user_db_path(username)
     db = sqlite3.connect(str(path))
+    db.execute("PRAGMA auto_vacuum = FULL")
     db.execute("PRAGMA journal_mode=WAL")
     cur = db.cursor()
 

@@ -70,6 +70,7 @@ from flask import (
     Blueprint,
 )
 from werkzeug.utils import secure_filename as _secure_filename
+from werkzeug.security import check_password_hash
 
 # Local Imports
 from . import common
@@ -787,6 +788,115 @@ def delete_avatar():
     db.commit()
     db.close()
     return "ok"
+
+
+@chat_bp.route("/delete_account", methods=["POST"])
+@auth.login_required
+def delete_account():
+    """Soft or hard delete the current user's account.
+
+    Route: ``POST /delete_account``
+
+    JSON body: ``{"type": "soft"|"hard", "password": "<current password>"}``
+
+    **Soft delete** — removes the user's credentials and settings from
+    ``auth.db``, renames their messages to ``"Deleted User"`` in every
+    recipient's database, and deletes their avatar file.  Message history
+    remains visible.
+
+    **Hard delete** — performs the soft delete steps and additionally removes
+    every message they sent from all recipient databases, deletes their own
+    database file, and purges their records from ``presence.db``.
+
+    In both cases the session is cleared and the client should redirect to
+    the login page.
+
+    :returns: JSON ``{"status": "ok"}`` on success, or an error response.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+    delete_type = data.get("type")
+    password = data.get("password", "")
+
+    if delete_type not in ("soft", "hard"):
+        return jsonify({"error": "Invalid delete type."}), 400
+
+    # Verify password before doing anything destructive
+    adb = sqlite3.connect(auth.AUTH_DB)
+    adb.execute(_WAL)
+    row = adb.execute(
+        "SELECT password_hash FROM users WHERE username = ?", (user,)
+    ).fetchone()
+    adb.close()
+
+    if not row or not check_password_hash(row[0], password):
+        return jsonify({"error": "Incorrect password."}), 403
+
+    # Collect all usernames while the account still exists
+    adb = sqlite3.connect(auth.AUTH_DB)
+    adb.execute(_WAL)
+    all_usernames = [r[0] for r in adb.execute("SELECT username FROM users").fetchall()]
+    avatar_row = adb.execute(
+        "SELECT avatar_file FROM user_settings WHERE username = ?", (user,)
+    ).fetchone()
+    adb.close()
+
+    # Walk every user DB to update or remove messages from this sender
+    for recipient in all_usernames:
+        udb_path = common.user_db_path(recipient)
+        if not udb_path.exists():
+            continue
+        udb = sqlite3.connect(str(udb_path))
+        udb.execute(_WAL)
+        if delete_type == "soft":
+            udb.execute(
+                "UPDATE messages SET sender = 'Deleted User' WHERE sender = ?", (user,)
+            )
+        else:
+            udb.execute("DELETE FROM messages WHERE sender = ?", (user,))
+        udb.commit()
+        udb.close()
+
+    # Clean presence.db for both delete types — removes the user from private
+    # channel membership so they are no longer included as a message recipient.
+    pdb = sqlite3.connect(presence.PRESENCE_DB)
+    pdb.execute(_WAL)
+    pdb.execute("DELETE FROM presence WHERE user = ?", (user,))
+    pdb.execute("DELETE FROM typing WHERE user = ?", (user,))
+    pdb.execute("DELETE FROM read_receipts WHERE reader = ?", (user,))
+    pdb.execute("DELETE FROM message_reactions WHERE reactor = ?", (user,))
+    pdb.execute("DELETE FROM private_channel_members WHERE username = ?", (user,))
+    pdb.execute("DELETE FROM call_participants WHERE username = ?", (user,))
+    pdb.commit()
+    pdb.close()
+
+    if delete_type == "hard":
+        # Delete the user's own DB file
+        user_db = common.user_db_path(user)
+        try:
+            user_db.unlink()
+        except FileNotFoundError:
+            pass
+
+    # Delete avatar file
+    if avatar_row and avatar_row[0]:
+        try:
+            (AVATAR_DIR / avatar_row[0]).unlink()
+        except FileNotFoundError:
+            pass
+
+    # Remove from auth.db
+    adb = sqlite3.connect(auth.AUTH_DB)
+    adb.execute(_WAL)
+    adb.execute("DELETE FROM users WHERE username = ?", (user,))
+    adb.execute("DELETE FROM user_settings WHERE username = ?", (user,))
+    adb.execute("DELETE FROM password_reset_tokens WHERE username = ?", (user,))
+    adb.commit()
+    adb.close()
+
+    session.clear()
+    return jsonify({"status": "ok"})
 
 
 @chat_bp.route("/online_users", methods=["GET"])

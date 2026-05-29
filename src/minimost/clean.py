@@ -129,6 +129,9 @@ def _clean_user_db(db_file: Path, cutoff: float, dry_run: bool) -> None:
         if cur.rowcount > 0:
             print(f"Deleted {cur.rowcount} messages from {db_file.name}")
         conn.commit()
+        if conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 0:
+            conn.execute("PRAGMA auto_vacuum = FULL")
+            conn.execute("VACUUM")
     conn.close()
 
 

@@ -235,61 +235,93 @@
 <!-- Settings Modal -->
 <div id="settings-modal" class="modal">
     <div class="modal-content" style="max-width:420px">
-        <h3 style="margin-top:0">Settings</h3>
 
-        <p class="settings-section-title">Avatar</p>
-        <div class="settings-row" style="display:flex;align-items:center;gap:16px">
-            <div id="settings-avatar-preview" style="flex-shrink:0"></div>
-            <div>
-                <input type="file" id="settings-avatar-file" accept="image/*" hidden>
-                <button type="button" class="icon-btn" id="settings-avatar-btn">Upload Image</button>
-                <div style="margin-top:6px">
-                    <button type="button" class="settings-reset-btn" id="settings-avatar-remove">Remove avatar</button>
+        <!-- Main settings view -->
+        <div id="settings-main-view">
+            <h3 style="margin-top:0">Settings</h3>
+
+            <p class="settings-section-title">Avatar</p>
+            <div class="settings-row" style="display:flex;align-items:center;gap:16px">
+                <div id="settings-avatar-preview" style="flex-shrink:0"></div>
+                <div>
+                    <input type="file" id="settings-avatar-file" accept="image/*" hidden>
+                    <button type="button" class="icon-btn" id="settings-avatar-btn">Upload Image</button>
+                    <div style="margin-top:6px">
+                        <button type="button" class="settings-reset-btn" id="settings-avatar-remove">Remove avatar</button>
+                    </div>
+                </div>
+            </div>
+
+            <p class="settings-section-title">Profile</p>
+
+            <div class="settings-row">
+                <label for="settings-bio">Bio</label>
+                <textarea id="settings-bio" maxlength="160" rows="3" placeholder="Tell people a little about yourself…"></textarea>
+                <div class="settings-bio-counter"><span id="settings-bio-count">0</span>/160</div>
+            </div>
+
+            <p class="settings-section-title">Appearance</p>
+
+            <div class="settings-row">
+                <label for="settings-name-color">Name Color</label>
+                <div class="settings-color-preview">
+                    <span id="settings-color-preview-name"></span>
+                </div>
+                <div class="settings-color-controls">
+                    <input type="color" id="settings-name-color">
+                    <button class="settings-reset-btn" id="settings-color-reset">Reset to default</button>
+                </div>
+                <div class="color-swatches" id="color-swatches"></div>
+            </div>
+
+            <div class="settings-row">
+                <label for="settings-font-size">Font Size <span id="settings-font-size-label"></span></label>
+                <input type="range" id="settings-font-size" min="11" max="22" step="1">
+            </div>
+
+            <p class="settings-section-title">Messaging</p>
+
+            <div class="settings-row">
+                <label for="settings-enter-key">Enter key</label>
+                <select id="settings-enter-key">
+                    <option value="send">Send message</option>
+                    <option value="newline">New line (use Ctrl+Enter to send)</option>
+                </select>
+            </div>
+
+            <div class="modal-actions">
+                <button id="settings-save-btn">Save</button>
+                <button id="settings-cancel-btn">Cancel</button>
+            </div>
+
+            <div class="settings-danger-zone">
+                <p class="settings-section-title settings-danger-title">Danger Zone</p>
+                <div class="settings-danger-btns">
+                    <button class="settings-danger-btn" onclick="showDeleteConfirm('soft')">
+                        Soft Delete Account
+                    </button>
+                    <button class="settings-danger-btn settings-danger-btn-hard" onclick="showDeleteConfirm('hard')">
+                        Hard Delete Account
+                    </button>
                 </div>
             </div>
         </div>
 
-        <p class="settings-section-title">Profile</p>
-
-        <div class="settings-row">
-            <label for="settings-bio">Bio</label>
-            <textarea id="settings-bio" maxlength="160" rows="3" placeholder="Tell people a little about yourself…"></textarea>
-            <div class="settings-bio-counter"><span id="settings-bio-count">0</span>/160</div>
-        </div>
-
-        <p class="settings-section-title">Appearance</p>
-
-        <div class="settings-row">
-            <label for="settings-name-color">Name Color</label>
-            <div class="settings-color-preview">
-                <span id="settings-color-preview-name"></span>
+        <!-- Delete confirmation view -->
+        <div id="settings-delete-view" style="display:none">
+            <h3 id="settings-delete-title" style="margin-top:0"></h3>
+            <div id="settings-delete-warning" class="settings-delete-warning"></div>
+            <div class="settings-row" style="margin-top:16px">
+                <label for="settings-delete-password">Confirm your password</label>
+                <input type="password" id="settings-delete-password" placeholder="Password" autocomplete="current-password">
+                <div id="settings-delete-error" class="settings-delete-error" style="display:none"></div>
             </div>
-            <div class="settings-color-controls">
-                <input type="color" id="settings-name-color">
-                <button class="settings-reset-btn" id="settings-color-reset">Reset to default</button>
+            <div class="modal-actions" style="margin-top:16px">
+                <button id="settings-delete-confirm-btn" class="settings-danger-btn settings-danger-btn-confirm" onclick="confirmDelete()">Delete My Account</button>
+                <button onclick="cancelDeleteConfirm()">Cancel</button>
             </div>
-            <div class="color-swatches" id="color-swatches"></div>
         </div>
 
-        <div class="settings-row">
-            <label for="settings-font-size">Font Size <span id="settings-font-size-label"></span></label>
-            <input type="range" id="settings-font-size" min="11" max="22" step="1">
-        </div>
-
-        <p class="settings-section-title">Messaging</p>
-
-        <div class="settings-row">
-            <label for="settings-enter-key">Enter key</label>
-            <select id="settings-enter-key">
-                <option value="send">Send message</option>
-                <option value="newline">New line (use Ctrl+Enter to send)</option>
-            </select>
-        </div>
-
-        <div class="modal-actions">
-            <button id="settings-save-btn">Save</button>
-            <button id="settings-cancel-btn">Cancel</button>
-        </div>
     </div>
 </div>
 
@@ -2277,8 +2309,86 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
 });
 
 settingsModal.addEventListener("click", e => {
-    if (e.target === settingsModal) settingsModal.style.display = "none";
+    if (e.target === settingsModal) {
+        cancelDeleteConfirm();
+        settingsModal.style.display = "none";
+    }
 });
+
+// ── Account deletion ──────────────────────────────────────────────────────────
+
+let _deleteType = null;
+
+const _deleteInfo = {
+    soft: {
+        title: "Soft Delete Account",
+        warning: `<p>Your login credentials will be permanently removed and your messages will be
+            re-attributed to <strong>Deleted User</strong>. You will no longer be able to log in
+            or recover your account.</p>
+            <p>Message content and chat history will remain visible to other users.</p>`,
+        btnLabel: "Soft Delete My Account",
+    },
+    hard: {
+        title: "Hard Delete Account",
+        warning: `<p>Your account <strong>and every message you have ever sent</strong> will be
+            permanently and irreversibly deleted from all channels and conversations.</p>
+            <p>This action cannot be undone under any circumstances.</p>`,
+        btnLabel: "Permanently Delete Everything",
+    },
+};
+
+function showDeleteConfirm(type) {
+    _deleteType = type;
+    const info = _deleteInfo[type];
+    document.getElementById("settings-delete-title").textContent = info.title;
+    document.getElementById("settings-delete-warning").innerHTML = info.warning;
+    document.getElementById("settings-delete-confirm-btn").textContent = info.btnLabel;
+    document.getElementById("settings-delete-password").value = "";
+    document.getElementById("settings-delete-error").style.display = "none";
+    document.getElementById("settings-main-view").style.display = "none";
+    document.getElementById("settings-delete-view").style.display = "block";
+    document.getElementById("settings-delete-password").focus();
+}
+
+function cancelDeleteConfirm() {
+    _deleteType = null;
+    document.getElementById("settings-delete-view").style.display = "none";
+    document.getElementById("settings-main-view").style.display = "block";
+}
+
+async function confirmDelete() {
+    const password = document.getElementById("settings-delete-password").value;
+    const errEl = document.getElementById("settings-delete-error");
+    if (!password) {
+        errEl.textContent = "Please enter your password.";
+        errEl.style.display = "block";
+        return;
+    }
+    const btn = document.getElementById("settings-delete-confirm-btn");
+    btn.disabled = true;
+    btn.textContent = "Deleting…";
+    try {
+        const resp = await fetch("/delete_account", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: _deleteType, password }),
+        });
+        if (resp.ok) {
+            window.location.href = "/login";
+        } else {
+            const data = await resp.json().catch(() => ({}));
+            errEl.textContent = data.error || "Deletion failed. Please try again.";
+            errEl.style.display = "block";
+            btn.disabled = false;
+            btn.textContent = _deleteInfo[_deleteType].btnLabel;
+        }
+    } catch {
+        errEl.textContent = "Network error. Please try again.";
+        errEl.style.display = "block";
+        btn.disabled = false;
+        btn.textContent = _deleteInfo[_deleteType].btnLabel;
+    }
+}
 
 // ── Users Modal ───────────────────────────────────────────────────────────────
 

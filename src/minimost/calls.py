@@ -75,6 +75,7 @@ def reset_all_screenshares_ended() -> None:
     )
     db.execute("DELETE FROM share_media")
     db.commit()
+    db.execute("PRAGMA incremental_vacuum")
     db.close()
 
 
@@ -95,6 +96,7 @@ def reset_all_calls_ended() -> None:
     )
     db.execute("DELETE FROM call_media")
     db.commit()
+    db.execute("PRAGMA incremental_vacuum")
     db.close()
 
 
@@ -411,6 +413,7 @@ def end_call(call_id):
             db.execute("DELETE FROM call_media WHERE call_id = ?", (call_id,))
 
         db.commit()
+        db.execute("PRAGMA incremental_vacuum")
     finally:
         db.close()
 
@@ -942,6 +945,7 @@ def stop_screenshare(share_id):
         )
         db.execute("DELETE FROM share_media WHERE share_id = ?", (share_id,))
         db.commit()
+        db.execute("PRAGMA incremental_vacuum")
     finally:
         db.close()
     return jsonify({"status": "ok"})

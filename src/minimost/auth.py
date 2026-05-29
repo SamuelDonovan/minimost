@@ -384,6 +384,12 @@ def signup_post():
 
     db.close()
 
+    # Remove any leftover DB from a previously soft-deleted account so that
+    # init_user_db and _seed_channel_history start from a clean slate.
+    stale_db = common.user_db_path(username)
+    if stale_db.exists():
+        stale_db.unlink()
+
     common.init_user_db(username)
     _seed_channel_history(username)
 
