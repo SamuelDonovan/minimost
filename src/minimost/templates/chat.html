@@ -1159,13 +1159,6 @@ let baseTitle = document.title;
 let lastUnreadCount = 0;
 let channelUnreadCount = 0;
 
-function initDesktopNotifications() {
-    if (!("Notification" in globalThis)) return;
-    if (Notification.permission === "default") {
-        Notification.requestPermission();
-    }
-}
-
 function updateNotifMuteBtn() {
     const slash = document.getElementById('notif-slash');
     const btn = document.getElementById('notif-mute-btn');
@@ -1178,6 +1171,9 @@ function toggleNotifMute() {
     notifMuted = !notifMuted;
     localStorage.setItem('notifMuted', notifMuted);
     updateNotifMuteBtn();
+    if ("Notification" in globalThis && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
 }
 
 function sendDesktopNotification(count) {
@@ -1469,6 +1465,9 @@ function _buildMsgHtml(m, time, fullTime, color) {
     const displayName = m.sender === "system" ? "MiniMost" : m.sender;
     let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}" data-username="${m.sender}">${displayName}</span>`;
     headerHtml += `<span class="time" title="${fullTime}">${time}</span>`;
+    if (m.sender === CURRENT_USER) {
+        headerHtml += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
+    }
 
     let actionsHtml = "";
     if (m.edited) {
@@ -1509,10 +1508,6 @@ function _buildMsgHtml(m, time, fullTime, color) {
                 bodyHtml += `<a href="/files/${fn}" class="file-download" data-fn="${fn}" download="${displayName}"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4v-2h14v2H5z"/></svg> ${displayName}</a>`;
             }
         }
-    }
-
-    if (m.sender === CURRENT_USER) {
-        headerHtml += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
     }
 
     bodyHtml += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
@@ -1671,6 +1666,10 @@ function fetchMessages() {
 
             if (playNewMsgSound && document.hidden && !notifMuted) {
                 new Audio('/static/notification.mp3').play().catch(() => {});
+            }
+
+            if (appended && !document.hidden) {
+                fetch(`/mark_read/${channel}`, { method: "POST" });
             }
 
             updateReadReceiptUI();
@@ -4034,7 +4033,6 @@ searchInput.addEventListener("keydown", (e) => {
 // Starup
 document.addEventListener("DOMContentLoaded", () => {
     initFavicon();
-    initDesktopNotifications();
     updateNotifMuteBtn();
     loadSidebar();
     document.getElementById("chan").innerText = channel;
@@ -4698,6 +4696,7 @@ let callingAudio        = null;
 let ringTimeoutId       = null;
 let incomingRingTimeout = null;
 const RING_TIMEOUT_MS   = 30000;
+let _notifiedShareId    = null;
 
 // Per-participant remote state: username → { audioPollId, audioPollingActive,
 //   lastAudioSeq, audioNextPlayTime, vadAnalyser, vadPollId, tileEl }
@@ -4765,6 +4764,13 @@ function openIncomingCallUI(callData) {
         ringAudio = a;
     }
     incomingRingTimeout = setTimeout(closeIncomingCallUI, RING_TIMEOUT_MS);
+    if ("Notification" in globalThis && Notification.permission === "granted") {
+        new Notification("Incoming Call — MiniMost", {
+            body: `${callData.initiator} is calling you`,
+            icon: "/static/web-app-manifest-192x192.png",
+            tag: "minimost-call",
+        });
+    }
 }
 
 function closeIncomingCallUI() {
@@ -5491,6 +5497,16 @@ async function refreshScreenShares() {
     // Show the banner (not auto-opening the viewer to avoid surprise)
     document.getElementById("screenshare-banner-view-btn").style.display = "inline-flex";
     banner.style.display = "flex";
+
+    if (document.hidden && share.share_id !== _notifiedShareId &&
+            "Notification" in globalThis && Notification.permission === "granted") {
+        _notifiedShareId = share.share_id;
+        new Notification("Screen Share — MiniMost", {
+            body: `${share.sharer} is sharing their screen`,
+            icon: "/static/web-app-manifest-192x192.png",
+            tag: "minimost-screenshare",
+        });
+    }
 }
 
 function openShareViewer() {
