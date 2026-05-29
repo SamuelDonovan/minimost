@@ -1126,7 +1126,6 @@ def file_preview(filename):
     used by the Bitbucket preview routes.  Returns ``{}`` for unrecognised
     extensions or unreadable files.
     """
-    path = UPLOAD_DIR / filename
     ext = Path(filename).suffix.lstrip(".").lower()
     base = Path(filename).name.lower()
 
@@ -1137,6 +1136,9 @@ def file_preview(filename):
         return jsonify({})
 
     try:
+        base_dir = UPLOAD_DIR.resolve()
+        path = (base_dir / filename).resolve(strict=False)
+        path.relative_to(base_dir)
         raw = path.read_text(encoding="utf-8", errors="replace")
     except Exception:
         return jsonify({})
