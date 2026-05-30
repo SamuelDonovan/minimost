@@ -541,6 +541,13 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
+}
+.sidebar-item .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 #sidebar .sidebar-section-header {
     display: flex;

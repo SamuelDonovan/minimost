@@ -162,6 +162,7 @@ def _load_channels() -> List[str]:
 
 
 CHANNELS = _load_channels()
+MAX_CHANNEL_NAME_LEN = 80
 
 
 def _get_private_db():
@@ -2284,6 +2285,9 @@ def create_private_channel():
     if not name:
         return "name required", 400
 
+    if len(name) > MAX_CHANNEL_NAME_LEN:
+        return f"channel name must be {MAX_CHANNEL_NAME_LEN} characters or fewer", 400
+
     if user not in members:
         members.append(user)
 
@@ -2371,6 +2375,9 @@ def rename_private_channel(channel_id):
     name = (data.get("name") or "").strip()
     if not name:
         return "name required", 400
+
+    if len(name) > MAX_CHANNEL_NAME_LEN:
+        return f"channel name must be {MAX_CHANNEL_NAME_LEN} characters or fewer", 400
 
     pdb = _get_private_db()
     pdb.execute("UPDATE private_channels SET name = ? WHERE id = ?", (name, channel_id))

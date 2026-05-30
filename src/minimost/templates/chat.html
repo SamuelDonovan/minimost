@@ -178,7 +178,8 @@
     <div class="modal-content">
         <h3>New Private Channel</h3>
         <label for="private-ch-name">Channel name</label><br>
-        <input type="text" id="private-ch-name" placeholder="e.g. miniost-enjoyers" style="width:90%; margin-bottom:10px">
+        <input type="text" id="private-ch-name" placeholder="e.g. miniost-enjoyers" maxlength="80" style="width:90%; margin-bottom:4px">
+        <div id="private-ch-name-error" style="color:var(--danger,#e53e3e); font-size:0.82em; min-height:1.2em; margin-bottom:6px"></div>
         <label for="private-ch-members-input">Members</label>
         <div class="input-suggest-wrap">
             <input id="private-ch-members-input" placeholder="Enter usernames (comma separated)" autocomplete="off">
@@ -195,7 +196,8 @@
 <div id="rename-private-ch-modal" class="modal">
     <div class="modal-content">
         <h3>Rename Channel</h3>
-        <input type="text" id="rename-ch-input" placeholder="New channel name" style="width:90%">
+        <input type="text" id="rename-ch-input" placeholder="New channel name" maxlength="80" style="width:90%; margin-bottom:4px">
+        <div id="rename-ch-name-error" style="color:var(--danger,#e53e3e); font-size:0.82em; min-height:1.2em; margin-bottom:6px"></div>
         <div class="modal-actions">
             <button id="rename-ch-submit-btn">Rename</button>
             <button id="rename-ch-cancel-btn">Cancel</button>
@@ -2550,11 +2552,14 @@ let pcCurrentSuggestions = [];
 let addMemberSuggIndex = -1;
 let addMemberCurrentSuggestions = [];
 
+const MAX_CHANNEL_NAME_LEN = 80;
+
 function openCreatePrivateChannel() {
     createPrivateChModal.style.display = "block";
     privateChNameInput.value = "";
     privateChMembersInput.value = "";
     privateChSuggestions.style.display = "none";
+    document.getElementById("private-ch-name-error").textContent = "";
     if (!usersLoaded) {
         fetch("/users").then(r => r.json()).then(u => { allUsers = u; usersLoaded = true; });
     }
@@ -2567,7 +2572,14 @@ document.getElementById("private-ch-create-cancel").onclick = () => {
 
 document.getElementById("private-ch-create-btn").onclick = async () => {
     const name = privateChNameInput.value.trim();
+    const nameError = document.getElementById("private-ch-name-error");
+    nameError.textContent = "";
     if (!name) { privateChNameInput.focus(); return; }
+    if (name.length > MAX_CHANNEL_NAME_LEN) {
+        nameError.textContent = `Channel name must be ${MAX_CHANNEL_NAME_LEN} characters or fewer (${name.length}/${MAX_CHANNEL_NAME_LEN}).`;
+        privateChNameInput.focus();
+        return;
+    }
 
     const raw = privateChMembersInput.value;
     const members = raw.split(",").map(u => u.trim()).filter(Boolean);
@@ -2666,6 +2678,7 @@ document.addEventListener("click", e => {
 function openRenameChannel() {
     if (!channel.startsWith("private:")) return;
     renamePrivateChModal.style.display = "block";
+    document.getElementById("rename-ch-name-error").textContent = "";
     const renameInput = document.getElementById("rename-ch-input");
     renameInput.value = privateChannelMap[channel] || "";
     renameInput.focus();
@@ -2680,7 +2693,14 @@ document.getElementById("rename-ch-submit-btn").onclick = async () => {
     if (!channel.startsWith("private:")) return;
     const channelId = channel.split(":")[1];
     const name = document.getElementById("rename-ch-input").value.trim();
+    const renameError = document.getElementById("rename-ch-name-error");
+    renameError.textContent = "";
     if (!name) return;
+    if (name.length > MAX_CHANNEL_NAME_LEN) {
+        renameError.textContent = `Channel name must be ${MAX_CHANNEL_NAME_LEN} characters or fewer (${name.length}/${MAX_CHANNEL_NAME_LEN}).`;
+        document.getElementById("rename-ch-input").focus();
+        return;
+    }
 
     const resp = await fetch(`/private_channels/${channelId}/rename`, {
         method: "POST",
