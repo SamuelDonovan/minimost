@@ -368,15 +368,6 @@ body {
 .msg > .avatar-wrap {
     align-self: flex-start;
 }
-.msg-grouped {
-    margin-top: 1px;
-}
-.msg-grouped .msg-header {
-    display: none;
-}
-.msg-grouped > .avatar-wrap {
-    visibility: hidden;
-}
 .msg.visual-selected {
     background: rgba(0, 122, 204, 0.18);
     border-left: 3px solid #007acc;

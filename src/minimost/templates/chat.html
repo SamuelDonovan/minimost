@@ -1447,7 +1447,6 @@ function _removeDeletedMsg(existing, ts) {
     let nextMsg = existing.nextElementSibling;
     while (nextMsg && !nextMsg.classList.contains("msg")) nextMsg = nextMsg.nextElementSibling;
     existing.remove();
-    if (nextMsg && !nextMsg.classList.contains("system-msg")) _applyGrouping(nextMsg);
     const divider = document.getElementById(`date-${new Date(ts * 1000).toDateString()}`);
     if (!divider) return;
     let next = divider.nextElementSibling;
@@ -1459,32 +1458,6 @@ function _removeDeletedMsg(existing, ts) {
     if (!hasMessages) divider.remove();
 }
 
-function _prevMsg(el) {
-    let prev = el.previousElementSibling;
-    while (prev) {
-        if (prev.classList.contains("date-divider")) return null;
-        if (prev.classList.contains("msg") && !prev.classList.contains("system-msg")) return prev;
-        prev = prev.previousElementSibling;
-    }
-    return null;
-}
-
-function _applyGrouping(msgEl) {
-    if (!msgEl || msgEl.classList.contains("system-msg")) return;
-    const sender = msgEl.dataset.sender;
-    const ts = parseFloat(msgEl.dataset.ts);
-    const isReply = !!msgEl.querySelector(".quoted-msg");
-    const prev = _prevMsg(msgEl);
-    const shouldGroup = !isReply && !!prev && prev.dataset.sender === sender && (ts - parseFloat(prev.dataset.ts)) < 300;
-    msgEl.classList.toggle("msg-grouped", shouldGroup);
-    // Re-evaluate the immediately following message too
-    let next = msgEl.nextElementSibling;
-    while (next) {
-        if (next.classList.contains("date-divider")) break;
-        if (next.classList.contains("msg") && !next.classList.contains("system-msg")) { _applyGrouping(next); break; }
-        next = next.nextElementSibling;
-    }
-}
 
 function _ensureDateDivider(chat, dateKey, msgDate) {
     const dividerId = `date-${dateKey}`;
@@ -1681,7 +1654,6 @@ function fetchMessages() {
                     existing.dataset.sender = m.sender;
                     existing.dataset.ts = m.ts;
                     _injectMsgAvatar(existing, m.sender);
-                    _applyGrouping(existing);
                     schedulePreview(existing);
                     _checkDeletedFiles(existing);
                 } else {
@@ -1693,7 +1665,6 @@ function fetchMessages() {
                     d.innerHTML = html;
                     _injectMsgAvatar(d, m.sender);
                     chat.appendChild(d);
-                    _applyGrouping(d);
                     schedulePreview(d);
                     _checkDeletedFiles(d);
                     appended = true;

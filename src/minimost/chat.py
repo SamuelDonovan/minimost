@@ -1022,7 +1022,7 @@ def messages(channel):
         FROM messages
         WHERE channel = ?
           AND (
-                (deleted = 0 AND (ts > ? OR (edited = 1 AND edited_ts > ?) OR reactions_ts > ?))
+                (deleted = 0 AND (ts > ? OR (edited_ts IS NOT NULL AND edited_ts > ?) OR reactions_ts > ?))
                 OR (deleted = 1 AND deleted_ts > ?)
               )
         ORDER BY ts
@@ -1140,6 +1140,38 @@ def send(channel):
 
     if not recipients:  # pragma: no cover
         return "no recipients", 400
+
+    # For plain text messages with no files and no reply, append to the sender's
+    # most recent message if it was sent within the visual grouping window (300s).
+    if text and not filenames and reply_to_id is None:
+        db = get_db(sender)
+        prev = db.execute(
+            """
+            SELECT ts, content FROM messages
+            WHERE channel = ? AND sender = ? AND deleted = 0
+              AND filename IS NULL AND reply_to_id IS NULL
+            ORDER BY ts DESC LIMIT 1
+            """,
+            (channel, sender),
+        ).fetchone()
+        db.close()
+
+        if prev and (ts - prev["ts"]) < 300:
+            combined = prev["content"] + "\n" + text
+            prev_ts = prev["ts"]
+            for r in recipients:
+                db = get_db(r)
+                db.execute(
+                    """
+                    UPDATE messages
+                    SET content = ?, edited_ts = ?
+                    WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL
+                    """,
+                    (combined, ts, channel, sender, prev_ts),
+                )
+                db.commit()
+                db.close()
+            return "ok"
 
     for r in recipients:
         db = get_db(r)
