@@ -532,9 +532,26 @@ body {
 }
 
 .icon-btn .icon-text {
-    line-height: 1;  /* important to align with SVG */
-    font-size: 14px; /* adjust as needed */
+    line-height: 1;
+    font-size: 14px;
     color: inherit;
+}
+#send-btn {
+    background: #007acc;
+    border-radius: 6px;
+    padding: 0 12px;
+    height: 30px;
+    opacity: 1;
+    color: #fff;
+    font-weight: 600;
+}
+#send-btn:hover {
+    background: #1a8fe0;
+    opacity: 1;
+    transform: none;
+}
+#attach-btn .icon-text {
+    display: none;
 }
 .user {
     font-weight: 600;
@@ -562,9 +579,21 @@ body {
     justify-content: space-between;
     cursor: default;
     padding: 4px 6px;
+    margin-top: 8px;
 }
-.sidebar-section-header b {
+.sidebar-section-header b,
+#sidebar-dynamic > b {
     flex: 1;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #888;
+}
+#sidebar-dynamic > b {
+    display: block;
+    padding: 4px 6px;
+    margin-top: 4px;
 }
 .sidebar-new-btn {
     font-size: 16px;
