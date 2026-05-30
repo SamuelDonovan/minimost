@@ -837,24 +837,34 @@ button, input, textarea{
     pointer-events: none;
 }
 #input {
-    padding: 10px;
+    padding: 8px 10px;
 }
 #input-main {
     display: flex;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: column;
+    border: 1px solid #444;
+    border-radius: 8px;
+    background: #2d2d2d;
+    padding: 8px 10px 6px;
 }
 #msg {
     flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    resize: none;
+    padding: 0;
 }
 #input-actions {
     display: flex;
     flex-direction: row;
     gap: 4px;
     flex-shrink: 0;
+    align-self: flex-end;
+    margin-top: 6px;
 }
 #input-actions #help-btn {
-    margin-right: 16px;
+    margin-right: 8px;
 }
 a { color: #9cdcfe; }
 .reply-preview {
@@ -1271,14 +1281,8 @@ a { color: #9cdcfe; }
         min-height: unset;
     }
 
-    #input-actions {
-        flex-direction: column;
-        gap: 4px;
-    }
-
     #input-actions #help-btn {
         margin-right: 0;
-        margin-bottom: 12px;
     }
 
 }
