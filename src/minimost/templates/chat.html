@@ -87,13 +87,6 @@
                 </svg>
                 <span class="icon-text">Search</span>
             </button>
-            <button id="notif-mute-btn" class="icon-btn" onclick="toggleNotifMute()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4.002 4.002 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4.002 4.002 0 0 0-3.203-3.92L8 1.917zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5.002 5.002 0 0 1 13 6c0 .88.32 4.2 1.22 6z"/>
-                    <line id="notif-slash" x1="1" y1="15" x2="15" y2="1" stroke="currentColor" stroke-width="2" style="display:none"/>
-                </svg>
-                <span class="icon-text">Sound</span>
-            </button>
         </div>
 
         <div id="topbar-channel">
@@ -287,6 +280,39 @@
                     <option value="send">Send message</option>
                     <option value="newline">New line (use Ctrl+Enter to send)</option>
                 </select>
+            </div>
+
+            <div class="settings-row">
+                <div class="notif-sound-row">
+                    <div class="notif-sound-info">
+                        <svg id="notif-sound-bell" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4.002 4.002 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4.002 4.002 0 0 0-3.203-3.92L8 1.917zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5.002 5.002 0 0 1 13 6c0 .88.32 4.2 1.22 6z"/>
+                            <line id="notif-bell-slash" x1="1" y1="15" x2="15" y2="1" stroke="currentColor" stroke-width="2" style="display:none"/>
+                        </svg>
+                        <span>Notification sounds</span>
+                    </div>
+                    <label class="notif-toggle-label">
+                        <input type="checkbox" id="settings-notif-sounds">
+                        <span class="notif-toggle-track"><span class="notif-toggle-thumb"></span></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-row">
+                <div class="notif-sound-row">
+                    <div class="notif-sound-info">
+                        <svg id="native-notif-bell" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4.002 4.002 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4.002 4.002 0 0 0-3.203-3.92L8 1.917zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5.002 5.002 0 0 1 13 6c0 .88.32 4.2 1.22 6z"/>
+                            <line id="native-bell-slash" x1="1" y1="15" x2="15" y2="1" stroke="currentColor" stroke-width="2" style="display:none"/>
+                        </svg>
+                        <span>Native OS notifications</span>
+                    </div>
+                    <label class="notif-toggle-label">
+                        <input type="checkbox" id="settings-native-notif">
+                        <span class="notif-toggle-track"><span class="notif-toggle-thumb"></span></span>
+                    </label>
+                </div>
+                <div id="native-notif-hint" class="notif-perm-hint" style="display:none">Blocked by browser — update site permissions to enable</div>
             </div>
 
             <div class="modal-actions">
@@ -716,6 +742,7 @@ let visualMode = false;
 let visualMsgId = null;
 
 let notifMuted = localStorage.getItem('notifMuted') === 'true';
+let nativeNotifEnabled = localStorage.getItem('nativeNotifEnabled') !== 'false';
 
 // Preview Renderer
 function addFiles(files) {
@@ -1191,25 +1218,10 @@ let baseTitle = document.title;
 let lastUnreadCount = 0;
 let channelUnreadCount = 0;
 
-function updateNotifMuteBtn() {
-    const slash = document.getElementById('notif-slash');
-    const btn = document.getElementById('notif-mute-btn');
-    if (!slash || !btn) return;
-    slash.style.display = notifMuted ? '' : 'none';
-    btn.title = notifMuted ? 'Unmute notification sounds' : 'Mute notification sounds';
-}
-
-function toggleNotifMute() {
-    notifMuted = !notifMuted;
-    localStorage.setItem('notifMuted', notifMuted);
-    updateNotifMuteBtn();
-    if ("Notification" in globalThis && Notification.permission === "default") {
-        Notification.requestPermission();
-    }
-}
 
 function sendDesktopNotification(count) {
     if (!("Notification" in globalThis) || Notification.permission !== "granted") return;
+    if (!nativeNotifEnabled) return;
     if (!document.hidden) return;
     new Notification("MiniMost", {
         body: `You have ${count} unread message${count === 1 ? "" : "s"}`,
@@ -2217,11 +2229,42 @@ async function openSettings() {
     const enterToSend = localStorage.getItem("enterToSend") !== "false";
     document.getElementById("settings-enter-key").value = enterToSend ? "send" : "newline";
 
+    document.getElementById("settings-notif-sounds").checked = !notifMuted;
+    _updateNotifSoundIcon();
+
+    const notifDenied = !("Notification" in globalThis) || Notification.permission === "denied";
+    const nativeToggle = document.getElementById("settings-native-notif");
+    nativeToggle.checked = nativeNotifEnabled && !notifDenied;
+    nativeToggle.disabled = notifDenied;
+    document.getElementById("native-notif-hint").style.display = notifDenied ? "" : "none";
+    _updateNativeNotifIcon();
+
     settingsModal.style.display = "flex";
 }
 
 document.getElementById("settings-bio").addEventListener("input", e => {
     document.getElementById("settings-bio-count").textContent = e.target.value.length;
+});
+
+function _updateNotifSoundIcon() {
+    const on = document.getElementById("settings-notif-sounds").checked;
+    document.getElementById("notif-bell-slash").style.display = on ? "none" : "";
+}
+document.getElementById("settings-notif-sounds").addEventListener("change", _updateNotifSoundIcon);
+
+function _updateNativeNotifIcon() {
+    const on = document.getElementById("settings-native-notif").checked;
+    document.getElementById("native-bell-slash").style.display = on ? "none" : "";
+}
+document.getElementById("settings-native-notif").addEventListener("change", async function() {
+    if (this.checked && "Notification" in globalThis && Notification.permission === "default") {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") {
+            this.checked = false;
+            document.getElementById("native-notif-hint").style.display = "";
+        }
+    }
+    _updateNativeNotifIcon();
 });
 
 document.getElementById("settings-font-size").addEventListener("input", e => {
@@ -2277,6 +2320,14 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
     // Enter key behavior
     const enterToSend = document.getElementById("settings-enter-key").value === "send";
     localStorage.setItem("enterToSend", enterToSend);
+
+    // Notification sounds mute
+    notifMuted = !document.getElementById("settings-notif-sounds").checked;
+    localStorage.setItem("notifMuted", notifMuted);
+
+    // Native OS notifications
+    nativeNotifEnabled = document.getElementById("settings-native-notif").checked;
+    localStorage.setItem("nativeNotifEnabled", nativeNotifEnabled);
 
     // Name color + bio
     const color = _settingsUseDefault ? null : document.getElementById("settings-name-color").value;
@@ -4143,7 +4194,6 @@ searchInput.addEventListener("keydown", (e) => {
 // Starup
 document.addEventListener("DOMContentLoaded", () => {
     initFavicon();
-    updateNotifMuteBtn();
     loadSidebar();
     document.getElementById("chan").innerText = channel;
     switchChannel(channel);
@@ -4874,7 +4924,7 @@ function openIncomingCallUI(callData) {
         ringAudio = a;
     }
     incomingRingTimeout = setTimeout(closeIncomingCallUI, RING_TIMEOUT_MS);
-    if ("Notification" in globalThis && Notification.permission === "granted") {
+    if (nativeNotifEnabled && "Notification" in globalThis && Notification.permission === "granted") {
         new Notification("Incoming Call — MiniMost", {
             body: `${callData.initiator} is calling you`,
             icon: "/static/web-app-manifest-192x192.png",
@@ -5609,7 +5659,7 @@ async function refreshScreenShares() {
     banner.style.display = "flex";
 
     if (document.hidden && share.share_id !== _notifiedShareId &&
-            "Notification" in globalThis && Notification.permission === "granted") {
+            nativeNotifEnabled && "Notification" in globalThis && Notification.permission === "granted") {
         _notifiedShareId = share.share_id;
         new Notification("Screen Share — MiniMost", {
             body: `${share.sharer} is sharing their screen`,
