@@ -565,6 +565,7 @@ const dropzone = document.getElementById("input");
 
 // Typing indicator — throttled send
 let lastTypingSend = 0;
+let _typingShowing = false;
 msgBox.addEventListener("input", () => {
     const now = Date.now();
     if (now - lastTypingSend >= 2000) {
@@ -578,11 +579,26 @@ function fetchTyping() {
         .then(r => r.ok ? r.json() : [])
         .then(users => {
             const el = document.getElementById("typing-indicator");
-            if (!users || users.length === 0) {
-                el.innerHTML = "";
+            const hasUsers = users && users.length > 0;
+
+            if (!hasUsers) {
+                if (_typingShowing) {
+                    _typingShowing = false;
+                    el.classList.remove("typing-in");
+                    el.classList.add("typing-out");
+                    el.addEventListener("animationend", () => {
+                        if (!_typingShowing) {
+                            el.innerHTML = "";
+                            el.classList.remove("typing-out");
+                        }
+                    }, { once: true });
+                }
                 return;
             }
 
+            const wasShowing = _typingShowing;
+            _typingShowing = true;
+            el.classList.remove("typing-out");
             el.innerHTML = "";
 
             if (users.length <= 2) {
@@ -607,6 +623,11 @@ function fetchTyping() {
             dots.className = "typing-dots";
             for (let i = 0; i < 3; i++) dots.appendChild(document.createElement("span"));
             el.appendChild(dots);
+
+            if (!wasShowing) {
+                el.classList.add("typing-in");
+                el.addEventListener("animationend", () => el.classList.remove("typing-in"), { once: true });
+            }
         });
 }
 
@@ -1428,7 +1449,10 @@ function switchChannel(c) {
     lastRenderedDate = null;
 
     document.getElementById("chat").innerHTML = "";
-    document.getElementById("typing-indicator").innerHTML = "";
+    _typingShowing = false;
+    const _ti = document.getElementById("typing-indicator");
+    _ti.innerHTML = "";
+    _ti.className = "";
     readReceiptsMap = {};
     document.querySelector(`[data-channel="${c}"]`)?.querySelector(".unread-badge")?.remove();
     const isPrivate = c.startsWith("private:");
@@ -4804,8 +4828,9 @@ const CHAT_FONT_MAX = 22;
 const CHAT_FONT_DEFAULT = 14;
 
 function applyChatFontSize(size) {
-    document.getElementById("chat").style.fontSize = size + "px";
-    document.getElementById("msg").style.fontSize  = size + "px";
+    document.getElementById("chat").style.fontSize             = size + "px";
+    document.getElementById("msg").style.fontSize              = size + "px";
+    document.getElementById("typing-indicator").style.fontSize = size + "px";
 }
 
 (function () {

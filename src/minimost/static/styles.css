@@ -808,12 +808,10 @@ button, input, textarea{
     border: 1px solid #444;
 }
 #typing-indicator {
-    min-height: 28px;
     padding: 2px 14px 4px;
     display: flex;
     align-items: center;
     gap: 7px;
-    font-size: 0.8em;
     color: #aaa;
 }
 .typing-avatars {
@@ -847,6 +845,20 @@ button, input, textarea{
 @keyframes typingBounce {
     0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
     30% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes typingSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes typingSlideOut {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(8px); }
+}
+#typing-indicator.typing-in {
+    animation: typingSlideIn 0.2s ease-out forwards;
+}
+#typing-indicator.typing-out {
+    animation: typingSlideOut 0.2s ease-in forwards;
 }
 .read-receipt {
     font-size: 0.75em;
