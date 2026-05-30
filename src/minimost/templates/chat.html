@@ -1432,10 +1432,19 @@ function switchChannel(c) {
     readReceiptsMap = {};
     document.querySelector(`[data-channel="${c}"]`)?.querySelector(".unread-badge")?.remove();
     const isPrivate = c.startsWith("private:");
-    const channelDisplayName = isPrivate ? (privateChannelMap[c] || c) : c;
+    const isDM = c.startsWith("dm:");
+    let channelDisplayName = isPrivate ? (privateChannelMap[c] || c) : c;
+    if (isDM) {
+        const parts = c.split(":").slice(1);
+        const others = parts.filter(u => u !== CURRENT_USER);
+        channelDisplayName = (others.length ? others : parts).join(", ");
+    }
     document.getElementById("chan").innerText = isPrivate ? "" : channelDisplayName;
     const chanHash = document.querySelector(".chan-hash");
-    if (chanHash) chanHash.style.visibility = isPrivate ? "hidden" : "visible";
+    if (chanHash) {
+        chanHash.style.visibility = isPrivate ? "hidden" : "visible";
+        chanHash.textContent = isDM ? "@" : "#";
+    }
     const pcControls = document.getElementById("private-ch-controls");
     if (pcControls) pcControls.style.display = isPrivate ? "flex" : "none";
     const nameBar = document.getElementById("private-ch-name-bar");
