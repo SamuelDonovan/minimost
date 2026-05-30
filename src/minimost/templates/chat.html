@@ -579,19 +579,34 @@ function fetchTyping() {
         .then(users => {
             const el = document.getElementById("typing-indicator");
             if (!users || users.length === 0) {
-                el.textContent = "";
+                el.innerHTML = "";
                 return;
             }
-            let msg;
-            if (users.length === 1) {
-                msg = `${users[0]} is typing...`;
-            } else if (users.length === 2) {
-                msg = `${users[0]}, ${users[1]} are typing...`;
-            } else {
-                const extra = users.length - 2;
-                msg = `${users[0]}, ${users[1]}, and ${extra} other${extra > 1 ? "s" : ""} are typing...`;
+
+            el.innerHTML = "";
+
+            if (users.length <= 2) {
+                const avatarGroup = document.createElement("div");
+                avatarGroup.className = "typing-avatars";
+                users.forEach(u => avatarGroup.appendChild(makeAvatarWrap(u, 22, null, false)));
+                el.appendChild(avatarGroup);
             }
-            el.textContent = msg;
+
+            const textSpan = document.createElement("span");
+            textSpan.className = "typing-text";
+            if (users.length === 1) {
+                textSpan.textContent = `${users[0]} is typing`;
+            } else if (users.length === 2) {
+                textSpan.textContent = `${users[0]} and ${users[1]} are typing`;
+            } else {
+                textSpan.textContent = "Several people are typing";
+            }
+            el.appendChild(textSpan);
+
+            const dots = document.createElement("span");
+            dots.className = "typing-dots";
+            for (let i = 0; i < 3; i++) dots.appendChild(document.createElement("span"));
+            el.appendChild(dots);
         });
 }
 
@@ -843,7 +858,7 @@ function applyPresenceDot(dot, state) {
     // offline: base style only (solid gray)
 }
 
-function makeAvatarWrap(username, size = 28, channelKey = null) {
+function makeAvatarWrap(username, size = 28, channelKey = null, showDot = true) {
     const wrap = document.createElement("div");
     wrap.className = "avatar-wrap";
     wrap.dataset.username = username;
@@ -863,14 +878,16 @@ function makeAvatarWrap(username, size = 28, channelKey = null) {
     }
     wrap.appendChild(inner);
 
-    const dot = document.createElement("span");
-    if (channelKey) {
-        dot.dataset.channel = channelKey;
-    } else {
-        dot.dataset.username = username;
+    if (showDot) {
+        const dot = document.createElement("span");
+        if (channelKey) {
+            dot.dataset.channel = channelKey;
+        } else {
+            dot.dataset.username = username;
+        }
+        applyPresenceDot(dot, presenceMapCache[username] || "offline");
+        wrap.appendChild(dot);
     }
-    applyPresenceDot(dot, presenceMapCache[username] || "offline");
-    wrap.appendChild(dot);
 
     return wrap;
 }
@@ -1411,7 +1428,7 @@ function switchChannel(c) {
     lastRenderedDate = null;
 
     document.getElementById("chat").innerHTML = "";
-    document.getElementById("typing-indicator").textContent = "";
+    document.getElementById("typing-indicator").innerHTML = "";
     readReceiptsMap = {};
     document.querySelector(`[data-channel="${c}"]`)?.querySelector(".unread-badge")?.remove();
     const isPrivate = c.startsWith("private:");
