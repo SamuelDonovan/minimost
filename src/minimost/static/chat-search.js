@@ -1,3 +1,6 @@
+let visualMode = false;
+let visualMsgId = null;
+
 // Prevent HTML injection when re-inserting text
 function escapeHtml(text) {
     return text
@@ -136,10 +139,10 @@ function formatText(text) {
     // Strip the newline immediately before/after each fence so the block
     // element doesn't double up with the pre-wrap newline character.
     const blocks = [];
-    let s = text.replace(/\n?```(\w*)\n?([\s\S]*?)```\n?/g, (_, lang, code) => {
+    let s = text.replace(/\n?```(\w*)\n?([\s\S]{0,50000}?)```\n?/g, (_, lang, code) => {
         const idx = blocks.length;
         blocks.push({ lang: lang.trim(), code });
-        return `\x02${idx}\x03`;
+        return `${idx}`;
     });
 
     // 2. Escape HTML for the non-code portions
@@ -163,7 +166,7 @@ function formatText(text) {
     );
 
     // 6. Restore code blocks with syntax highlighting
-    safe = safe.replace(/\x02(\d+)\x03/g, (_, i) => {
+    safe = safe.replace(/(\d+)/g, (_, i) => {
         const { lang, code } = blocks[Number(i)];
         const trimmed = code.replace(/^\n/, '').replace(/\n$/, '');
         const highlighted = _syntaxHighlight(trimmed, lang);
@@ -229,7 +232,7 @@ function _visualSelectMsg(msgId) {
 function enterVisualMode() {
     const msgs = _getVisualMsgs();
     if (!msgs.length) return;
-    const last = msgs[msgs.length - 1];
+    const last = msgs.at(-1);
     visualMode = true;
     document.getElementById("vim-mode-indicator").classList.add("active");
     _visualSelectMsg(last.id.replace("msg-", ""));
@@ -365,11 +368,11 @@ function closeAllModalsAndFocusChat() {
     // Hide DM suggestions
     if (dmSuggestions.style.display === "block") {
         dmSuggestions.style.display = "none";
-        suggestionIndex = -1;
+        resetDmSuggestions();
     }
 
     // Close other modals if you have them
-    if (searchModal && searchModal.style.display === "block") {
+    if (searchModal?.style.display === "block") {
         searchModal.style.display = "none";
     }
 
@@ -512,7 +515,7 @@ document.addEventListener("DOMContentLoaded", () => {
             !idleSent
         ) {
             sendPresence("idle");
-            idleSent = true;
+            setIdleSent(true);
         }
     }, 5000);
 
@@ -590,11 +593,11 @@ const _HL_RULES = (() => {
     const CMT_DASH = /--[^\n]*/y;
     const MK_VAR   = /\$[@<^*%?|]|\$\([^)]*\)|\$\{[^}]*\}/y;
     const CM_VAR   = /\$(?:ENV|CACHE)?\{[^}]*\}/y;
-    const SH_VAR   = /\$\{[^}]*\}|\$[@#?$!*\-]|\$\w+/y;
+    const SH_VAR   = /\$\{[^}]*\}|\$[@#?$!*-]|\$\w+/y;
     const VL_NUM   = /\d+\s*'\s*[bBoOdDhH][0-9a-fA-FxXzZ_]*/y;
     const VL_DIR   = /`\w+/y;
     const PP_DIR   = /#\s*\w+/y;
-    const INCL_ANG = /<[^\s>\n][^>\n]*>/y;
+    const INCL_ANG = /<[^\s>][^>\n]*>/y;
     const DEC_PY   = /@[\w.]+/y;
     const kw  = (...ws) => new RegExp(String.raw`\b(?:${ws.join('|')})\b`, 'y');
     const kwi = (...ws) => new RegExp(String.raw`\b(?:${ws.join('|')})\b`, 'yi');

@@ -1,3 +1,9 @@
+let userColorOverrides = {};
+let usersWithAvatars = new Set();
+let presenceMapCache = {};
+let hasUnreadChannels = false;
+let privateChannelUnreadCount = 0;
+
 // Sidebar loading
 async function loadSidebar() {
     const sb = document.getElementById("sidebar-dynamic");
@@ -225,6 +231,8 @@ window.addEventListener("pagehide", () => {
 
 let lastActivity = Date.now();
 let idleSent = false;
+
+function setIdleSent(v) { idleSent = v; }
 
 ["mousemove", "keydown", "mousedown", "touchstart"].forEach(evt =>
     document.addEventListener(evt, () => {

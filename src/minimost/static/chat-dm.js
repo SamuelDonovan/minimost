@@ -77,6 +77,8 @@ function updateActiveSuggestion() {
 let allUsers = [];
 let usersLoaded = false;
 let suggestionIndex = -1;
+
+function resetDmSuggestions() { suggestionIndex = -1; }
 let currentSuggestions = [];
 
 async function openDmModal() {

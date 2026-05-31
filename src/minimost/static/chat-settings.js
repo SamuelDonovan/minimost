@@ -1,3 +1,6 @@
+let notifMuted = localStorage.getItem('notifMuted') === 'true';
+let nativeNotifEnabled = localStorage.getItem('nativeNotifEnabled') !== 'false';
+
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 const COLOR_PRESETS = [
@@ -351,7 +354,7 @@ async function confirmDelete() {
             body: JSON.stringify({ type: _deleteType, password }),
         });
         if (resp.ok) {
-            window.location.href = "/login";
+            globalThis.location.href = "/login";
         } else {
             const data = await resp.json().catch(() => ({}));
             errEl.textContent = data.error || "Deletion failed. Please try again.";
@@ -394,7 +397,7 @@ async function openUsersModal() {
         if (profileCache[u]) return Promise.resolve(profileCache[u]);
         return fetch(`/profile/${encodeURIComponent(u)}`)
             .then(r => r.ok ? r.json() : null)
-            .then(d => { if (d) profileCache[u] = d; return d; })
+            .then(d => { if (d) { profileCache[u] = d; } return d; })
             .catch(() => null);
     }));
 
@@ -431,7 +434,7 @@ async function openUsersModal() {
         row.appendChild(info);
 
         if (u !== CURRENT_USER) {
-            const dmCh = "dm:" + [u, CURRENT_USER].sort().join(":");
+            const dmCh = "dm:" + [u, CURRENT_USER].sort((a, b) => a.localeCompare(b)).join(":");
 
             const actions = document.createElement("div");
             actions.className = "users-list-actions";
@@ -475,11 +478,11 @@ function filterUsersModal(query) {
             continue;
         }
         const result = fuzzySearch(query, username);
-        if (!result) {
-            row.style.display = "none";
-        } else {
+        if (result) {
             row.style.display = "";
             nameEl.innerHTML = highlightFuzzyMatch(username, result.indices) + suffix;
+        } else {
+            row.style.display = "none";
         }
     }
 }

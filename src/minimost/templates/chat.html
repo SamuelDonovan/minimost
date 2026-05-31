@@ -289,7 +289,7 @@
                         </svg>
                         <span>Notification sounds</span>
                     </div>
-                    <label class="notif-toggle-label">
+                    <label class="notif-toggle-label" aria-label="Notification sounds">
                         <input type="checkbox" id="settings-notif-sounds">
                         <span class="notif-toggle-track"><span class="notif-toggle-thumb"></span></span>
                     </label>
@@ -305,7 +305,7 @@
                         </svg>
                         <span>Native OS notifications</span>
                     </div>
-                    <label class="notif-toggle-label">
+                    <label class="notif-toggle-label" aria-label="Native OS notifications">
                         <input type="checkbox" id="settings-native-notif">
                         <span class="notif-toggle-track"><span class="notif-toggle-thumb"></span></span>
                     </label>
@@ -333,7 +333,7 @@
 
         <!-- Delete confirmation view -->
         <div id="settings-delete-view" style="display:none">
-            <h3 id="settings-delete-title" style="margin-top:0"></h3>
+            <h3 id="settings-delete-title" style="margin-top:0">Delete account</h3>
             <div id="settings-delete-warning" class="settings-delete-warning"></div>
             <div class="settings-row" style="margin-top:16px">
                 <label for="settings-delete-password">Confirm your password</label>
@@ -765,18 +765,8 @@ let forceScrollToBottom = false;
 let pendingFiles = [];
 let fetchController = null;
 let privateChannelMap = {};
-let privateChannelUnreadCount = 0;
 let privateChannelMembers = {};
-let presenceMapCache = {};
 let readReceiptsMap = {};
-let hasUnreadChannels = false;
-
-// Visual mode state
-let visualMode = false;
-let visualMsgId = null;
-
-let notifMuted = localStorage.getItem('notifMuted') === 'true';
-let nativeNotifEnabled = localStorage.getItem('nativeNotifEnabled') !== 'false';
 
 // Preview Renderer
 function addFiles(files) {
@@ -842,7 +832,6 @@ function _checkDeletedFiles(msgEl) {
 }
 
 // User color
-let userColorOverrides = {};
 
 function userColor(name) {
     if (userColorOverrides[name]) return userColorOverrides[name];
@@ -857,7 +846,6 @@ function defaultUserColor(name) {
     return `hsl(${Math.abs(h) % 360}, 65%, 55%)`;
 }
 
-let usersWithAvatars = new Set();
 const profileCache = {};
 
 function _setInitials(el, username, size) {

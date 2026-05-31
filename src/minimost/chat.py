@@ -791,6 +791,23 @@ def delete_avatar():
     return "ok"
 
 
+def _apply_delete_to_messages(all_usernames, user, delete_type):
+    for recipient in all_usernames:
+        udb_path = common.user_db_path(recipient)
+        if not udb_path.exists():
+            continue
+        udb = sqlite3.connect(str(udb_path))
+        udb.execute(_WAL)
+        if delete_type == "soft":
+            udb.execute(
+                "UPDATE messages SET sender = 'Deleted User' WHERE sender = ?", (user,)
+            )
+        else:
+            udb.execute("DELETE FROM messages WHERE sender = ?", (user,))
+        udb.commit()
+        udb.close()
+
+
 @chat_bp.route("/delete_account", methods=["POST"])
 @auth.login_required
 def delete_account():
@@ -844,20 +861,7 @@ def delete_account():
     adb.close()
 
     # Walk every user DB to update or remove messages from this sender
-    for recipient in all_usernames:
-        udb_path = common.user_db_path(recipient)
-        if not udb_path.exists():
-            continue
-        udb = sqlite3.connect(str(udb_path))
-        udb.execute(_WAL)
-        if delete_type == "soft":
-            udb.execute(
-                "UPDATE messages SET sender = 'Deleted User' WHERE sender = ?", (user,)
-            )
-        else:
-            udb.execute("DELETE FROM messages WHERE sender = ?", (user,))
-        udb.commit()
-        udb.close()
+    _apply_delete_to_messages(all_usernames, user, delete_type)
 
     # Clean presence.db for both delete types — removes the user from private
     # channel membership so they are no longer included as a message recipient.
@@ -1056,6 +1060,57 @@ def messages(channel):
     return jsonify(result)
 
 
+def _insert_for_recipient(db, channel, sender, text, ts, reply_to_id, filenames):
+    if text:
+        db.execute(
+            "INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)"
+            " VALUES (?, ?, ?, NULL, ?, 0, ?)",
+            (channel, sender, text, ts, reply_to_id),
+        )
+    for filename in filenames:
+        db.execute(
+            "INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)"
+            " VALUES (?, ?, '', ?, ?, 0, ?)",
+            (channel, sender, filename, ts, reply_to_id),
+        )
+    db.commit()
+    db.close()
+
+
+def _try_append_message(channel, sender, text, ts, recipients, filenames, reply_to_id):
+    """Append text to the sender's previous message if within the 300 s window.
+
+    Returns True and commits if appended; returns False if a new message is needed.
+    """
+    if not text or filenames or reply_to_id is not None:
+        return False
+    db = get_db(sender)
+    prev = db.execute(
+        """
+        SELECT ts, content FROM messages
+        WHERE channel = ? AND sender = ? AND deleted = 0
+          AND filename IS NULL AND reply_to_id IS NULL
+        ORDER BY ts DESC LIMIT 1
+        """,
+        (channel, sender),
+    ).fetchone()
+    db.close()
+    if not prev or (ts - prev["ts"]) >= 300:
+        return False
+    combined = prev["content"] + "\n" + text
+    prev_ts = prev["ts"]
+    for r in recipients:
+        db = get_db(r)
+        db.execute(
+            "UPDATE messages SET content = ?, edited_ts = ?"
+            " WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL",
+            (combined, ts, channel, sender, prev_ts),
+        )
+        db.commit()
+        db.close()
+    return True
+
+
 @chat_bp.route("/send/<channel>", methods=["POST"])
 @auth.login_required
 def send(channel):
@@ -1142,60 +1197,15 @@ def send(channel):
     if not recipients:  # pragma: no cover
         return "no recipients", 400
 
-    # For plain text messages with no files and no reply, append to the sender's
-    # most recent message if it was sent within the visual grouping window (300s).
-    if text and not filenames and reply_to_id is None:
-        db = get_db(sender)
-        prev = db.execute(
-            """
-            SELECT ts, content FROM messages
-            WHERE channel = ? AND sender = ? AND deleted = 0
-              AND filename IS NULL AND reply_to_id IS NULL
-            ORDER BY ts DESC LIMIT 1
-            """,
-            (channel, sender),
-        ).fetchone()
-        db.close()
-
-        if prev and (ts - prev["ts"]) < 300:
-            combined = prev["content"] + "\n" + text
-            prev_ts = prev["ts"]
-            for r in recipients:
-                db = get_db(r)
-                db.execute(
-                    """
-                    UPDATE messages
-                    SET content = ?, edited_ts = ?
-                    WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL
-                    """,
-                    (combined, ts, channel, sender, prev_ts),
-                )
-                db.commit()
-                db.close()
-            return "ok"
+    if _try_append_message(
+        channel, sender, text, ts, recipients, filenames, reply_to_id
+    ):
+        return "ok"
 
     for r in recipients:
-        db = get_db(r)
-        if text:
-            db.execute(
-                """
-                INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)
-                VALUES (?, ?, ?, NULL, ?, 0, ?)
-            """,
-                (channel, sender, text, ts, reply_to_id),
-            )
-
-        for filename in filenames:
-            db.execute(
-                """
-                INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)
-                VALUES (?, ?, '', ?, ?, 0, ?)
-            """,
-                (channel, sender, filename, ts, reply_to_id),
-            )
-
-        db.commit()
-        db.close()
+        _insert_for_recipient(
+            get_db(r), channel, sender, text, ts, reply_to_id, filenames
+        )
 
     return "ok"
 

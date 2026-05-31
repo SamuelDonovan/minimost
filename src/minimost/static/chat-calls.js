@@ -154,26 +154,18 @@ function _pickVideoMimeType() {
 async function _startMediaCapture(callId) {
     if (!localStream) return;
 
-    // ── Audio capture via ScriptProcessorNode → raw Int16 PCM ──────────────────
-    // ScriptProcessorNode fires every ~85 ms (4096 samples @ 48 kHz) and runs on
-    // the main thread, so fetch() is safe to call directly inside the handler.
-    // A muted GainNode is required to keep the audio graph active without
-    // playing the local microphone through the speaker.
+    // ── Audio capture via AudioWorklet → raw Int16 PCM ─────────────────────────
+    // The worklet accumulates 128-sample frames into 4096-sample chunks before
+    // posting, matching the original ScriptProcessor buffer size.
     const audioTracks = localStream.getAudioTracks();
     if (audioTracks.length > 0) {
         try {
             const captureCtx = new AudioContext();
             const audioStream = new MediaStream(audioTracks);
-            const source    = captureCtx.createMediaStreamSource(audioStream);
-            const processor = captureCtx.createScriptProcessor(4096, 1, 1);
-            const sink      = captureCtx.createGain();
+            const source      = captureCtx.createMediaStreamSource(audioStream);
             const micAnalyser = captureCtx.createAnalyser();
             micAnalyser.fftSize = 256;
-            sink.gain.value = 0;
             source.connect(micAnalyser);
-            source.connect(processor);
-            processor.connect(sink);
-            sink.connect(captureCtx.destination);
 
             const micLevelEl  = document.getElementById("call-mic-level");
             const micLevelBuf = new Uint8Array(micAnalyser.frequencyBinCount);
@@ -189,9 +181,14 @@ async function _startMediaCapture(callId) {
             let uploadChain = Promise.resolve();
             const rate      = captureCtx.sampleRate;
 
-            processor.onaudioprocess = (evt) => {
+            await captureCtx.audioWorklet.addModule("/static/audio-processor.js");
+            const workletNode = new AudioWorkletNode(captureCtx, "audio-capture-processor");
+            source.connect(workletNode);
+            workletNode.connect(captureCtx.destination);
+
+            workletNode.port.onmessage = (evt) => {
                 if (!activeCallId) return;
-                const float32 = evt.inputBuffer.getChannelData(0);
+                const float32 = evt.data;
                 const int16   = new Int16Array(float32.length);
                 for (let i = 0; i < float32.length; i++) {
                     int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
@@ -199,22 +196,17 @@ async function _startMediaCapture(callId) {
                 const buf     = int16.buffer.slice(0);
                 const isFirst = firstChunk;
                 if (firstChunk) firstChunk = false;
-
                 uploadChain = uploadChain.then(async () => {
                     try {
-                        if (isFirst) {
-                            await fetch(`/calls/${callId}/media`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/octet-stream", "X-Track": "audio", "X-Init": "1", "X-Mime": `pcm16/${rate}` },
-                                body: buf,
-                            });
-                        } else {
-                            await fetch(`/calls/${callId}/media`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/octet-stream", "X-Track": "audio" },
-                                body: buf,
-                            });
-                        }
+                        await fetch(`/calls/${callId}/media`, {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/octet-stream",
+                                "X-Track": "audio",
+                                ...(isFirst ? { "X-Init": "1", "X-Mime": `pcm16/${rate}` } : {}),
+                            },
+                            body: buf,
+                        });
                     } catch { /* ignore network errors */ }
                 });
             };
@@ -223,8 +215,7 @@ async function _startMediaCapture(callId) {
                 clearInterval(micLevelPoll);
                 if (micLevelEl) micLevelEl.style.height = "0%";
                 source.disconnect();
-                processor.disconnect();
-                sink.disconnect();
+                workletNode.disconnect();
                 captureCtx.close().catch(() => {});
             };
         } catch (e) {
@@ -282,7 +273,7 @@ function _startParticipantPolling(username, pState) {
             if (!resp.ok) return;
             const data = await resp.json();
             if (data.init && !pState.vadAnalyser) {
-                const rate = parseInt((data.mime_type || "pcm16/48000").split("/")[1]) || 48000;
+                const rate = Number.parseInt((data.mime_type || "pcm16/48000").split("/")[1]) || 48000;
                 if (!sharedAudioCtx) {
                     try { sharedAudioCtx = new AudioContext({ sampleRate: rate }); }
                     catch { sharedAudioCtx = new AudioContext(); }
@@ -385,7 +376,7 @@ function _removeRemoteParticipant(username) {
 }
 
 function _removeAllParticipants() {
-    for (const username of [...remoteParticipants.keys()]) {
+    for (const username of remoteParticipants.keys()) {
         _removeRemoteParticipant(username);
     }
     if (sharedAudioCtx) { sharedAudioCtx.close().catch(() => {}); sharedAudioCtx = null; }
@@ -468,7 +459,7 @@ function _initScreenMediaSource(mimeType) {
                         videoEl.currentTime = end - 0.1;
                     }
                     const head   = screenSourceBuffer.buffered.start(last);
-                    const cutoff = end - 3.0;
+                    const cutoff = end - 3;
                     if (cutoff > head + 0.05) {
                         try { screenSourceBuffer.remove(head, cutoff); } catch { /* ignore */ }
                         return;
@@ -490,7 +481,7 @@ function _stopScreenReceiving() {
     screenPendingChunks = [];
     screenInitReceived  = false;
     const sv = document.getElementById("call-screen-video");
-    if (sv && sv.src && sv.src.startsWith("blob:")) {
+    if (sv?.src?.startsWith("blob:")) {
         URL.revokeObjectURL(sv.src);
         sv.removeAttribute("src");
         sv.load();
@@ -554,37 +545,30 @@ function _startScreenCapture(callId, displayStream) {
             return false;
         }
     }
+    function _uploadScreenChunk(buf, isFirst) {
+        if (isFirst) {
+            const mime = screenRecorder?.mimeType || "video/webm";
+            screenChain = screenChain.then(() =>
+                fetch(`/calls/${callId}/media`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/octet-stream", "X-Track": "screen", "X-Init": "1", "X-Mime": mime },
+                    body: buf,
+                }).catch(() => {})
+            );
+        } else {
+            fetch(`/calls/${callId}/media`, {
+                method: "POST",
+                headers: { "Content-Type": "application/octet-stream", "X-Track": "screen" },
+                body: buf,
+            }).catch(() => {});
+        }
+    }
+
     screenRecorder.ondataavailable = (evt) => {
         if (!evt.data || evt.data.size === 0 || !activeCallId) return;
         const isFirst = screenFirstChunk;
         if (isFirst) screenFirstChunk = false;
-        evt.data.arrayBuffer().then(buf => {
-            if (isFirst) {
-                // Init segment must arrive before any data chunk so the remote
-                // can bootstrap its SourceBuffer.  Only init is sequenced.
-                const mime = screenRecorder?.mimeType || "video/webm";
-                screenChain = screenChain.then(() =>
-                    fetch(`/calls/${callId}/media`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/octet-stream",
-                            "X-Track": "screen",
-                            "X-Init": "1",
-                            "X-Mime": mime,
-                        },
-                        body: buf,
-                    }).catch(() => {})
-                );
-            } else {
-                // Data chunks are fire-and-forget so a slow upload cannot
-                // cause subsequent chunks to accumulate upload delay.
-                fetch(`/calls/${callId}/media`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/octet-stream", "X-Track": "screen" },
-                    body: buf,
-                }).catch(() => {});
-            }
-        });
+        evt.data.arrayBuffer().then(buf => _uploadScreenChunk(buf, isFirst));
     };
     // Handle the user clicking the browser's native "Stop sharing" button
     videoTracks[0].addEventListener("ended", () => {
@@ -689,7 +673,7 @@ async function _startStandaloneShare(displayStream) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel }),
     }).catch(() => null);
-    if (!resp || !resp.ok) {
+    if (!resp?.ok) {
         displayStream.getTracks().forEach(t => t.stop());
         return;
     }
@@ -712,27 +696,27 @@ async function _startStandaloneShare(displayStream) {
         }
     }
 
+    function _uploadStandaloneChunk(id, buf, isFirst) {
+        const headers = { "Content-Type": "application/octet-stream" };
+        if (isFirst) {
+            headers["X-Init"] = "1";
+            headers["X-Mime"] = standaloneShareRec?.mimeType || "video/webm";
+            standaloneShareChain = standaloneShareChain.then(() =>
+                fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
+                    .catch(() => {})
+            );
+        } else {
+            fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
+                .catch(() => {});
+        }
+    }
+
     standaloneShareRec.ondataavailable = (evt) => {
         if (!evt.data || evt.data.size === 0 || !standaloneShareId) return;
         const id = standaloneShareId;
         const isFirst = standaloneFirstChunk;
         if (isFirst) standaloneFirstChunk = false;
-        evt.data.arrayBuffer().then(buf => {
-            const headers = { "Content-Type": "application/octet-stream" };
-            if (isFirst) {
-                headers["X-Init"] = "1";
-                headers["X-Mime"] = standaloneShareRec?.mimeType || "video/webm";
-                // Init segment must complete before data chunks so the receiver
-                // can initialise its SourceBuffer; subsequent chunks are fire-and-forget.
-                standaloneShareChain = standaloneShareChain.then(() =>
-                    fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
-                        .catch(() => {})
-                );
-            } else {
-                fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
-                    .catch(() => {});
-            }
-        });
+        evt.data.arrayBuffer().then(buf => _uploadStandaloneChunk(id, buf, isFirst));
     };
 
     // Handle user clicking the browser's native "Stop sharing" button
@@ -745,7 +729,7 @@ async function _startStandaloneShare(displayStream) {
     // Force the browser to flush the init segment early so the viewer can
     // bootstrap its SourceBuffer ~400 ms sooner than the first 500 ms tick.
     setTimeout(() => {
-        if (standaloneShareRec && standaloneShareRec.state === "recording") {
+        if (standaloneShareRec?.state === "recording") {
             standaloneShareRec.requestData();
         }
     }, 100);
@@ -846,7 +830,7 @@ function openShareViewer() {
 function closeShareViewer() {
     if (viewShareDownId) { clearInterval(viewShareDownId); viewShareDownId = null; }
     if (viewShareAbortCtrl) { viewShareAbortCtrl.abort(); viewShareAbortCtrl = null; }
-    if (viewShareMediaSource && viewShareMediaSource.readyState === "open") {
+    if (viewShareMediaSource?.readyState === "open") {
         try { viewShareMediaSource.endOfStream(); } catch { /* ignore */ }
     }
     viewShareId            = null;
@@ -856,7 +840,7 @@ function closeShareViewer() {
     viewShareInitReceived  = false;
     viewSharePollingActive = false;
     const el = document.getElementById("screenshare-viewer-video");
-    if (el.src && el.src.startsWith("blob:")) URL.revokeObjectURL(el.src);
+    if (el.src?.startsWith("blob:")) URL.revokeObjectURL(el.src);
     el.removeAttribute("src");
     el.load();
     document.getElementById("screenshare-viewer").style.display = "none";
@@ -890,7 +874,7 @@ function _initShareMediaSource() {
 // Called once, after the first poll response supplies the real MIME type.
 function _createShareSourceBuffer(mimeType) {
     const ms = viewShareMediaSource;
-    if (!ms || ms.readyState !== "open") return false;
+    if (ms?.readyState !== "open") return false;
     const videoEl = document.getElementById("screenshare-viewer-video");
     const signal  = viewShareAbortCtrl?.signal;
     let sb;
@@ -916,7 +900,7 @@ function _createShareSourceBuffer(mimeType) {
             if (end - videoEl.currentTime > 0.2) videoEl.currentTime = end - 0.05;
             // Trim old data from the start of the live range (last range).
             const head   = sb.buffered.start(last);
-            const cutoff = end - 2.0;
+            const cutoff = end - 2;
             if (cutoff > head + 0.05) {
                 // ② remove() triggers another updateend which then appends.
                 try { sb.remove(head, cutoff); } catch { /* ignore */ }
@@ -933,7 +917,7 @@ function _createShareSourceBuffer(mimeType) {
         if (sb.buffered.length === 0) return;
         const last = sb.buffered.length - 1;
         const end  = sb.buffered.end(last);
-        if (end - videoEl.currentTime > 1.0) videoEl.currentTime = end - 0.05;
+        if (end - videoEl.currentTime > 1) videoEl.currentTime = end - 0.05;
     }, signal ? { signal } : {});
 
     return true;
@@ -1074,7 +1058,7 @@ async function acceptCall() {
     if (!incomingCallData) return;
     if (!_requireSecureContext()) { closeIncomingCallUI(); return; }
 
-    const { call_id, initiator } = incomingCallData;
+    const { call_id } = incomingCallData;
 
     const resp = await fetch(`/calls/${call_id}/accept`, { method: "POST" });
     closeIncomingCallUI();
@@ -1143,6 +1127,30 @@ function _startCallStatePolling() {
     callStatePollId = setInterval(_pollCallState, 3000);
 }
 
+function _diffParticipants(accepted) {
+    for (const u of accepted) {
+        if (!remoteParticipants.has(u)) _addRemoteParticipant(u);
+    }
+    for (const u of remoteParticipants.keys()) {
+        if (!accepted.has(u)) _removeRemoteParticipant(u);
+    }
+}
+
+function _handleScreenshareState(newSender) {
+    if (newSender !== currentScreenSender) {
+        _stopScreenReceiving();
+        lastScreenSeq       = -1;
+        screenInitReceived  = false;
+        currentScreenSender = newSender;
+    }
+    if (screenEnabled && newSender && newSender !== CURRENT_USER) {
+        screenEnabled = false;
+        _stopScreenCapture();
+        const sb = document.getElementById("call-screen-btn");
+        if (sb) { sb.classList.remove("active"); sb.classList.add("muted"); sb.title = "Share screen"; }
+    }
+}
+
 async function _pollCallState() {
     if (!activeCallId) return;
     try {
@@ -1164,34 +1172,13 @@ async function _pollCallState() {
             return;
         }
 
-        // Diff accepted participants (excluding self)
         const accepted = new Set(
             (data.participants || [])
                 .filter(p => p.username !== CURRENT_USER && p.state === "accepted")
                 .map(p => p.username)
         );
-        for (const u of accepted) {
-            if (!remoteParticipants.has(u)) _addRemoteParticipant(u);
-        }
-        for (const u of [...remoteParticipants.keys()]) {
-            if (!accepted.has(u)) _removeRemoteParticipant(u);
-        }
-
-        // Screenshare sender from server state
-        const newSender = data.screenshare_user || null;
-        if (newSender !== currentScreenSender) {
-            _stopScreenReceiving();
-            lastScreenSeq       = -1;
-            screenInitReceived  = false;
-            currentScreenSender = newSender;
-        }
-        // Force-stop our own screenshare if someone else took over
-        if (screenEnabled && newSender && newSender !== CURRENT_USER) {
-            screenEnabled = false;
-            _stopScreenCapture();
-            const sb = document.getElementById("call-screen-btn");
-            if (sb) { sb.classList.remove("active"); sb.classList.add("muted"); sb.title = "Share screen"; }
-        }
+        _diffParticipants(accepted);
+        _handleScreenshareState(data.screenshare_user || null);
     } catch { /* ignore transient errors */ }
 }
 
@@ -1227,14 +1214,14 @@ function _renderCallInviteList(query) {
     const candidates = _inviteAllUsers.filter(u => !alreadyIn.has(u));
 
     let matches;
-    if (!query) {
-        matches = candidates.map(u => ({ user: u, indices: [] }));
-    } else {
+    if (query) {
         matches = candidates
             .map(u => ({ user: u, result: fuzzySearch(query, u) }))
             .filter(({ result }) => result !== null)
             .sort((a, b) => b.result.score - a.result.score)
             .map(({ user, result }) => ({ user, indices: result.indices }));
+    } else {
+        matches = candidates.map(u => ({ user: u, indices: [] }));
     }
 
     if (matches.length === 0) {

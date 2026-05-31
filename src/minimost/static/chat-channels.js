@@ -1,5 +1,6 @@
 // ── Private Channels ──────────────────────────────────────────────────────────
 
+
 const createPrivateChModal = document.getElementById("create-private-ch-modal");
 const renamePrivateChModal = document.getElementById("rename-private-ch-modal");
 const privateMembersModal  = document.getElementById("private-ch-members-modal");
