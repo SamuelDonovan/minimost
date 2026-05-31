@@ -674,3 +674,155 @@ def test_link_preview_ssrf_blocked(alice):
 def test_link_preview_unauthenticated(client):
     resp = client.get("/link_preview?url=https://example.com")
     assert resp.status_code == 302
+
+
+# ── POST /delete_account ──────────────────────────────────────────────────────
+
+
+def test_delete_account_unauthenticated(client):
+    resp = client.post("/delete_account", json={"type": "soft", "password": "x"})
+    assert resp.status_code == 302
+
+
+def test_delete_account_invalid_type(alice):
+    resp = alice.post(
+        "/delete_account", json={"type": "purge", "password": "Password1!"}
+    )
+    assert resp.status_code == 400
+
+
+def test_delete_account_wrong_password(alice):
+    resp = alice.post("/delete_account", json={"type": "soft", "password": "wrong"})
+    assert resp.status_code == 403
+
+
+def test_delete_account_soft(alice):
+    _insert_message("alice", "general", "to be anonymised")
+    resp = alice.post(
+        "/delete_account", json={"type": "soft", "password": "Password1!"}
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
+    # Message still exists but sender renamed
+    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    row = db.execute("SELECT sender FROM messages WHERE channel='general'").fetchone()
+    db.close()
+    assert row[0] == "Deleted User"
+
+
+def test_delete_account_hard(alice):
+    _insert_message("alice", "general", "to be deleted")
+    resp = alice.post(
+        "/delete_account", json={"type": "hard", "password": "Password1!"}
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
+
+
+def test_delete_account_soft_cleans_presence(alice):
+    import minimost.presence as pres
+
+    db = sqlite3.connect(pres.PRESENCE_DB)
+    db.execute(
+        "INSERT OR IGNORE INTO presence (user, state, last_seen) VALUES ('alice','active',0)"
+    )
+    db.commit()
+    db.close()
+    alice.post("/delete_account", json={"type": "soft", "password": "Password1!"})
+    db = sqlite3.connect(pres.PRESENCE_DB)
+    row = db.execute("SELECT * FROM presence WHERE user='alice'").fetchone()
+    db.close()
+    assert row is None
+
+
+# ── Message append (send within 300 s groups messages) ───────────────────────
+
+
+def test_send_appends_to_recent_message(alice):
+    import time as _time
+
+    ts = _time.time() - 10  # 10 s ago — within 300 s window
+    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        ("general", "alice", "first line", ts),
+    )
+    db.commit()
+    db.close()
+    resp = alice.post("/send/general", data={"text": "second line"})
+    assert resp.status_code == 200
+    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    row = db.execute("SELECT content FROM messages WHERE channel='general'").fetchone()
+    db.close()
+    assert "first line\nsecond line" == row[0]
+
+
+def test_send_does_not_append_old_message(alice):
+    import time as _time
+
+    ts = _time.time() - 400  # older than 300 s
+    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        ("general", "alice", "old message", ts),
+    )
+    db.commit()
+    db.close()
+    alice.post("/send/general", data={"text": "new message"})
+    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    rows = db.execute(
+        "SELECT content FROM messages WHERE channel='general' ORDER BY ts"
+    ).fetchall()
+    db.close()
+    assert len(rows) == 2
+
+
+# ── GET /files/<filename> — attachment download ───────────────────────────────
+
+
+def test_files_attachment_content_disposition(alice):
+    """UUID-prefixed filenames expose the original name as the download name."""
+    # 32 hex chars + underscore + original name
+    fname = "a" * 32 + "_report.pdf"
+    (chat_mod.UPLOAD_DIR / fname).write_bytes(b"%PDF")
+    resp = alice.get(f"/files/{fname}?download=1")
+    assert resp.status_code == 200
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+# ── GET /file_preview/<filename> ─────────────────────────────────────────────
+
+
+def test_file_preview_unauthenticated(client):
+    resp = client.get("/file_preview/hello.py")
+    assert resp.status_code == 302
+
+
+def test_file_preview_unknown_extension(alice):
+    fname = "image.jpg"
+    (chat_mod.UPLOAD_DIR / fname).write_bytes(b"\xff\xd8")
+    resp = alice.get(f"/file_preview/{fname}")
+    assert resp.status_code == 200
+    assert resp.get_json() == {}
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+def test_file_preview_text_file(alice):
+    fname = "script.py"
+    (chat_mod.UPLOAD_DIR / fname).write_text("print('hello')", encoding="utf-8")
+    resp = alice.get(f"/file_preview/{fname}")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "content" in data or "lines" in data or data != {}
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+def test_file_preview_bad_filename(alice):
+    resp = alice.get("/file_preview/")
+    assert resp.status_code in (404, 302, 308)
+
+
+def test_file_preview_missing_file(alice):
+    resp = alice.get("/file_preview/nonexistent.py")
+    assert resp.status_code == 200
+    assert resp.get_json() == {}

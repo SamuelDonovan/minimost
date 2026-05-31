@@ -696,3 +696,25 @@ def client_post_json(c, path, payload):
         data=json.dumps(payload),
         content_type="application/json",
     )
+
+
+# ── Name length validation ────────────────────────────────────────────────────
+
+
+def test_create_private_channel_name_too_long(alice):
+    import minimost.chat as chat_mod
+
+    long_name = "x" * (chat_mod.MAX_CHANNEL_NAME_LEN + 1)
+    resp = _create_channel(alice, long_name)
+    assert resp.status_code == 400
+
+
+def test_rename_private_channel_name_too_long(alice):
+    import minimost.chat as chat_mod
+
+    channel_id = _create_channel(alice, "valid").get_json()["id"]
+    long_name = "x" * (chat_mod.MAX_CHANNEL_NAME_LEN + 1)
+    resp = client_post_json(
+        alice, f"/private_channels/{channel_id}/rename", {"name": long_name}
+    )
+    assert resp.status_code == 400

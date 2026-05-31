@@ -60,7 +60,7 @@
 - Python 3.6+
 - Flask (`pip install flask`)
 
-That's it. SQLite is part of the Python standard library.
+That's it!
 
 ---
 

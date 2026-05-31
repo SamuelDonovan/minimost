@@ -45,8 +45,12 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+coverage/
 *.cover
 *.py.cover
+
+# Node / JS tooling
+node_modules/
 .hypothesis/
 .pytest_cache/
 cover/

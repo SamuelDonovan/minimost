@@ -1,0 +1,26 @@
+{
+  "name": "minimost",
+  "private": true,
+  "scripts": {
+    "test:js": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "testMatch": ["**/tests/js/**/*.test.js"],
+    "setupFiles": ["./tests/js/setup.js"],
+    "setupFilesAfterEnv": ["./tests/js/setup-after.js"],
+    "coverageDirectory": "coverage/js",
+    "collectCoverage": false,
+    "collectCoverageFrom": [
+      "src/minimost/static/chat-*.js",
+      "src/minimost/static/audio-processor.js"
+    ],
+    "coverageReporters": ["lcov", "text-summary"],
+    "coverageProvider": "v8",
+    "transform": {}
+  }
+}
