@@ -2,7 +2,7 @@
 minimost.calls
 ==============
 
-Voice/video calling with HTTP media relay.
+Voice/video calling over WebRTC, with the call lifecycle and signaling in SQLite.
 
 All call state lives in the shared ``presence.db``.  Three tables (created
 by :func:`init_calls_tables`, called from :func:`minimost.presence._init_tables`)
@@ -58,6 +58,13 @@ _SQL_PARTICIPANT = (
 _ERR_NOT_FOUND = "call not found"
 _ERR_CHANNEL_REQUIRED = "channel required"
 _ERR_ACCESS_DENIED = "access denied"
+_ERR_CALL_NOT_ACTIVE = "call is not active"
+_ERR_SHARE_NOT_FOUND = "not found"
+
+_SQL_CLEAR_SCREENSHARE = (
+    "UPDATE calls SET screenshare_user = NULL"
+    " WHERE call_id = ? AND screenshare_user = ?"
+)
 
 
 def _db():
@@ -404,8 +411,7 @@ def end_call(call_id):
         # If the leaver was screensharing, clear it so remaining participants
         # stop receiving their frozen last frame.
         db.execute(
-            "UPDATE calls SET screenshare_user = NULL"
-            " WHERE call_id = ? AND screenshare_user = ?",
+            _SQL_CLEAR_SCREENSHARE,
             (call_id, user),
         )
 
@@ -466,7 +472,7 @@ def invite_to_call(call_id):
         if not call:
             return jsonify({"error": _ERR_NOT_FOUND}), 404
         if call["state"] != "active":
-            return jsonify({"error": "call is not active"}), 409
+            return jsonify({"error": _ERR_CALL_NOT_ACTIVE}), 409
 
         caller_p = db.execute(_SQL_PARTICIPANT, (call_id, user)).fetchone()
         if not caller_p or caller_p["state"] != "accepted":
@@ -651,7 +657,7 @@ def set_screenshare(call_id):
         if not call or not participant:
             return jsonify({"error": _ERR_NOT_FOUND}), 404
         if call["state"] != "active":
-            return jsonify({"error": "call is not active"}), 409
+            return jsonify({"error": _ERR_CALL_NOT_ACTIVE}), 409
 
         if on:
             db.execute(
@@ -659,11 +665,7 @@ def set_screenshare(call_id):
                 (user, call_id),
             )
         else:
-            db.execute(
-                "UPDATE calls SET screenshare_user = NULL"
-                " WHERE call_id = ? AND screenshare_user = ?",
-                (call_id, user),
-            )
+            db.execute(_SQL_CLEAR_SCREENSHARE, (call_id, user))
         db.commit()
     finally:
         db.close()
@@ -795,7 +797,7 @@ def upload_media(call_id):
         if not call or not participant:
             return jsonify({"error": _ERR_NOT_FOUND}), 404
         if call["state"] not in ("ringing", "active"):
-            return jsonify({"error": "call is not active"}), 409
+            return jsonify({"error": _ERR_CALL_NOT_ACTIVE}), 409
 
         now = time.time()
         if is_init:
@@ -810,11 +812,7 @@ def upload_media(call_id):
             )
             if track == "screen":
                 if mime_type == "screen/off":
-                    db.execute(
-                        "UPDATE calls SET screenshare_user = NULL"
-                        " WHERE call_id = ? AND screenshare_user = ?",
-                        (call_id, user),
-                    )
+                    db.execute(_SQL_CLEAR_SCREENSHARE, (call_id, user))
                 else:
                     db.execute(
                         "UPDATE calls SET screenshare_user = ? WHERE call_id = ?",
@@ -1111,7 +1109,7 @@ def send_share_signal(share_id):
             "SELECT channel, state FROM screenshares WHERE share_id = ?", (share_id,)
         ).fetchone()
         if not share:
-            return jsonify({"error": "not found"}), 404
+            return jsonify({"error": _ERR_SHARE_NOT_FOUND}), 404
         if share["state"] != "active":
             return jsonify({"error": "share is not active"}), 409
         participants = _participants_for_channel(share["channel"])
@@ -1209,7 +1207,7 @@ def upload_share_media(share_id):
             "SELECT sharer, state FROM screenshares WHERE share_id = ?", (share_id,)
         ).fetchone()
         if not share or share["sharer"] != user:
-            return jsonify({"error": "not found"}), 404
+            return jsonify({"error": _ERR_SHARE_NOT_FOUND}), 404
         if share["state"] != "active":
             return jsonify({"error": "share is not active"}), 409
         now = time.time()
@@ -1274,7 +1272,7 @@ def get_share_media(share_id):
             (share_id,),
         ).fetchone()
         if not share:
-            return jsonify({"error": "not found"}), 404
+            return jsonify({"error": _ERR_SHARE_NOT_FOUND}), 404
         participants = _participants_for_channel(share["channel"])
         if participants and user not in participants:
             return jsonify({"error": _ERR_ACCESS_DENIED}), 403

@@ -511,8 +511,8 @@ describe('visual mode key navigation', () => {
 
     test('ArrowDown moves down', () => {
         enterVisualMode();
-        _handleVisualKey(makeVimEvent('ArrowDown'));
-        expect(true).toBe(true); // no crash
+        // ArrowDown in visual mode must be handled without throwing.
+        expect(() => _handleVisualKey(makeVimEvent('ArrowDown'))).not.toThrow();
     });
 
     test('ArrowUp moves up', () => {
@@ -602,9 +602,10 @@ describe('search input keyboard navigation', () => {
 
     test('no key navigation when no results', () => {
         document.getElementById('msg-search-results').innerHTML = '';
-        // Should not crash
-        document.getElementById('msg-search-input').dispatchEvent(makeKeyEvent('ArrowDown'));
-        expect(true).toBe(true);
+        // ArrowDown with no results must be handled without throwing.
+        expect(() =>
+            document.getElementById('msg-search-input').dispatchEvent(makeKeyEvent('ArrowDown'))
+        ).not.toThrow();
     });
 });
 

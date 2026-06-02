@@ -94,8 +94,8 @@ describe('openCreatePrivateChannel()', () => {
         // Force usersLoaded to false — can't directly, but ensure fetch is called or not
         global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(['bob']) });
         openCreatePrivateChannel();
-        // Test passes if no error thrown
-        expect(true).toBe(true);
+        // openCreatePrivateChannel opens the modal.
+        expect(document.getElementById('create-private-ch-modal').style.display).toBe('block');
     });
 });
 

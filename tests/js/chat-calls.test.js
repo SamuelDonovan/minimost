@@ -120,6 +120,12 @@ beforeEach(() => {
     try { _diffParticipants(new Set()); } catch(e) {}
 });
 
+afterEach(async () => {
+    // Some tests start/accept a call but never hang up; reset activeCallId so it
+    // does not leak into the next test (which would make startCall early-return).
+    try { await endCall(); } catch (e) { /* no active call */ }
+});
+
 // ── updateCallButton ───────────────────────────────────────────────────────────
 describe('updateCallButton()', () => {
     test('shows call button for DM channel', () => {
@@ -163,8 +169,8 @@ describe('_diffParticipants()', () => {
     test('removes participants no longer in accepted set', () => {
         _diffParticipants(new Set(['carol-diff-test']));
         _diffParticipants(new Set([]));
-        // No crash means success
-        expect(true).toBe(true);
+        // The participant's tile must have been removed from the grid.
+        expect(document.querySelector('[data-username="carol-diff-test"]')).toBeNull();
     });
 
     test('handles empty accepted set', () => {
@@ -217,9 +223,8 @@ describe('closeIncomingCallUI()', () => {
     test('clears incomingCallData', () => {
         openIncomingCallUI({ call_id: 1, initiator: 'bob' });
         closeIncomingCallUI();
-        // incomingCallData is let-scoped, but rejectCall() uses it
-        // If it's null, rejectCall should do nothing
-        expect(true).toBe(true);
+        // The incoming-call overlay must be hidden after closing.
+        expect(document.getElementById('call-incoming').style.display).toBe('none');
     });
 });
 
@@ -399,10 +404,10 @@ describe('toggleAudioMute()', () => {
         const btn = document.getElementById('call-mute-audio-btn');
         // Now toggleAudioMute should work because localStream is set
         toggleAudioMute(); // mute
-        // The button might have 'muted' class or not — just verify no crash
+        expect(document.getElementById('call-mute-audio-btn').classList.contains('muted')).toBe(true);
         toggleAudioMute(); // unmute
+        expect(document.getElementById('call-mute-audio-btn').classList.contains('muted')).toBe(false);
         await endCall();
-        expect(true).toBe(true);
     });
 });
 
@@ -495,9 +500,8 @@ describe('pollIncomingCalls()', () => {
         pollIncomingCalls();
         await Promise.resolve();
         await Promise.resolve();
-        // If the UI opened, verify it's displayed
-        // (may not open if activeCallId is set from a previous test)
-        expect(true).toBe(true); // just verify no crash
+        // pollIncomingCalls polls the incoming endpoint when not already in a call.
+        expect(global.fetch).toHaveBeenCalledWith('/calls/incoming');
     });
 
     test('/calls/incoming endpoint is the right path', () => {
@@ -599,7 +603,8 @@ describe('toggleStandaloneScreenShare()', () => {
         // Then stop it
         global.fetch = jest.fn().mockResolvedValue({ ok: true });
         await toggleStandaloneScreenShare();
-        expect(true).toBe(true);
+        // After stopping, the topbar share button returns to its inactive state.
+        expect(document.getElementById('topbar-share-btn').classList.contains('active')).toBe(false);
     });
 });
 
@@ -737,8 +742,8 @@ describe('refreshScreenShares() with screenshare notification', () => {
             json: () => Promise.resolve([{ sharer: 'charlie', share_id: 'ss-notify' }]),
         });
         await refreshScreenShares();
-        // Notification may have been created
-        expect(true).toBe(true);
+        // A native notification is created for a hidden tab when permission is granted.
+        expect(global.Notification).toHaveBeenCalled();
         Object.defineProperty(document, 'hidden', { value: false, writable: true, configurable: true });
         global.nativeNotifEnabled = false;
         global.Notification.permission = 'default';

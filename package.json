@@ -16,8 +16,7 @@
     "coverageDirectory": "coverage/js",
     "collectCoverage": false,
     "collectCoverageFrom": [
-      "src/minimost/static/chat-*.js",
-      "src/minimost/static/audio-processor.js"
+      "src/minimost/static/chat-*.js"
     ],
     "coverageReporters": ["lcov", "text-summary"],
     "coverageProvider": "v8",

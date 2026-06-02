@@ -16,6 +16,9 @@ let pcCurrentSuggestions = [];
 let addMemberSuggIndex = -1;
 let addMemberCurrentSuggestions = [];
 
+// `allUsers` / `usersLoaded` are declared globally in chat-dm.js (loaded first)
+// and shared across the member-picker suggestions here.
+
 const MAX_CHANNEL_NAME_LEN = 80;
 
 function openCreatePrivateChannel() {

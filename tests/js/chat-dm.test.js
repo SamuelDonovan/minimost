@@ -129,20 +129,16 @@ describe('DM input keydown handlers', () => {
         // We mock it directly
         global.currentSuggestions = ['bob', 'charlie'];
         const input = document.getElementById('dm-users');
-        input.dispatchEvent(makeKeyEvent('Tab'));
-        // Tab should autocomplete — input value should change
-        // (Can't fully test because currentSuggestions is let-scoped)
-        expect(true).toBe(true);
+        // The Tab keydown handler must run without throwing.
+        expect(() => input.dispatchEvent(makeKeyEvent('Tab'))).not.toThrow();
     });
 
     test('Enter with suggestions triggers select', () => {
         document.getElementById('dm-users').value = 'bob';
         global.currentSuggestions = ['bob'];
         const input = document.getElementById('dm-users');
-        const e = makeKeyEvent('Enter');
-        input.dispatchEvent(e);
-        // Should not throw
-        expect(true).toBe(true);
+        // The Enter keydown handler must run without throwing.
+        expect(() => input.dispatchEvent(makeKeyEvent('Enter'))).not.toThrow();
     });
 });
 
@@ -172,8 +168,11 @@ describe('closeDm()', () => {
     test('does nothing further if fetch returns not ok', async () => {
         global.fetch = jest.fn().mockResolvedValueOnce({ ok: false });
         await closeDm('dm:alice:bob');
-        // No crash
-        expect(true).toBe(true);
+        // closeDm posts to /dms/close regardless of the response status.
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/dms/close',
+            expect.objectContaining({ method: 'POST' })
+        );
     });
 });
 

@@ -58,17 +58,9 @@ function loadScript(filename) {
     const fullPath = path.resolve(__dirname, '../../src/minimost/static', filename);
     let code = fs.readFileSync(fullPath, 'utf8');
 
-    // audio-processor.js uses `class Foo extends AudioWorkletProcessor` —
-    // class extends clauses need the base class as a lexical variable.
-    // Prepend a shim that binds the name from globalThis.
-    const preamble = filename === 'audio-processor.js'
-        ? 'var AudioWorkletProcessor = globalThis.AudioWorkletProcessor;\n' +
-          'var registerProcessor     = globalThis.registerProcessor;\n'
-        : '';
-
     code = _promoteDeclarations(code);
 
-    const script = new vm.Script(preamble + code, {
+    const script = new vm.Script(code, {
         filename: fullPath,
         displayErrors: true,
     });

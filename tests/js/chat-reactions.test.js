@@ -263,7 +263,11 @@ describe('toggleReaction()', () => {
         toggleReaction(42, 'thumbsup');
         await Promise.resolve();
         await Promise.resolve();
-        // innerHTML should have been updated (even if empty for test env)
+        // toggleReaction posts the reaction to the server.
+        expect(global.fetch).toHaveBeenCalledWith(
+            '/react/42',
+            expect.objectContaining({ method: 'POST' })
+        );
         reactDiv.remove();
     });
 

@@ -265,9 +265,8 @@ describe('refreshChannels()', () => {
         refreshChannels();
         await Promise.resolve(); // flush promise
         await Promise.resolve();
-        const badge = document.querySelector('[data-channel="general"] .unread-badge');
-        // May or may not be there depending on timing, just ensure no crash
-        expect(true).toBe(true);
+        // refreshChannels fetches the per-channel unread counts.
+        expect(global.fetch).toHaveBeenCalled();
     });
 });
 
@@ -341,8 +340,8 @@ describe('refreshDMs()', () => {
         refreshDMs();
         await Promise.resolve();
         await Promise.resolve();
-        // No crash
-        expect(true).toBe(true);
+        // refreshDMs fetches the DM list even when the header is absent.
+        expect(global.fetch).toHaveBeenCalled();
     });
 });
 
@@ -368,10 +367,7 @@ describe('setFaviconHref()', () => {
     test('updates all link[rel=icon] elements', () => {
         setFaviconHref('http://example.com/new-favicon.ico');
         const link = document.querySelector("link[rel='icon']");
-        if (link) {
-            expect(link.href).toContain('favicon');
-        }
-        expect(true).toBe(true);
+        expect(link.href).toContain('new-favicon');
     });
 });
 

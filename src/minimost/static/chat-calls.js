@@ -189,7 +189,7 @@ let micMeterPollId = null;
 // autoplay policy blocks the immediate attempt (more common on Windows Chrome,
 // where the context can start suspended after the getUserMedia await).
 function _resumeAudioContext(ctx) {
-    if (!ctx || ctx.state !== "suspended" || !ctx.resume) return;
+    if (ctx?.state !== "suspended" || !ctx.resume) return;
     ctx.resume().catch(() => {
         const onGesture = () => {
             ctx.resume().catch(() => {});
@@ -518,7 +518,7 @@ function _removeRemoteParticipant(username) {
 }
 
 function _removeAllParticipants() {
-    for (const username of [...remoteParticipants.keys()]) {
+    for (const username of remoteParticipants.keys()) {
         _removeRemoteParticipant(username);
     }
     if (sharedAudioCtx) { sharedAudioCtx.close().catch(() => {}); sharedAudioCtx = null; }
@@ -669,58 +669,70 @@ async function _pollStandaloneSignals() {
     finally { _standaloneSignalPolling = false; }
 }
 
-async function _handleSharerSignal(sig) {
-    const viewer = sig.from;
-    let pc = standaloneViewerPeers.get(viewer);
-
-    if (sig.type === "ice_candidate") {
-        if (pc?.remoteDescription) {
-            await pc.addIceCandidate(sig.payload).catch(() => {});
-        } else {
-            // A candidate can outrace the offer it belongs to (trickle ICE +
-            // unordered POSTs).  Buffer it until the offer creates the peer and
-            // sets the remote description, else the sharer gets no remote
-            // candidates and ICE fails → viewer sees black.
-            if (!standaloneViewerPending.has(viewer)) standaloneViewerPending.set(viewer, []);
-            standaloneViewerPending.get(viewer).push(sig.payload);
-        }
+function _addShareCandidate(viewer, pc, candidate) {
+    if (pc?.remoteDescription) {
+        pc.addIceCandidate(candidate).catch(() => {});
         return;
     }
-    if (sig.type !== "offer") return;
+    // A candidate can outrace the offer it belongs to (trickle ICE + unordered
+    // POSTs).  Buffer it until the offer creates the peer and sets the remote
+    // description, else the sharer gets no remote candidates and ICE fails.
+    if (!standaloneViewerPending.has(viewer)) standaloneViewerPending.set(viewer, []);
+    standaloneViewerPending.get(viewer).push(candidate);
+}
 
-    if (!standaloneShareStream) return;
-    if (!pc) {
-        pc = new RTCPeerConnection(RTC_CONFIG);
-        standaloneViewerPeers.set(viewer, pc);
-        pc.onicecandidate = ({ candidate }) => {
-            if (candidate) _sendShareSignal(standaloneShareId, viewer, "ice_candidate", candidate.toJSON());
-        };
-        _logPeerState(pc, `share→${viewer}`);
+function _createViewerPeer(viewer) {
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    standaloneViewerPeers.set(viewer, pc);
+    pc.onicecandidate = ({ candidate }) => {
+        if (candidate) _sendShareSignal(standaloneShareId, viewer, "ice_candidate", candidate.toJSON());
+    };
+    _logPeerState(pc, `share→${viewer}`);
+    return pc;
+}
+
+async function _flushPendingShareCandidates(viewer, pc) {
+    const pending = standaloneViewerPending.get(viewer);
+    if (!pending) return;
+    for (const c of pending) await pc.addIceCandidate(c).catch(() => {});
+    standaloneViewerPending.delete(viewer);
+}
+
+async function _attachScreenTrack(pc) {
+    // Answer-with-media: attach our screen track to the transceiver the viewer's
+    // recvonly offer created (via replaceTrack) so the answer advertises a
+    // sendonly video m-line.  Adding before setRemoteDescription can leave the
+    // track unassociated → viewer sees black.
+    const track = standaloneShareStream.getVideoTracks()[0];
+    if (!track) return;
+    const tcv = pc.getTransceivers().find(t => t.receiver?.track?.kind === "video");
+    if (tcv) {
+        await tcv.sender.replaceTrack(track);
+        try { tcv.direction = "sendonly"; } catch { /* read-only in old browsers */ }
+    } else {
+        pc.addTrack(track, standaloneShareStream);
     }
+}
+
+async function _answerViewerOffer(viewer, sig) {
+    if (!standaloneShareStream) return;
+    const pc = standaloneViewerPeers.get(viewer) || _createViewerPeer(viewer);
     try {
-        // Answer-with-media: apply the viewer's (recvonly) offer first, then attach
-        // our screen track to the transceiver it created via replaceTrack so the
-        // answer reliably advertises a sendonly video m-line.  Adding the track
-        // before setRemoteDescription can leave it unassociated → viewer sees black.
         await pc.setRemoteDescription(sig.payload);
-        // Flush any ICE candidates that arrived before this offer.
-        const pending = standaloneViewerPending.get(viewer);
-        if (pending) {
-            for (const c of pending) await pc.addIceCandidate(c).catch(() => {});
-            standaloneViewerPending.delete(viewer);
-        }
-        const track = standaloneShareStream.getVideoTracks()[0];
-        const tcv = pc.getTransceivers().find(t => t.receiver?.track?.kind === "video");
-        if (tcv && track) {
-            await tcv.sender.replaceTrack(track);
-            try { tcv.direction = "sendonly"; } catch { /* read-only in old browsers */ }
-        } else if (track) {
-            pc.addTrack(track, standaloneShareStream);
-        }
+        await _flushPendingShareCandidates(viewer, pc);
+        await _attachScreenTrack(pc);
         await pc.setLocalDescription();
         await _sendShareSignal(standaloneShareId, viewer, pc.localDescription.type, pc.localDescription);
     } catch (e) {
         console.warn("Sharer answer failed:", e);
+    }
+}
+
+async function _handleSharerSignal(sig) {
+    if (sig.type === "ice_candidate") {
+        _addShareCandidate(sig.from, standaloneViewerPeers.get(sig.from), sig.payload);
+    } else if (sig.type === "offer") {
+        await _answerViewerOffer(sig.from, sig);
     }
 }
 
@@ -1028,7 +1040,7 @@ function _diffParticipants(accepted) {
     for (const u of accepted) {
         if (!remoteParticipants.has(u)) _addRemoteParticipant(u);
     }
-    for (const u of [...remoteParticipants.keys()]) {
+    for (const u of remoteParticipants.keys()) {
         if (!accepted.has(u)) _removeRemoteParticipant(u);
     }
 }
