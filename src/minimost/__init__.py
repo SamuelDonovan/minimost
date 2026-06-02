@@ -106,6 +106,25 @@ def _max_avatar_size_mb() -> int:
     return 5
 
 
+def _stun_port() -> int:
+    """Return the configured STUN UDP port (default 3478).
+
+    The bundled STUN server lets LAN WebRTC peers gather a real-IP
+    server-reflexive candidate, avoiding the mDNS ``.local`` host-candidate
+    resolution that otherwise breaks calls on LANs without avahi/Bonjour.
+    """
+    import json
+
+    from .stun import DEFAULT_STUN_PORT
+
+    with suppress(Exception):
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("stun_port")
+        if isinstance(value, int) and 0 < value < 65536:
+            return value
+    return DEFAULT_STUN_PORT
+
+
 def create_app():
     """Create and configure the MiniMost Flask application.
 
@@ -151,6 +170,7 @@ def create_app():
 
     _upload_mb = _max_upload_size_mb()
     _avatar_mb = _max_avatar_size_mb()
+    _stun = _stun_port()
     app.config["MAX_CONTENT_LENGTH"] = _upload_mb * 1024 * 1024
 
     def _csrf_token() -> str:
@@ -184,6 +204,7 @@ def create_app():
             "app_version": _APP_VERSION,
             "max_upload_mb": _upload_mb,
             "max_avatar_mb": _avatar_mb,
+            "stun_port": _stun,
         }
 
     app.register_blueprint(auth_bp)
@@ -194,6 +215,10 @@ def create_app():
     presence.reset_all_offline()
     calls_mod.reset_all_calls_ended()
     calls_mod.reset_all_screenshares_ended()
+
+    from .stun import start_stun_server
+
+    start_stun_server(_stun)
 
     _start_cleanup_scheduler()
 

@@ -101,6 +101,46 @@ global.MediaSource = jest.fn().mockImplementation(() => ({
 global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
 global.URL.revokeObjectURL = jest.fn();
 
+// ── WebRTC mocks ──────────────────────────────────────────────────────────────
+global.MediaStream = jest.fn().mockImplementation((tracks = []) => ({
+    _tracks:        tracks,
+    getTracks:      jest.fn(() => tracks),
+    getAudioTracks: jest.fn(() => tracks.filter(t => t.kind === 'audio')),
+    getVideoTracks: jest.fn(() => tracks.filter(t => t.kind === 'video')),
+    addTrack:       jest.fn(),
+    removeTrack:    jest.fn(),
+}));
+
+global.RTCPeerConnection = jest.fn().mockImplementation(() => ({
+    localDescription:  null,
+    remoteDescription: null,
+    signalingState:    'stable',
+    connectionState:   'new',
+    onnegotiationneeded:    null,
+    onicecandidate:         null,
+    ontrack:                null,
+    onconnectionstatechange: null,
+    addEventListener:    jest.fn(),
+    removeEventListener: jest.fn(),
+    getTransceivers: jest.fn(() => []),
+    addTrack:        jest.fn(() => ({ track: null })),
+    removeTrack:     jest.fn(),
+    addTransceiver:  jest.fn(),
+    createOffer:     jest.fn(() => Promise.resolve({ type: 'offer', sdp: '' })),
+    createAnswer:    jest.fn(() => Promise.resolve({ type: 'answer', sdp: '' })),
+    setLocalDescription:  jest.fn(function () { this.localDescription = { type: 'offer', sdp: '' }; return Promise.resolve(); }),
+    setRemoteDescription: jest.fn(function (d) { this.remoteDescription = d; return Promise.resolve(); }),
+    addIceCandidate: jest.fn(() => Promise.resolve()),
+    restartIce:      jest.fn(),
+    close:           jest.fn(),
+}));
+
+global.RTCSessionDescription = jest.fn().mockImplementation((d) => d);
+
+// jsdom does not implement HTMLMediaElement playback.
+HTMLMediaElement.prototype.play = jest.fn(() => Promise.resolve());
+HTMLMediaElement.prototype.pause = jest.fn();
+
 // ── Notification mock ─────────────────────────────────────────────────────────
 global.Notification = jest.fn();
 global.Notification.permission = 'default';

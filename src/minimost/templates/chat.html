@@ -17,6 +17,7 @@
     const CURRENT_USER = "{{ session.user }}";
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
     const MAX_AVATAR_MB = {{ max_avatar_mb }};
+    const STUN_PORT = {{ stun_port }};
 </script>
 
 <button id="sidebar-backdrop" aria-label="Close sidebar" onclick="closeSidebar()"></button>
@@ -1534,13 +1535,13 @@ function scrollToMsg(msgId) {
 }
 
 </script>
-<script src="/static/chat-sidebar.js"></script>
-<script src="/static/chat-dm.js"></script>
-<script src="/static/chat-settings.js"></script>
-<script src="/static/chat-channels.js"></script>
-<script src="/static/chat-reactions.js"></script>
-<script src="/static/chat-search.js"></script>
-<script src="/static/chat-calls.js"></script>
+<script src="/static/chat-sidebar.js?v={{ app_version }}"></script>
+<script src="/static/chat-dm.js?v={{ app_version }}"></script>
+<script src="/static/chat-settings.js?v={{ app_version }}"></script>
+<script src="/static/chat-channels.js?v={{ app_version }}"></script>
+<script src="/static/chat-reactions.js?v={{ app_version }}"></script>
+<script src="/static/chat-search.js?v={{ app_version }}"></script>
+<script src="/static/chat-calls.js?v={{ app_version }}"></script>
 <div id="pc-member-tooltip"></div>
 </body>
 </html>

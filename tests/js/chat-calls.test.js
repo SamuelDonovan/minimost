@@ -120,51 +120,6 @@ beforeEach(() => {
     try { _diffParticipants(new Set()); } catch(e) {}
 });
 
-// ── _pickVideoMimeType ─────────────────────────────────────────────────────────
-describe('_pickVideoMimeType()', () => {
-    test('returns empty string when nothing supported', () => {
-        global.MediaRecorder.isTypeSupported = jest.fn(() => false);
-        expect(_pickVideoMimeType()).toBe('');
-    });
-
-    test('returns first supported type', () => {
-        global.MediaRecorder.isTypeSupported = jest.fn((t) => t === 'video/webm;codecs=vp8');
-        const result = _pickVideoMimeType();
-        expect(result).toBe('video/webm;codecs=vp8');
-    });
-
-    test('prefers vp9 over vp8', () => {
-        global.MediaRecorder.isTypeSupported = jest.fn(() => true); // all supported
-        expect(_pickVideoMimeType()).toBe('video/webm;codecs=vp9');
-    });
-});
-
-// ── _b64ToBuffer ───────────────────────────────────────────────────────────────
-describe('_b64ToBuffer()', () => {
-    test('converts base64 to ArrayBuffer', () => {
-        const original = new Uint8Array([1, 2, 3, 4]);
-        const b64 = Buffer.from(original).toString('base64');
-        const result = _b64ToBuffer(b64);
-        expect(result).toBeInstanceOf(ArrayBuffer);
-        const arr = new Uint8Array(result);
-        expect(arr[0]).toBe(1);
-        expect(arr[3]).toBe(4);
-    });
-
-    test('handles empty base64 string', () => {
-        const result = _b64ToBuffer('');
-        expect(result).toBeInstanceOf(ArrayBuffer);
-        expect(result.byteLength).toBe(0);
-    });
-
-    test('produces correct byte length', () => {
-        const data = new Uint8Array(16).fill(0xff);
-        const b64 = Buffer.from(data).toString('base64');
-        const result = _b64ToBuffer(b64);
-        expect(result.byteLength).toBe(16);
-    });
-});
-
 // ── updateCallButton ───────────────────────────────────────────────────────────
 describe('updateCallButton()', () => {
     test('shows call button for DM channel', () => {
@@ -714,26 +669,6 @@ describe('openIncomingCallUI ring timeout', () => {
     });
 });
 
-// ── _b64ToBuffer edge cases ───────────────────────────────────────────────────
-describe('_b64ToBuffer() additional', () => {
-    test('handles single byte', () => {
-        const b64 = Buffer.from([42]).toString('base64');
-        const buf = _b64ToBuffer(b64);
-        expect(new Uint8Array(buf)[0]).toBe(42);
-    });
-
-    test('handles known byte pattern', () => {
-        const data = [0, 127, 128, 255];
-        const b64 = Buffer.from(data).toString('base64');
-        const buf = _b64ToBuffer(b64);
-        const arr = new Uint8Array(buf);
-        expect(arr[0]).toBe(0);
-        expect(arr[1]).toBe(127);
-        expect(arr[2]).toBe(128);
-        expect(arr[3]).toBe(255);
-    });
-});
-
 // ── _handleScreenshareState more ─────────────────────────────────────────────
 describe('_handleScreenshareState() additional', () => {
     test('same sender is a no-op', () => {
@@ -858,5 +793,210 @@ describe('toggleCallInvitePanel() cached users', () => {
         const newFetchCount = global.fetch.mock.calls.length;
         expect(newFetchCount).toBe(fetchCount); // no new fetch
         document.getElementById('call-invite-panel').style.display = 'none';
+    });
+});
+
+// ── WebRTC signaling & media ──────────────────────────────────────────────────
+describe('WebRTC signaling & media', () => {
+    beforeEach(() => {
+        global.isSecureContext = true;
+        global.navigator.mediaDevices = {
+            getUserMedia: jest.fn().mockResolvedValue({
+                getAudioTracks: () => [{ kind: 'audio', enabled: true, stop: jest.fn() }],
+                getTracks:      () => [{ stop: jest.fn() }],
+            }),
+            getDisplayMedia: jest.fn(),
+        };
+    });
+
+    async function startTestCall(id = 'wc-1') {
+        global.fetch = jest.fn()
+            .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ call_id: id }) })
+            .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        await startCall();
+    }
+
+    test('_addRemoteParticipant builds an RTCPeerConnection', () => {
+        _diffParticipants(new Set());
+        _diffParticipants(new Set(['bob-rtc']));
+        expect(global.RTCPeerConnection).toHaveBeenCalled();
+        _diffParticipants(new Set());
+    });
+
+    test('_pollCallSignals answers an incoming offer via /signal', async () => {
+        await startTestCall('wc-offer');
+        global.fetch = jest.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve([
+                    { id: 1, from: 'bob', type: 'offer', payload: { type: 'offer', sdp: 'x' } },
+                ]),
+            })
+            .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        await _pollCallSignals();
+        const urls = global.fetch.mock.calls.map(c => c[0]);
+        expect(urls.some(u => u.includes('/signal'))).toBe(true);
+        await endCall();
+    });
+
+    test('_pollCallSignals buffers ICE candidates before the remote description', async () => {
+        await startTestCall('wc-ice');
+        global.fetch = jest.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve([
+                    { id: 1, from: 'carol', type: 'ice_candidate', payload: { candidate: 'c' } },
+                ]),
+            })
+            .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        await expect(_pollCallSignals()).resolves.not.toThrow();
+        await endCall();
+    });
+
+    test('toggleScreenShare adds a screen track and records the sharer', async () => {
+        await startTestCall('wc-screen');
+        _diffParticipants(new Set(['bob']));
+        const track = { kind: 'video', stop: jest.fn(), addEventListener: jest.fn() };
+        global.navigator.mediaDevices.getDisplayMedia = jest.fn().mockResolvedValue({
+            getVideoTracks: () => [track],
+            getTracks:      () => [track],
+        });
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        await toggleScreenShare();
+        const urls = global.fetch.mock.calls.map(c => c[0]);
+        expect(urls.some(u => u.includes('/screenshare'))).toBe(true);
+        await toggleScreenShare(); // stop sharing
+        await endCall();
+    });
+
+    test('openShareViewer establishes a viewer peer connection', async () => {
+        global.channel = 'dm:alice:bob';
+        global.fetch = jest.fn().mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve([{ sharer: 'bob', share_id: 'sv-rtc' }]),
+        }).mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+        await refreshScreenShares();
+        global.RTCPeerConnection.mockClear();
+        openShareViewer();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(global.RTCPeerConnection).toHaveBeenCalled();
+        closeShareViewer();
+    });
+});
+
+// ── standalone sharer answers viewer offers (black-screen regression) ──────────
+describe('_handleSharerSignal()', () => {
+    test('answers a viewer offer so the screen track is advertised', async () => {
+        global.isSecureContext = true;
+        const track = { kind: 'video', stop: jest.fn(), addEventListener: jest.fn() };
+        global.navigator.mediaDevices = {
+            getUserMedia: jest.fn(),
+            getDisplayMedia: jest.fn().mockResolvedValue({
+                getVideoTracks: () => [track],
+                getTracks:      () => [track],
+            }),
+        };
+        global.fetch = jest.fn().mockImplementation((url) => {
+            if (url === '/screenshare/start') {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve({ share_id: 'sh-answer' }) });
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        });
+        await toggleStandaloneScreenShare(); // starts share, sets standaloneShareStream
+
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        await _handleSharerSignal({ id: 1, from: 'bob', type: 'offer', payload: { type: 'offer', sdp: 'x' } });
+        const urls = global.fetch.mock.calls.map(c => c[0]);
+        expect(urls.some(u => u.includes('/screenshare/sh-answer/signal'))).toBe(true);
+
+        global.fetch = jest.fn().mockResolvedValue({ ok: true });
+        await toggleStandaloneScreenShare(); // stop
+    });
+
+    test('ignores signals after the share has stopped', async () => {
+        await expect(
+            _handleSharerSignal({ id: 9, from: 'bob', type: 'offer', payload: {} })
+        ).resolves.not.toThrow();
+    });
+});
+
+// ── sharer buffers early ICE candidates (ICE-failed regression) ────────────────
+describe('_handleSharerSignal() candidate buffering', () => {
+    async function startShare(shareId) {
+        global.isSecureContext = true;
+        const track = { kind: 'video', stop: jest.fn(), addEventListener: jest.fn() };
+        global.navigator.mediaDevices = {
+            getUserMedia: jest.fn(),
+            getDisplayMedia: jest.fn().mockResolvedValue({
+                getVideoTracks: () => [track],
+                getTracks:      () => [track],
+            }),
+        };
+        global.fetch = jest.fn().mockImplementation((url) =>
+            url === '/screenshare/start'
+                ? Promise.resolve({ ok: true, json: () => Promise.resolve({ share_id: shareId }) })
+                : Promise.resolve({ ok: true, json: () => Promise.resolve([]) })
+        );
+        await toggleStandaloneScreenShare();
+    }
+
+    test('a candidate arriving before the offer is buffered, then applied', async () => {
+        await startShare('sh-buf');
+        global.RTCPeerConnection.mockClear();
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+
+        // Candidate first — must NOT create a peer or throw, just buffer.
+        await _handleSharerSignal({ id: 1, from: 'v1', type: 'ice_candidate', payload: { candidate: 'cand-1' } });
+        expect(global.RTCPeerConnection).not.toHaveBeenCalled();
+
+        // Offer arrives — peer is created and the buffered candidate is flushed.
+        await _handleSharerSignal({ id: 2, from: 'v1', type: 'offer', payload: { type: 'offer', sdp: 'x' } });
+        const pc = global.RTCPeerConnection.mock.results[0].value;
+        expect(pc.addIceCandidate).toHaveBeenCalledWith({ candidate: 'cand-1' });
+
+        global.fetch = jest.fn().mockResolvedValue({ ok: true });
+        await toggleStandaloneScreenShare();
+    });
+});
+
+// ── local microphone level meter ──────────────────────────────────────────────
+describe('mic level meter', () => {
+    test('starts an analyser during a call and resets the bar on cleanup', async () => {
+        global.isSecureContext = true;
+        const track = { kind: 'audio', enabled: true, stop: jest.fn() };
+        global.navigator.mediaDevices = {
+            getUserMedia: jest.fn().mockResolvedValue({
+                getAudioTracks: () => [track],
+                getTracks:      () => [track],
+            }),
+            getDisplayMedia: jest.fn(),
+        };
+        global.fetch = jest.fn()
+            .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ call_id: 'mic-1' }) })
+            .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        global.AudioContext.mockClear();
+
+        await startCall();
+        expect(global.AudioContext).toHaveBeenCalled(); // meter created its own context
+
+        await endCall();
+        expect(document.getElementById('call-mic-level').style.height).toBe('0%');
+    });
+
+    test('is skipped gracefully when there is no audio track', async () => {
+        global.isSecureContext = true;
+        global.navigator.mediaDevices = {
+            getUserMedia: jest.fn().mockResolvedValue({
+                getAudioTracks: () => [],
+                getTracks:      () => [{ stop: jest.fn() }],
+            }),
+            getDisplayMedia: jest.fn(),
+        };
+        global.fetch = jest.fn()
+            .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ call_id: 'mic-2' }) })
+            .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        await expect(startCall()).resolves.not.toThrow();
+        await endCall();
     });
 });

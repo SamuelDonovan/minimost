@@ -13,13 +13,19 @@ store the lifecycle of every call:
 * ``call_participants`` — one row per (call_id, username): role, acceptance
   state, and join/leave timestamps.  Designed to support future group calls
   without schema changes.
-* ``call_signals`` — kept for backwards compatibility; not used by the
-  HTTP relay frontend.
+* ``call_signals`` — WebRTC signaling relay: offer/answer/ICE-candidate
+  messages exchanged between participants during peer-connection setup.
 
-Media is relayed through Flask: each participant uploads ``MediaRecorder``
-chunks via ``POST /calls/<id>/media`` and the remote side polls
-``GET /calls/<id>/media`` to receive them.  This avoids WebRTC P2P and
-UDP entirely, making calls work even behind restrictive firewalls.
+Media travels **peer-to-peer over WebRTC** (``RTCPeerConnection``).  Flask's
+role is limited to the call lifecycle state machine (the ``calls`` and
+``call_participants`` tables) and to relaying signaling messages via
+``POST /calls/<id>/signal`` / ``GET /calls/<id>/signals``.  Because the app
+is LAN-only, ICE relies on host candidates with no STUN/TURN servers.
+
+The legacy ``call_media`` / ``share_media`` tables and the
+``POST``/``GET /calls/<id>/media`` (and ``/screenshare/<id>/media``) relay
+routes are retained for one release as a fallback but are no longer used by
+the frontend.
 
 Module-level attributes
 -----------------------
@@ -96,6 +102,10 @@ def reset_all_calls_ended() -> None:
         (now,),
     )
     db.execute("DELETE FROM call_media")
+    # Clear stale WebRTC signaling rows from a previous server run.  This table
+    # is shared by both calls and standalone screen shares (keyed by share_id),
+    # so a single unconditional delete covers both.
+    db.execute("DELETE FROM call_signals")
     db.commit()
     db.execute(_INCREMENTAL_VACUUM)
     db.close()
@@ -412,6 +422,7 @@ def end_call(call_id):
                 (now, call_id),
             )
             db.execute("DELETE FROM call_media WHERE call_id = ?", (call_id,))
+            db.execute("DELETE FROM call_signals WHERE call_id = ?", (call_id,))
 
         db.commit()
         db.execute(_INCREMENTAL_VACUUM)
@@ -607,6 +618,57 @@ def get_signals(call_id):
             for r in rows
         ]
     )
+
+
+@calls_bp.route("/calls/<call_id>/screenshare", methods=["POST"])
+@auth.login_required
+def set_screenshare(call_id):
+    """Mark the current user as the call's active screen sharer, or clear it.
+
+    Route: ``POST /calls/<call_id>/screenshare``
+
+    Under the WebRTC transport the screen video travels peer-to-peer, so this
+    endpoint exists only to record *who* is sharing in the ``screenshare_user``
+    column.  Clients poll ``GET /calls/<call_id>/state`` to read it, which
+    drives the single-sharer policy and the viewer UI label.
+
+    Request body (JSON):
+        **on** (bool): ``true`` to claim the screen, ``false`` to release it.
+
+    :param call_id: UUID of the call.
+    :type call_id: str
+    :returns: JSON with ``status``.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+    on = bool(data.get("on"))
+
+    db = _db()
+    try:
+        call = db.execute(_SQL_CALL_STATE, (call_id,)).fetchone()
+        participant = db.execute(_SQL_PARTICIPANT, (call_id, user)).fetchone()
+        if not call or not participant:
+            return jsonify({"error": _ERR_NOT_FOUND}), 404
+        if call["state"] != "active":
+            return jsonify({"error": "call is not active"}), 409
+
+        if on:
+            db.execute(
+                "UPDATE calls SET screenshare_user = ? WHERE call_id = ?",
+                (user, call_id),
+            )
+        else:
+            db.execute(
+                "UPDATE calls SET screenshare_user = NULL"
+                " WHERE call_id = ? AND screenshare_user = ?",
+                (call_id, user),
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    return jsonify({"status": "ok"})
 
 
 @calls_bp.route("/calls/<call_id>/state", methods=["GET"])
@@ -945,6 +1007,9 @@ def stop_screenshare(share_id):
             (now, share_id),
         )
         db.execute("DELETE FROM share_media WHERE share_id = ?", (share_id,))
+        # call_signals is shared with calls; standalone-share rows are keyed by
+        # the share_id in the call_id column.
+        db.execute("DELETE FROM call_signals WHERE call_id = ?", (share_id,))
         db.commit()
         db.execute(_INCREMENTAL_VACUUM)
     finally:
@@ -991,6 +1056,125 @@ def active_screenshares():
                 "channel": r["channel"],
                 "sharer": r["sharer"],
                 "started_ts": r["started_ts"],
+            }
+            for r in rows
+        ]
+    )
+
+
+@calls_bp.route("/screenshare/<share_id>/signal", methods=["POST"])
+@auth.login_required
+def send_share_signal(share_id):
+    """Send a WebRTC signaling message for a standalone screen share.
+
+    Route: ``POST /screenshare/<share_id>/signal``
+
+    Mirrors :func:`send_signal` but for the viewer-initiated one-to-many
+    screen-share topology.  Viewers send an ``offer`` (and ICE candidates) to
+    the sharer; the sharer replies with an ``answer`` (and ICE candidates).
+    Rows are stored in the shared ``call_signals`` table keyed by *share_id*
+    in the ``call_id`` column.
+
+    Request body (JSON):
+        **to** (str): Recipient username (the sharer, or a specific viewer).
+        **type** (str): ``"offer"``, ``"answer"``, or ``"ice_candidate"``.
+        **payload** (object): The SDP object or ICE candidate dict.
+
+    :param share_id: UUID of the screen share.
+    :type share_id: str
+    :returns: JSON with ``status``.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    data = request.get_json(silent=True) or {}
+    to_user = data.get("to")
+    signal_type = data.get("type")
+    payload = data.get("payload")
+
+    if (
+        not to_user
+        or signal_type not in ("offer", "answer", "ice_candidate")
+        or payload is None
+    ):
+        return (
+            jsonify(
+                {
+                    "error": "to, type (offer/answer/ice_candidate), and payload are required"
+                }
+            ),
+            400,
+        )
+
+    db = _db()
+    try:
+        share = db.execute(
+            "SELECT channel, state FROM screenshares WHERE share_id = ?", (share_id,)
+        ).fetchone()
+        if not share:
+            return jsonify({"error": "not found"}), 404
+        if share["state"] != "active":
+            return jsonify({"error": "share is not active"}), 409
+        participants = _participants_for_channel(share["channel"])
+        if participants and user not in participants:
+            return jsonify({"error": _ERR_ACCESS_DENIED}), 403
+
+        db.execute(
+            "INSERT INTO call_signals"
+            " (call_id, from_user, to_user, signal_type, payload, ts)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (share_id, user, to_user, signal_type, json.dumps(payload), time.time()),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    return jsonify({"status": "ok"})
+
+
+@calls_bp.route("/screenshare/<share_id>/signals", methods=["GET"])
+@auth.login_required
+def get_share_signals(share_id):
+    """Return screen-share signaling messages directed at the current user.
+
+    Route: ``GET /screenshare/<share_id>/signals?after=<id>``
+
+    Polled by both the sharer (to discover new viewer offers and ICE) and each
+    viewer (to receive the answer and ICE).  Pass the ``id`` of the last signal
+    already processed as ``?after=``.
+
+    :param share_id: UUID of the screen share.
+    :type share_id: str
+    :query after: ID of the last signal already received (default 0).
+    :returns: JSON array of signal objects with ``id``, ``from``, ``type``,
+        ``payload``, and ``ts``.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    try:
+        after_id = int(request.args.get("after", 0))
+    except ValueError:
+        after_id = 0
+
+    db = _db()
+    rows = db.execute(
+        """
+        SELECT id, from_user, signal_type, payload, ts
+          FROM call_signals
+         WHERE call_id = ? AND to_user = ? AND id > ?
+         ORDER BY id ASC
+        """,
+        (share_id, user, after_id),
+    ).fetchall()
+    db.close()
+
+    return jsonify(
+        [
+            {
+                "id": r["id"],
+                "from": r["from_user"],
+                "type": r["signal_type"],
+                "payload": json.loads(r["payload"]),
+                "ts": r["ts"],
             }
             for r in rows
         ]

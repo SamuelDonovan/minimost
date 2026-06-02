@@ -1,4 +1,9 @@
 // ── Calling ───────────────────────────────────────────────────────────────────
+//
+// Media travels peer-to-peer over WebRTC (RTCPeerConnection).  The Flask
+// backend only owns the call lifecycle state machine (calls / call_participants)
+// and relays signaling via /calls/<id>/signal[s].  Because MiniMost is LAN-only
+// we configure ICE with no STUN/TURN servers and rely on host candidates.
 
 let activeCallId        = null;
 let incomingCallData    = null;
@@ -14,49 +19,84 @@ let incomingRingTimeout = null;
 const RING_TIMEOUT_MS   = 30000;
 let _notifiedShareId    = null;
 
-// Per-participant remote state: username → { audioPollId, audioPollingActive,
-//   lastAudioSeq, audioNextPlayTime, vadAnalyser, vadPollId, tileEl }
-const remoteParticipants = new Map();
-let sharedAudioCtx       = null;   // one AudioContext for all remote audio
-let audioCaptureCleaner  = null;   // tears down the sender-side capture graph
+// LAN-only.  Point ICE at the STUN server bundled with the app (served from the
+// same host the page was loaded from) so peers gather a real-IP server-reflexive
+// candidate.  This avoids the mDNS `.local` host candidates that fail to resolve
+// on LANs without avahi/Bonjour.  No public STUN/TURN — works air-gapped.
+const RTC_CONFIG = {
+    iceServers:
+        typeof STUN_PORT !== "undefined" && STUN_PORT
+            ? [{ urls: `stun:${globalThis.location.hostname}:${STUN_PORT}` }]
+            : [],
+};
 
-// HTTP media relay — screen share (sender side)
+// Surface ICE/connection state in the console.  On a LAN the most common cause of
+// a black screen is ICE failing because browsers emit `*.local` mDNS host
+// candidates that the peer's OS cannot resolve (no avahi/Bonjour running).
+function _logPeerState(pc, label) {
+    let sawMdns = false;
+    pc.addEventListener("icecandidate", ({ candidate }) => {
+        if (candidate?.candidate?.toLowerCase().includes(".local")) sawMdns = true;
+    });
+    pc.addEventListener("iceconnectionstatechange", () => {
+        const s = pc.iceConnectionState;
+        if (s === "connected" || s === "completed") {
+            console.info(`WebRTC ICE ${s} (${label})`);
+        } else if (s === "failed") {
+            // .local candidates are normal; only call them out once the
+            // connection actually fails, since the srflx candidate from the
+            // bundled STUN server should otherwise win.
+            console.warn(
+                `WebRTC ICE failed (${label}).` +
+                (sawMdns
+                    ? " No server-reflexive candidate connected — verify the bundled" +
+                      " STUN server's UDP port is reachable from both peers."
+                    : " Check that both peers are on the same subnet and UDP is not blocked.")
+            );
+        } else if (s === "disconnected") {
+            console.warn(`WebRTC ICE disconnected (${label})`);
+        }
+    });
+}
+
+// Per-participant remote state: username → {
+//   tileEl, pc, polite, makingOffer, ignoreOffer, pendingCandidates,
+//   audioEl, vadAnalyser, vadPollId, screenSender }
+const remoteParticipants = new Map();
+let sharedAudioCtx       = null;   // one AudioContext for all remote-audio VAD taps
+
+// In-call signaling poll
+let callSignalPollId     = null;
+let lastCallSignalId     = 0;
+let _callSignalPolling   = false;
+
+// In-call screen share (sender side)
 let screenStream         = null;
-let screenRecorder       = null;
 let screenEnabled        = false;
-// HTTP media relay — screen share (receiver side)
-let currentScreenSender  = null;   // username whose :screen track we're receiving
-let screenPollId         = null;
-let lastScreenSeq        = -1;
-let screenInitReceived   = false;
-let screenPollingActive  = false;
-let screenMediaSource    = null;
-let screenSourceBuffer   = null;
-let screenPendingChunks  = [];
-let screenMediaAbortCtrl = null;
+// In-call screen share (receiver side) — the username whose video we're showing
+let currentScreenSender  = null;
 
 // Invite panel: all users list cached for filtering
 let _inviteAllUsers      = [];
 
 // ── Standalone screen share ────────────────────────────────────────────────────
 // Sharer side
-let standaloneShareId     = null;
-let standaloneShareStream = null;
-let standaloneShareRec    = null;
-let standaloneFirstChunk  = true;
-let standaloneShareChain  = Promise.resolve();
+let standaloneShareId      = null;
+let standaloneShareStream  = null;
+let standaloneSignalPollId = null;
+let standaloneLastSignalId = 0;
+let _standaloneSignalPolling = false;
+const standaloneViewerPeers   = new Map(); // viewer username → RTCPeerConnection
+const standaloneViewerPending = new Map(); // viewer username → buffered ICE candidates
 // Viewer side
-let viewShareId           = null;
-let viewShareDownId       = null;
-let viewShareLastSeq      = -1;
-let viewShareInitReceived = false;
-let viewShareMediaSource  = null;
-let viewShareSourceBuffer = null;
-let viewSharePending      = [];
-let viewShareAbortCtrl    = null;
-let viewSharePollingActive = false;
+let viewShareId            = null;
+let viewSharePc            = null;
+let viewShareSignalPollId  = null;
+let viewShareLastSignalId  = 0;
+let _viewerSignalPolling   = false;
+let viewSharePending       = [];            // ICE candidates buffered pre-answer
 // Shared: the most recently polled active share (other than ours) for this channel
-let _currentRemoteShare   = null;
+let _currentRemoteShare    = null;
 
 function updateCallButton() {
     const btn = document.getElementById("call-btn");
@@ -139,169 +179,254 @@ async function _getLocalMedia() {
     return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 }
 
-function _pickVideoMimeType() {
-    const candidates = [
-        "video/webm;codecs=vp9",
-        "video/webm;codecs=vp8",
-        "video/webm",
-    ];
-    for (const t of candidates) {
-        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) return t;
-    }
-    return "";
+// ── Local microphone level meter ────────────────────────────────────────────────
+// Drives the #call-mic-level bar so a user can see their own mic is working.
+
+let micMeterCtx    = null;
+let micMeterPollId = null;
+
+// Resume a suspended AudioContext, retrying on the next user gesture if the
+// autoplay policy blocks the immediate attempt (more common on Windows Chrome,
+// where the context can start suspended after the getUserMedia await).
+function _resumeAudioContext(ctx) {
+    if (!ctx || ctx.state !== "suspended" || !ctx.resume) return;
+    ctx.resume().catch(() => {
+        const onGesture = () => {
+            ctx.resume().catch(() => {});
+            document.removeEventListener("pointerdown", onGesture);
+        };
+        document.addEventListener("pointerdown", onGesture, { once: true });
+    });
 }
 
-async function _startMediaCapture(callId) {
-    if (!localStream) return;
-
-    // ── Audio capture via AudioWorklet → raw Int16 PCM ─────────────────────────
-    // The worklet accumulates 128-sample frames into 4096-sample chunks before
-    // posting, matching the original ScriptProcessor buffer size.
+function _startMicLevelMeter() {
+    const micLevelEl = document.getElementById("call-mic-level");
+    if (!micLevelEl || !localStream) return;
     const audioTracks = localStream.getAudioTracks();
-    if (audioTracks.length > 0) {
-        try {
-            const captureCtx = new AudioContext();
-            const audioStream = new MediaStream(audioTracks);
-            const source      = captureCtx.createMediaStreamSource(audioStream);
-            const micAnalyser = captureCtx.createAnalyser();
-            micAnalyser.fftSize = 256;
-            source.connect(micAnalyser);
+    if (audioTracks.length === 0) {
+        console.warn("No local audio track captured — the microphone was not granted.");
+        return;
+    }
 
-            const micLevelEl  = document.getElementById("call-mic-level");
-            const micLevelBuf = new Uint8Array(micAnalyser.frequencyBinCount);
-            const micLevelPoll = setInterval(() => {
-                if (!activeCallId || !micLevelEl) return;
-                micAnalyser.getByteTimeDomainData(micLevelBuf);
-                let sum = 0;
-                for (const s of micLevelBuf) sum += Math.abs(s - 128);
-                micLevelEl.style.height = Math.min(100, (sum / micLevelBuf.length) * 5) + "%";
-            }, 50);
+    // Diagnostics: a track that is muted/ended at the source still counts as a
+    // "successful" getUserMedia but produces silence.  On Windows this usually
+    // means the browser lacks OS-level microphone permission, or the wrong input
+    // device is the default.  Log the chosen device + its state so the cause is
+    // visible in the console.
+    const track = audioTracks[0];
+    console.info(
+        `Local mic: "${track.label || "(unnamed)"}" enabled=${track.enabled} ` +
+        `muted=${track.muted} state=${track.readyState}`
+    );
+    track.addEventListener?.("mute", () =>
+        console.warn(
+            "Local microphone track was muted by the system. No audio will be sent. " +
+            "Check the OS microphone permission for your browser and the selected input device."
+        )
+    );
 
-            let firstChunk  = true;
-            let uploadChain = Promise.resolve();
-            const rate      = captureCtx.sampleRate;
+    try {
+        micMeterCtx = new AudioContext();
+        _resumeAudioContext(micMeterCtx);
+        const source   = micMeterCtx.createMediaStreamSource(new MediaStream(audioTracks));
+        const analyser = micMeterCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const buf = new Uint8Array(analyser.frequencyBinCount);
+        micMeterPollId = setInterval(() => {
+            if (!activeCallId) return;
+            // If the context got suspended (autoplay policy), keep trying — until
+            // it runs, getByteTimeDomainData only returns silence.
+            if (micMeterCtx.state === "suspended") { _resumeAudioContext(micMeterCtx); return; }
+            analyser.getByteTimeDomainData(buf);
+            let sum = 0;
+            for (const s of buf) sum += Math.abs(s - 128);
+            // A muted (disabled) track emits silence, so this naturally falls to 0.
+            micLevelEl.style.height = Math.min(100, (sum / buf.length) * 5) + "%";
+        }, 50);
+    } catch (e) {
+        console.warn("Mic level meter setup failed:", e);
+    }
+}
 
-            await captureCtx.audioWorklet.addModule("/static/audio-processor.js");
-            const workletNode = new AudioWorkletNode(captureCtx, "audio-capture-processor");
-            source.connect(workletNode);
-            workletNode.connect(captureCtx.destination);
+function _stopMicLevelMeter() {
+    if (micMeterPollId) { clearInterval(micMeterPollId); micMeterPollId = null; }
+    const micLevelEl = document.getElementById("call-mic-level");
+    if (micLevelEl) micLevelEl.style.height = "0%";
+    if (micMeterCtx) { micMeterCtx.close().catch(() => {}); micMeterCtx = null; }
+}
 
-            workletNode.port.onmessage = (evt) => {
-                if (!activeCallId) return;
-                const float32 = evt.data;
-                const int16   = new Int16Array(float32.length);
-                for (let i = 0; i < float32.length; i++) {
-                    int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
-                }
-                const buf     = int16.buffer.slice(0);
-                const isFirst = firstChunk;
-                if (firstChunk) firstChunk = false;
-                uploadChain = uploadChain.then(async () => {
-                    try {
-                        await fetch(`/calls/${callId}/media`, {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/octet-stream",
-                                "X-Track": "audio",
-                                ...(isFirst ? { "X-Init": "1", "X-Mime": `pcm16/${rate}` } : {}),
-                            },
-                            body: buf,
-                        });
-                    } catch { /* ignore network errors */ }
-                });
-            };
+// ── In-call signaling ──────────────────────────────────────────────────────────
 
-            audioCaptureCleaner = () => {
-                clearInterval(micLevelPoll);
-                if (micLevelEl) micLevelEl.style.height = "0%";
-                source.disconnect();
-                workletNode.disconnect();
-                captureCtx.close().catch(() => {});
-            };
-        } catch (e) {
-            console.warn("Audio capture setup failed:", e);
+function _sendCallSignal(toUser, type, payload) {
+    if (!activeCallId) return Promise.resolve();
+    return fetch(`/calls/${activeCallId}/signal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: toUser, type, payload }),
+    }).catch(() => {});
+}
+
+function _startCallSignaling() {
+    lastCallSignalId   = 0;
+    _callSignalPolling = false;
+    callSignalPollId   = setInterval(_pollCallSignals, 600);
+}
+
+function _stopCallSignaling() {
+    clearInterval(callSignalPollId);
+    callSignalPollId = null;
+    _callSignalPolling = false;
+}
+
+async function _pollCallSignals() {
+    if (!activeCallId || _callSignalPolling) return;
+    _callSignalPolling = true;
+    try {
+        const resp = await fetch(`/calls/${activeCallId}/signals?after=${lastCallSignalId}`);
+        if (!resp.ok) return;
+        const signals = await resp.json();
+        for (const sig of signals) {
+            lastCallSignalId = Math.max(lastCallSignalId, sig.id);
+            await _handleCallSignal(sig);
+        }
+    } catch { /* ignore transient errors */ }
+    finally { _callSignalPolling = false; }
+}
+
+async function _handleCallSignal(sig) {
+    const u = sig.from;
+    if (!remoteParticipants.has(u)) _addRemoteParticipant(u);
+    const pState = remoteParticipants.get(u);
+    if (!pState?.pc) return;
+    const pc = pState.pc;
+    try {
+        if (sig.type === "ice_candidate") {
+            if (pc.remoteDescription) {
+                await pc.addIceCandidate(sig.payload).catch(() => {});
+            } else {
+                pState.pendingCandidates.push(sig.payload);
+            }
+            return;
+        }
+        // offer / answer — an SDP description (perfect negotiation)
+        const desc = sig.payload;
+        const offerCollision =
+            desc.type === "offer" && (pState.makingOffer || pc.signalingState !== "stable");
+        pState.ignoreOffer = !pState.polite && offerCollision;
+        if (pState.ignoreOffer) return;
+
+        await pc.setRemoteDescription(desc);
+        for (const c of pState.pendingCandidates) await pc.addIceCandidate(c).catch(() => {});
+        pState.pendingCandidates = [];
+
+        if (desc.type === "offer") {
+            await pc.setLocalDescription();
+            await _sendCallSignal(u, pc.localDescription.type, pc.localDescription);
+        }
+    } catch (e) {
+        console.warn("Signal handling error:", e);
+    }
+}
+
+// ── Peer-connection management ──────────────────────────────────────────────────
+
+function _createPeerConnection(username, pState) {
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+
+    if (localStream) {
+        for (const track of localStream.getAudioTracks()) pc.addTrack(track, localStream);
+    }
+    // A late joiner during an active screen share must also receive the screen.
+    if (screenEnabled && screenStream) {
+        for (const track of screenStream.getVideoTracks()) {
+            pState.screenSender = pc.addTrack(track, screenStream);
         }
     }
-}
 
-function _stopMediaCapture() {
-    if (audioCaptureCleaner) { audioCaptureCleaner(); audioCaptureCleaner = null; }
-}
-
-function _b64ToBuffer(b64) {
-    const bin = atob(b64);
-    const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.codePointAt(i);
-    return arr.buffer;
-}
-
-// ── Per-participant audio + VAD ────────────────────────────────────────────────
-
-function _playPcmChunkFor(pState, arrayBuffer) {
-    if (!sharedAudioCtx) return;
-    const samples = Math.floor(arrayBuffer.byteLength / 2);
-    if (samples === 0) return;
-    const int16   = new Int16Array(arrayBuffer, 0, samples);
-    const float32 = new Float32Array(samples);
-    for (let i = 0; i < samples; i++) float32[i] = int16[i] / 32768;
-    const buf = sharedAudioCtx.createBuffer(1, samples, sharedAudioCtx.sampleRate);
-    buf.getChannelData(0).set(float32);
-    const src = sharedAudioCtx.createBufferSource();
-    src.buffer = buf;
-    src.connect(pState.vadAnalyser || sharedAudioCtx.destination);
-    const now = sharedAudioCtx.currentTime;
-    if (pState.audioNextPlayTime < now - 0.3 || pState.audioNextPlayTime > now + 0.5) {
-        pState.audioNextPlayTime = now + 0.05;
-    }
-    src.start(pState.audioNextPlayTime);
-    pState.audioNextPlayTime += buf.duration;
-}
-
-function _startParticipantPolling(username, pState) {
-    pState.lastAudioSeq       = -1;
-    pState.audioPollingActive = false;
-    pState.audioNextPlayTime  = 0;
-
-    pState.audioPollId = setInterval(async () => {
-        if (!activeCallId || pState.audioPollingActive) return;
-        pState.audioPollingActive = true;
+    pc.onnegotiationneeded = async () => {
         try {
-            const sender = encodeURIComponent(username + ":audio");
-            const resp = await fetch(
-                `/calls/${activeCallId}/media?sender=${sender}&after=${pState.lastAudioSeq}`
-            );
-            if (!resp.ok) return;
-            const data = await resp.json();
-            if (data.init && !pState.vadAnalyser) {
-                const rate = Number.parseInt((data.mime_type || "pcm16/48000").split("/")[1]) || 48000;
-                if (!sharedAudioCtx) {
-                    try { sharedAudioCtx = new AudioContext({ sampleRate: rate }); }
-                    catch { sharedAudioCtx = new AudioContext(); }
-                }
-                pState.vadAnalyser = sharedAudioCtx.createAnalyser();
-                pState.vadAnalyser.fftSize = 256;
-                pState.vadAnalyser.connect(sharedAudioCtx.destination);
-            }
-            const chunks = data.chunks || [];
-            if (chunks.length > 0) {
-                pState.lastAudioSeq = chunks[chunks.length - 1].seq;
-                const toPlay = chunks.length > 2 ? chunks.slice(-2) : chunks;
-                for (const chunk of toPlay) _playPcmChunkFor(pState, _b64ToBuffer(chunk.data));
-            }
-        } catch { /* ignore transient errors */ }
-        finally { pState.audioPollingActive = false; }
-    }, 100);
+            pState.makingOffer = true;
+            await pc.setLocalDescription();
+            await _sendCallSignal(username, pc.localDescription.type, pc.localDescription);
+        } catch (e) {
+            console.warn("Negotiation error:", e);
+        } finally {
+            pState.makingOffer = false;
+        }
+    };
 
-    pState.vadPollId = setInterval(() => {
-        const ring = pState.tileEl?.querySelector(".call-speaking-ring");
-        if (!ring) return;
-        if (!pState.vadAnalyser) { ring.classList.remove("speaking"); return; }
-        const buf = new Uint8Array(pState.vadAnalyser.frequencyBinCount);
-        pState.vadAnalyser.getByteFrequencyData(buf);
-        let sum = 0;
-        for (const v of buf) sum += v;
-        ring.classList.toggle("speaking", sum / buf.length > 8);
-    }, 100);
+    pc.onicecandidate = ({ candidate }) => {
+        if (candidate) _sendCallSignal(username, "ice_candidate", candidate.toJSON());
+    };
+
+    pc.ontrack = (e) => _handleRemoteTrack(username, e);
+
+    pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "failed") {
+            try { pc.restartIce(); } catch { /* not supported */ }
+        }
+    };
+    _logPeerState(pc, `call:${username}`);
+
+    return pc;
+}
+
+function _handleRemoteTrack(username, e) {
+    const pState = remoteParticipants.get(username);
+    if (!pState) return;
+    const stream = e.streams[0] || new MediaStream([e.track]);
+    if (e.track.kind === "audio") {
+        _attachRemoteAudio(pState, stream);
+    } else if (e.track.kind === "video") {
+        _attachRemoteScreen(username, e.track, stream);
+    }
+}
+
+function _attachRemoteAudio(pState, stream) {
+    if (!pState.audioEl) {
+        const a = document.createElement("audio");
+        a.autoplay = true;
+        a.setAttribute("playsinline", "");
+        a.style.display = "none";
+        document.body.appendChild(a);
+        pState.audioEl = a;
+    }
+    pState.audioEl.srcObject = stream;
+    pState.audioEl.play().catch(() => {});
+    _setupVad(pState, stream);
+}
+
+function _setupVad(pState, stream) {
+    try {
+        if (!sharedAudioCtx) sharedAudioCtx = new AudioContext();
+        if (sharedAudioCtx.state === "suspended") sharedAudioCtx.resume().catch(() => {});
+        const src      = sharedAudioCtx.createMediaStreamSource(stream);
+        const analyser = sharedAudioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        src.connect(analyser);   // tap only — playback is handled by the <audio> element
+        pState.vadAnalyser = analyser;
+    } catch (e) {
+        console.warn("VAD setup failed:", e);
+    }
+}
+
+function _attachRemoteScreen(username, track, stream) {
+    currentScreenSender = username;
+    const videoEl = document.getElementById("call-screen-video");
+    videoEl.srcObject = stream;
+    videoEl.play().catch(() => {});
+    document.getElementById("call-panel").classList.add("screen-share-active");
+    track.addEventListener("ended", () => _clearRemoteScreen(username));
+    track.addEventListener("mute", () => _clearRemoteScreen(username));
+}
+
+function _clearRemoteScreen(username) {
+    if (username && currentScreenSender && username !== currentScreenSender) return;
+    const videoEl = document.getElementById("call-screen-video");
+    if (videoEl.srcObject) videoEl.srcObject = null;
+    document.getElementById("call-panel").classList.remove("screen-share-active");
+    currentScreenSender = null;
 }
 
 // ── Participant tile management ────────────────────────────────────────────────
@@ -333,30 +458,54 @@ function _updateCallGrid() {
     const n = remoteParticipants.size;
     const grid = document.getElementById("call-participants-grid");
     if (!grid) return;
-    if (n <= 1)      grid.style.gridTemplateColumns = "1fr";
-    else if (n === 2) grid.style.gridTemplateColumns = "1fr 1fr";
+    if (n <= 1)       grid.style.gridTemplateColumns = "1fr";
     else              grid.style.gridTemplateColumns = "1fr 1fr";
+}
+
+function _startVadPoll(pState) {
+    pState.vadPollId = setInterval(() => {
+        const ring = pState.tileEl?.querySelector(".call-speaking-ring");
+        if (!ring) return;
+        if (!pState.vadAnalyser) { ring.classList.remove("speaking"); return; }
+        const buf = new Uint8Array(pState.vadAnalyser.frequencyBinCount);
+        pState.vadAnalyser.getByteFrequencyData(buf);
+        let sum = 0;
+        for (const v of buf) sum += v;
+        ring.classList.toggle("speaking", sum / buf.length > 8);
+    }, 100);
 }
 
 function _addRemoteParticipant(username) {
     if (remoteParticipants.has(username)) return;
     const tile = _createParticipantTile(username);
     const pState = {
-        audioPollId: null, audioPollingActive: false,
-        lastAudioSeq: -1,  audioNextPlayTime: 0,
-        vadAnalyser: null,  vadPollId: null,
         tileEl: tile,
+        pc: null,
+        // Deterministic, opposite on the two ends → exactly one polite peer.
+        polite: CURRENT_USER < username,
+        makingOffer: false,
+        ignoreOffer: false,
+        pendingCandidates: [],
+        audioEl: null,
+        vadAnalyser: null,
+        vadPollId: null,
+        screenSender: null,
     };
     remoteParticipants.set(username, pState);
-    _startParticipantPolling(username, pState);
+    pState.pc = _createPeerConnection(username, pState);
+    _startVadPoll(pState);
     _updateCallGrid();
 }
 
 function _removeRemoteParticipant(username) {
     const pState = remoteParticipants.get(username);
     if (!pState) return;
-    clearInterval(pState.audioPollId);
     clearInterval(pState.vadPollId);
+    if (pState.pc) { try { pState.pc.close(); } catch { /* ignore */ } }
+    if (pState.audioEl) {
+        pState.audioEl.srcObject = null;
+        pState.audioEl.remove();
+    }
     if (pState.tileEl) pState.tileEl.remove();
     remoteParticipants.delete(username);
     // Only play the departure sound when the call is still ongoing — activeCallId
@@ -364,310 +513,122 @@ function _removeRemoteParticipant(username) {
     if (activeCallId) {
         const lc = new Audio("/static/left_call.mp3"); lc.volume = 0.4; lc.play().catch(() => {});
     }
-    // If this participant was screensharing, dismiss the screen view immediately
-    // rather than waiting for the next _pollCallState tick.
-    if (username === currentScreenSender) {
-        _stopScreenReceiving();
-        currentScreenSender = null;
-        lastScreenSeq       = -1;
-        screenInitReceived  = false;
-    }
+    if (username === currentScreenSender) _clearRemoteScreen(username);
     _updateCallGrid();
 }
 
 function _removeAllParticipants() {
-    for (const username of remoteParticipants.keys()) {
+    for (const username of [...remoteParticipants.keys()]) {
         _removeRemoteParticipant(username);
     }
     if (sharedAudioCtx) { sharedAudioCtx.close().catch(() => {}); sharedAudioCtx = null; }
 }
 
-// ── Screen receive polling (sender set by state poll via currentScreenSender) ──
-
-function _startScreenPoll() {
-    lastScreenSeq       = -1;
-    screenInitReceived  = false;
-    screenPollingActive = false;
-    screenPendingChunks = [];
-    screenMediaSource   = null;
-    screenSourceBuffer  = null;
-    screenPollId = setInterval(_pollScreenMedia, 500);
-}
-
-function _stopScreenPoll() {
-    clearInterval(screenPollId);
-    screenPollId = null;
-    screenPollingActive = false;
-    _stopScreenReceiving();
-}
-
-// ── Screen share ──────────────────────────────────────────────────────────────
-
-function _appendNextScreenChunk() {
-    if (!screenSourceBuffer || screenSourceBuffer.updating || screenPendingChunks.length === 0) return;
-    const buf = screenPendingChunks.shift();
-    try {
-        screenSourceBuffer.appendBuffer(buf);
-    } catch (e) {
-        if (e.name === "QuotaExceededError" && screenSourceBuffer.buffered.length > 0) {
-            screenPendingChunks.unshift(buf);
-            try {
-                const last  = screenSourceBuffer.buffered.length - 1;
-                const start = screenSourceBuffer.buffered.start(last);
-                const end   = screenSourceBuffer.buffered.end(last);
-                if (end - start > 10) screenSourceBuffer.remove(start, end - 5);
-            } catch { /* ignore */ }
-        } else {
-            setTimeout(_appendNextScreenChunk, 0);
-        }
-    }
-}
-
-function _enqueueScreenChunk(buf) {
-    screenPendingChunks.push(buf);
-    if (screenSourceBuffer && !screenSourceBuffer.updating) _appendNextScreenChunk();
-}
-
-function _initScreenMediaSource(mimeType) {
-    if (screenMediaAbortCtrl) screenMediaAbortCtrl.abort();
-    screenMediaAbortCtrl = new AbortController();
-    const { signal } = screenMediaAbortCtrl;
-
-    const videoEl = document.getElementById("call-screen-video");
-    screenMediaSource = new MediaSource();
-    videoEl.src = URL.createObjectURL(screenMediaSource);
-    videoEl.play().catch(() => {});
-
-    videoEl.addEventListener("waiting", () => {
-        if (screenSourceBuffer && !screenSourceBuffer.updating && screenPendingChunks.length > 0) {
-            _appendNextScreenChunk();
-        }
-        videoEl.play().catch(() => {});
-    }, { signal });
-
-    screenMediaSource.addEventListener("sourceopen", () => {
-        try {
-            screenSourceBuffer = screenMediaSource.addSourceBuffer(mimeType);
-            screenSourceBuffer.addEventListener("updateend", () => {
-                if (screenPendingChunks.length > 0) {
-                    _appendNextScreenChunk();
-                } else if (screenSourceBuffer.buffered.length > 0) {
-                    // Queue drained — seek to live edge if significantly behind.
-                    const last = screenSourceBuffer.buffered.length - 1;
-                    const end  = screenSourceBuffer.buffered.end(last);
-                    if (end - videoEl.currentTime > 1.5) {
-                        videoEl.currentTime = end - 0.1;
-                    }
-                    const head   = screenSourceBuffer.buffered.start(last);
-                    const cutoff = end - 3;
-                    if (cutoff > head + 0.05) {
-                        try { screenSourceBuffer.remove(head, cutoff); } catch { /* ignore */ }
-                        return;
-                    }
-                }
-                videoEl.play().catch(() => {});
-            }, { signal });
-            _appendNextScreenChunk();
-        } catch (e) {
-            console.warn("Screen MediaSource setup failed:", e);
-        }
-    }, { once: true, signal });
-}
-
-function _stopScreenReceiving() {
-    if (screenMediaAbortCtrl) { screenMediaAbortCtrl.abort(); screenMediaAbortCtrl = null; }
-    screenMediaSource   = null;
-    screenSourceBuffer  = null;
-    screenPendingChunks = [];
-    screenInitReceived  = false;
-    const sv = document.getElementById("call-screen-video");
-    if (sv?.src?.startsWith("blob:")) {
-        URL.revokeObjectURL(sv.src);
-        sv.removeAttribute("src");
-        sv.load();
-    }
-    document.getElementById("call-panel").classList.remove("screen-share-active");
-}
-
-async function _pollScreenMedia() {
-    if (!activeCallId || !currentScreenSender || currentScreenSender === CURRENT_USER || screenPollingActive) return;
-    screenPollingActive = true;
-    try {
-        const sender = encodeURIComponent(currentScreenSender + ":screen");
-        const resp = await fetch(
-            `/calls/${activeCallId}/media?sender=${sender}&after=${lastScreenSeq}`
-        );
-        if (!resp.ok) return;
-        const data = await resp.json();
-
-        if (data.init) {
-            if (data.mime_type === "screen/off" && screenInitReceived) {
-                _stopScreenReceiving();
-            } else if (!screenInitReceived && data.mime_type !== "screen/off") {
-                screenInitReceived = true;
-                _initScreenMediaSource(data.mime_type || "video/webm");
-                document.getElementById("call-panel").classList.add("screen-share-active");
-                _enqueueScreenChunk(_b64ToBuffer(data.init));
-            }
-        }
-
-        for (const chunk of (data.chunks || [])) {
-            lastScreenSeq = Math.max(lastScreenSeq, chunk.seq);
-            if (screenInitReceived) _enqueueScreenChunk(_b64ToBuffer(chunk.data));
-        }
-    } catch { /* ignore transient errors */ }
-    finally {
-        screenPollingActive = false;
-    }
-}
-
-function _startScreenCapture(callId, displayStream) {
-    const videoTracks = displayStream.getVideoTracks();
-    if (videoTracks.length === 0) {
-        console.error("Screen share stream has no video tracks.");
-        displayStream.getTracks().forEach(t => t.stop());
-        return false;
-    }
-
-    screenStream = displayStream;
-    const videoMime = _pickVideoMimeType();
-    let screenFirstChunk = true;
-    let screenChain = Promise.resolve();
-    try {
-        screenRecorder = new MediaRecorder(displayStream, videoMime ? { mimeType: videoMime } : {});
-    } catch {
-        try {
-            screenRecorder = new MediaRecorder(displayStream);
-        } catch (e) {
-            console.error("MediaRecorder unavailable for screen stream:", e);
-            displayStream.getTracks().forEach(t => t.stop());
-            screenStream = null;
-            return false;
-        }
-    }
-    function _uploadScreenChunk(buf, isFirst) {
-        if (isFirst) {
-            const mime = screenRecorder?.mimeType || "video/webm";
-            screenChain = screenChain.then(() =>
-                fetch(`/calls/${callId}/media`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/octet-stream", "X-Track": "screen", "X-Init": "1", "X-Mime": mime },
-                    body: buf,
-                }).catch(() => {})
-            );
-        } else {
-            fetch(`/calls/${callId}/media`, {
-                method: "POST",
-                headers: { "Content-Type": "application/octet-stream", "X-Track": "screen" },
-                body: buf,
-            }).catch(() => {});
-        }
-    }
-
-    screenRecorder.ondataavailable = (evt) => {
-        if (!evt.data || evt.data.size === 0 || !activeCallId) return;
-        const isFirst = screenFirstChunk;
-        if (isFirst) screenFirstChunk = false;
-        evt.data.arrayBuffer().then(buf => _uploadScreenChunk(buf, isFirst));
-    };
-    // Handle the user clicking the browser's native "Stop sharing" button
-    videoTracks[0].addEventListener("ended", () => {
-        if (screenEnabled) toggleScreenShare();
-    });
-    screenRecorder.start(500);
-    return true;
-}
-
-function _stopScreenCapture() {
-    if (screenRecorder && screenRecorder.state !== "inactive") screenRecorder.stop();
-    screenRecorder = null;
-    if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
-    // Signal to the remote side that screen sharing has stopped
-    if (activeCallId) {
-        fetch(`/calls/${activeCallId}/media`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/octet-stream",
-                "X-Track": "screen",
-                "X-Init": "1",
-                "X-Mime": "screen/off",
-            },
-            body: new Uint8Array([0]),
-        }).catch(() => {});
-    }
-}
+// ── In-call screen share ────────────────────────────────────────────────────────
 
 async function toggleScreenShare() {
     if (!localStream || !activeCallId) return;
     const btn = document.getElementById("call-screen-btn");
     if (screenEnabled) {
-        screenEnabled = false;
-        _stopScreenCapture();
+        _stopInCallScreenShare();
         btn.classList.remove("active");
         btn.classList.add("muted");
         btn.title = "Share screen";
-    } else {
-        // getDisplayMedia must be called directly in the user-gesture handler —
-        // calling it from a nested async function drops the activation token in
-        // some browsers, causing a NotAllowedError.
-        if (!navigator.mediaDevices?.getDisplayMedia) {
-            alert("Your browser does not support screen sharing.");
-            return;
+        return;
+    }
+    // getDisplayMedia must run directly in the user-gesture handler — calling it
+    // from a nested async helper drops the activation token in some browsers.
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+        alert("Your browser does not support screen sharing.");
+        return;
+    }
+    let displayStream;
+    try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    } catch (e) {
+        console.warn("Screen share failed:", e);
+        return;
+    }
+    if (!displayStream || displayStream.getVideoTracks().length === 0) {
+        displayStream?.getTracks().forEach(t => t.stop());
+        return;
+    }
+
+    screenStream  = displayStream;
+    screenEnabled = true;
+    const track = displayStream.getVideoTracks()[0];
+
+    for (const pState of remoteParticipants.values()) {
+        if (pState.pc) pState.screenSender = pState.pc.addTrack(track, screenStream);
+    }
+    // Record who is sharing (drives the single-sharer policy + viewer label).
+    fetch(`/calls/${activeCallId}/screenshare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on: true }),
+    }).catch(() => {});
+
+    // Handle the user clicking the browser's native "Stop sharing" button.
+    track.addEventListener("ended", () => { if (screenEnabled) toggleScreenShare(); });
+
+    btn.classList.add("active");
+    btn.classList.remove("muted");
+    btn.title = "Stop sharing screen";
+}
+
+function _stopInCallScreenShare() {
+    screenEnabled = false;
+    for (const pState of remoteParticipants.values()) {
+        if (pState.pc && pState.screenSender) {
+            try { pState.pc.removeTrack(pState.screenSender); } catch { /* ignore */ }
+            pState.screenSender = null;
         }
-        let displayStream;
-        try {
-            displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-        } catch (e) {
-            console.warn("Screen share failed:", e);
-            return;
-        }
-        if (!displayStream) return;
-        let ok = false;
-        try {
-            ok = _startScreenCapture(activeCallId, displayStream);
-        } catch (e) {
-            console.error("Screen capture setup failed:", e);
-            displayStream.getTracks().forEach(t => t.stop());
-        }
-        if (!ok) return;
-        screenEnabled = true;
-        btn.classList.add("active");
-        btn.classList.remove("muted");
-        btn.title = "Stop sharing screen";
+    }
+    if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
+    if (activeCallId) {
+        fetch(`/calls/${activeCallId}/screenshare`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ on: false }),
+        }).catch(() => {});
     }
 }
 
-// ── Standalone screen share ────────────────────────────────────────────────────
+// ── Standalone screen share (sharer → many viewers) ─────────────────────────────
+
+function _sendShareSignal(shareId, toUser, type, payload) {
+    return fetch(`/screenshare/${shareId}/signal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: toUser, type, payload }),
+    }).catch(() => {});
+}
 
 async function toggleStandaloneScreenShare() {
     if (standaloneShareId) {
         await _stopStandaloneShare();
-    } else {
-        // getDisplayMedia must be called directly in the user-gesture handler
-        if (!navigator.mediaDevices?.getDisplayMedia) {
-            alert("Your browser does not support screen sharing.");
-            return;
-        }
-        let displayStream;
-        try {
-            displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-        } catch (e) {
-            console.warn("Screen share cancelled:", e);
-            return;
-        }
-        if (!displayStream) return;
-        await _startStandaloneShare(displayStream);
+        return;
     }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+        alert("Your browser does not support screen sharing.");
+        return;
+    }
+    let displayStream;
+    try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    } catch (e) {
+        console.warn("Screen share cancelled:", e);
+        return;
+    }
+    if (!displayStream) return;
+    await _startStandaloneShare(displayStream);
 }
 
 async function _startStandaloneShare(displayStream) {
-    const videoTracks = displayStream.getVideoTracks();
-    if (videoTracks.length === 0) {
+    if (displayStream.getVideoTracks().length === 0) {
         displayStream.getTracks().forEach(t => t.stop());
         return;
     }
-
-    // Register share on server first
     const resp = await fetch("/screenshare/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -678,74 +639,98 @@ async function _startStandaloneShare(displayStream) {
         return;
     }
     const { share_id } = await resp.json();
-    standaloneShareId     = share_id;
-    standaloneShareStream = displayStream;
-    standaloneFirstChunk  = true;
-    standaloneShareChain  = Promise.resolve();
+    standaloneShareId      = share_id;
+    standaloneShareStream  = displayStream;
+    standaloneLastSignalId = 0;
+    _standaloneSignalPolling = false;
+    standaloneViewerPeers.clear();
+    standaloneSignalPollId = setInterval(_pollStandaloneSignals, 600);
 
-    const videoMime = _pickVideoMimeType();
-    try {
-        standaloneShareRec = new MediaRecorder(displayStream, videoMime ? { mimeType: videoMime } : {});
-    } catch {
-        try { standaloneShareRec = new MediaRecorder(displayStream); } catch (e) {
-            console.error("MediaRecorder unavailable for standalone share:", e);
-            displayStream.getTracks().forEach(t => t.stop());
-            standaloneShareId = null;
-            standaloneShareStream = null;
-            return;
-        }
-    }
-
-    function _uploadStandaloneChunk(id, buf, isFirst) {
-        const headers = { "Content-Type": "application/octet-stream" };
-        if (isFirst) {
-            headers["X-Init"] = "1";
-            headers["X-Mime"] = standaloneShareRec?.mimeType || "video/webm";
-            standaloneShareChain = standaloneShareChain.then(() =>
-                fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
-                    .catch(() => {})
-            );
-        } else {
-            fetch(`/screenshare/${id}/media`, { method: "POST", headers, body: buf })
-                .catch(() => {});
-        }
-    }
-
-    standaloneShareRec.ondataavailable = (evt) => {
-        if (!evt.data || evt.data.size === 0 || !standaloneShareId) return;
-        const id = standaloneShareId;
-        const isFirst = standaloneFirstChunk;
-        if (isFirst) standaloneFirstChunk = false;
-        evt.data.arrayBuffer().then(buf => _uploadStandaloneChunk(id, buf, isFirst));
-    };
-
-    // Handle user clicking the browser's native "Stop sharing" button
-    videoTracks[0].addEventListener("ended", () => {
+    displayStream.getVideoTracks()[0].addEventListener("ended", () => {
         if (standaloneShareId) _stopStandaloneShare();
     });
-
-    standaloneShareRec.start(500);
-
-    // Force the browser to flush the init segment early so the viewer can
-    // bootstrap its SourceBuffer ~400 ms sooner than the first 500 ms tick.
-    setTimeout(() => {
-        if (standaloneShareRec?.state === "recording") {
-            standaloneShareRec.requestData();
-        }
-    }, 100);
 
     const sbtn = document.getElementById("topbar-share-btn");
     if (sbtn) { sbtn.classList.add("active"); sbtn.title = "Stop sharing"; }
 }
 
+async function _pollStandaloneSignals() {
+    if (!standaloneShareId || _standaloneSignalPolling) return;
+    _standaloneSignalPolling = true;
+    try {
+        const resp = await fetch(`/screenshare/${standaloneShareId}/signals?after=${standaloneLastSignalId}`);
+        if (!resp.ok) return;
+        const signals = await resp.json();
+        for (const sig of signals) {
+            standaloneLastSignalId = Math.max(standaloneLastSignalId, sig.id);
+            await _handleSharerSignal(sig);
+        }
+    } catch { /* ignore transient errors */ }
+    finally { _standaloneSignalPolling = false; }
+}
+
+async function _handleSharerSignal(sig) {
+    const viewer = sig.from;
+    let pc = standaloneViewerPeers.get(viewer);
+
+    if (sig.type === "ice_candidate") {
+        if (pc?.remoteDescription) {
+            await pc.addIceCandidate(sig.payload).catch(() => {});
+        } else {
+            // A candidate can outrace the offer it belongs to (trickle ICE +
+            // unordered POSTs).  Buffer it until the offer creates the peer and
+            // sets the remote description, else the sharer gets no remote
+            // candidates and ICE fails → viewer sees black.
+            if (!standaloneViewerPending.has(viewer)) standaloneViewerPending.set(viewer, []);
+            standaloneViewerPending.get(viewer).push(sig.payload);
+        }
+        return;
+    }
+    if (sig.type !== "offer") return;
+
+    if (!standaloneShareStream) return;
+    if (!pc) {
+        pc = new RTCPeerConnection(RTC_CONFIG);
+        standaloneViewerPeers.set(viewer, pc);
+        pc.onicecandidate = ({ candidate }) => {
+            if (candidate) _sendShareSignal(standaloneShareId, viewer, "ice_candidate", candidate.toJSON());
+        };
+        _logPeerState(pc, `share→${viewer}`);
+    }
+    try {
+        // Answer-with-media: apply the viewer's (recvonly) offer first, then attach
+        // our screen track to the transceiver it created via replaceTrack so the
+        // answer reliably advertises a sendonly video m-line.  Adding the track
+        // before setRemoteDescription can leave it unassociated → viewer sees black.
+        await pc.setRemoteDescription(sig.payload);
+        // Flush any ICE candidates that arrived before this offer.
+        const pending = standaloneViewerPending.get(viewer);
+        if (pending) {
+            for (const c of pending) await pc.addIceCandidate(c).catch(() => {});
+            standaloneViewerPending.delete(viewer);
+        }
+        const track = standaloneShareStream.getVideoTracks()[0];
+        const tcv = pc.getTransceivers().find(t => t.receiver?.track?.kind === "video");
+        if (tcv && track) {
+            await tcv.sender.replaceTrack(track);
+            try { tcv.direction = "sendonly"; } catch { /* read-only in old browsers */ }
+        } else if (track) {
+            pc.addTrack(track, standaloneShareStream);
+        }
+        await pc.setLocalDescription();
+        await _sendShareSignal(standaloneShareId, viewer, pc.localDescription.type, pc.localDescription);
+    } catch (e) {
+        console.warn("Sharer answer failed:", e);
+    }
+}
+
 async function _stopStandaloneShare() {
     const id = standaloneShareId;
     standaloneShareId = null;
-    if (standaloneShareRec && standaloneShareRec.state !== "inactive") {
-        standaloneShareRec.stop();
-    }
-    standaloneShareRec    = null;
-    standaloneFirstChunk  = true;
+    if (standaloneSignalPollId) { clearInterval(standaloneSignalPollId); standaloneSignalPollId = null; }
+    for (const pc of standaloneViewerPeers.values()) { try { pc.close(); } catch { /* ignore */ } }
+    standaloneViewerPeers.clear();
+    standaloneViewerPending.clear();
     if (standaloneShareStream) {
         standaloneShareStream.getTracks().forEach(t => t.stop());
         standaloneShareStream = null;
@@ -768,7 +753,6 @@ async function refreshScreenShares() {
     const others = shares.filter(s => s.sharer !== CURRENT_USER);
 
     if (others.length === 0) {
-        // No one else is sharing — hide banner and close viewer if open
         _currentRemoteShare = null;
         document.getElementById("screenshare-banner").style.display = "none";
         if (viewShareId) closeShareViewer();
@@ -778,23 +762,18 @@ async function refreshScreenShares() {
     const share = others[0];
     _currentRemoteShare = share;
 
-    // Update banner text
     const banner = document.getElementById("screenshare-banner");
     document.getElementById("screenshare-banner-text").textContent =
         `${share.sharer} is sharing their screen`;
 
     if (viewShareId === share.share_id) {
-        // Already viewing this share — keep viewer open, hide banner
         banner.style.display = "none";
         return;
     }
-
     if (viewShareId && viewShareId !== share.share_id) {
-        // A different share started while we were viewing another — switch
         closeShareViewer();
     }
 
-    // Show the banner (not auto-opening the viewer to avoid surprise)
     document.getElementById("screenshare-banner-view-btn").style.display = "inline-flex";
     banner.style.display = "flex";
 
@@ -809,169 +788,86 @@ async function refreshScreenShares() {
     }
 }
 
+// ── Standalone screen share (viewer side) ───────────────────────────────────────
+
 function openShareViewer() {
     const share = _currentRemoteShare;
     if (!share) return;
-    viewShareId            = share.share_id;
-    viewShareLastSeq       = -1;
-    viewShareInitReceived  = false;
-    viewSharePending       = [];
-    viewSharePollingActive = false;
+    viewShareId           = share.share_id;
+    viewShareLastSignalId = 0;
+    viewSharePending      = [];
+    _viewerSignalPolling  = false;
 
     document.getElementById("screenshare-viewer-label").textContent =
         `${share.sharer} is sharing their screen`;
     document.getElementById("screenshare-viewer").style.display = "flex";
     document.getElementById("screenshare-banner").style.display = "none";
 
-    _initShareMediaSource();
-    viewShareDownId = setInterval(_pollShareViewerMedia, 500);
+    _startShareViewerConnection(share);
+}
+
+async function _startShareViewerConnection(share) {
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    viewSharePc = pc;
+    pc.addTransceiver("video", { direction: "recvonly" });
+
+    pc.ontrack = (e) => {
+        const videoEl = document.getElementById("screenshare-viewer-video");
+        videoEl.srcObject = e.streams[0] || new MediaStream([e.track]);
+        videoEl.play().catch(() => {});
+    };
+    pc.onicecandidate = ({ candidate }) => {
+        if (candidate) _sendShareSignal(viewShareId, share.sharer, "ice_candidate", candidate.toJSON());
+    };
+    _logPeerState(pc, `view:${share.sharer}`);
+
+    viewShareSignalPollId = setInterval(_pollViewerSignals, 600);
+
+    try {
+        await pc.setLocalDescription(await pc.createOffer());
+        await _sendShareSignal(viewShareId, share.sharer, pc.localDescription.type, pc.localDescription);
+    } catch (e) {
+        console.warn("Viewer offer failed:", e);
+    }
+}
+
+async function _pollViewerSignals() {
+    if (!viewShareId || !viewSharePc || _viewerSignalPolling) return;
+    _viewerSignalPolling = true;
+    try {
+        const resp = await fetch(`/screenshare/${viewShareId}/signals?after=${viewShareLastSignalId}`);
+        if (!resp.ok) return;
+        const signals = await resp.json();
+        for (const sig of signals) {
+            viewShareLastSignalId = Math.max(viewShareLastSignalId, sig.id);
+            if (sig.type === "answer") {
+                await viewSharePc.setRemoteDescription(sig.payload);
+                for (const c of viewSharePending) await viewSharePc.addIceCandidate(c).catch(() => {});
+                viewSharePending = [];
+            } else if (sig.type === "ice_candidate") {
+                if (viewSharePc.remoteDescription) {
+                    await viewSharePc.addIceCandidate(sig.payload).catch(() => {});
+                } else {
+                    viewSharePending.push(sig.payload);
+                }
+            }
+        }
+    } catch { /* ignore transient errors */ }
+    finally { _viewerSignalPolling = false; }
 }
 
 function closeShareViewer() {
-    if (viewShareDownId) { clearInterval(viewShareDownId); viewShareDownId = null; }
-    if (viewShareAbortCtrl) { viewShareAbortCtrl.abort(); viewShareAbortCtrl = null; }
-    if (viewShareMediaSource?.readyState === "open") {
-        try { viewShareMediaSource.endOfStream(); } catch { /* ignore */ }
-    }
-    viewShareId            = null;
-    viewShareMediaSource   = null;
-    viewShareSourceBuffer  = null;
-    viewSharePending       = [];
-    viewShareInitReceived  = false;
-    viewSharePollingActive = false;
+    if (viewShareSignalPollId) { clearInterval(viewShareSignalPollId); viewShareSignalPollId = null; }
+    if (viewSharePc) { try { viewSharePc.close(); } catch { /* ignore */ } viewSharePc = null; }
+    viewShareId      = null;
+    viewSharePending = [];
     const el = document.getElementById("screenshare-viewer-video");
-    if (el.src?.startsWith("blob:")) URL.revokeObjectURL(el.src);
+    if (el.srcObject) el.srcObject = null;
     el.removeAttribute("src");
-    el.load();
     document.getElementById("screenshare-viewer").style.display = "none";
-    // Show banner again if share is still active
     if (_currentRemoteShare) {
         document.getElementById("screenshare-banner").style.display = "flex";
     }
-}
-
-function _initShareMediaSource() {
-    const videoEl = document.getElementById("screenshare-viewer-video");
-    const ctrl = new AbortController();
-    viewShareAbortCtrl = ctrl;
-    const ms = new MediaSource();
-    viewShareMediaSource = ms;
-    if (videoEl.src?.startsWith("blob:")) URL.revokeObjectURL(videoEl.src);
-    videoEl.src = URL.createObjectURL(ms);
-
-    // Fire first poll as soon as MediaSource is open instead of waiting up to
-    // 500 ms for the setInterval tick, cutting initial latency significantly.
-    ms.addEventListener("sourceopen", () => { _pollShareViewerMedia(); }, { once: true });
-
-    // If the video stalls (e.g. pending queue was temporarily empty), drive
-    // any queued chunks through and resume playback.
-    videoEl.addEventListener("waiting", () => {
-        _appendNextShareChunk();
-        if (videoEl.paused) videoEl.play().catch(() => {});
-    }, { signal: ctrl.signal });
-}
-
-// Called once, after the first poll response supplies the real MIME type.
-function _createShareSourceBuffer(mimeType) {
-    const ms = viewShareMediaSource;
-    if (ms?.readyState !== "open") return false;
-    const videoEl = document.getElementById("screenshare-viewer-video");
-    const signal  = viewShareAbortCtrl?.signal;
-    let sb;
-    try {
-        sb = ms.addSourceBuffer(mimeType);
-    } catch {
-        try { sb = ms.addSourceBuffer("video/webm"); } catch { return false; }
-    }
-    sb.mode = "segments";
-    viewShareSourceBuffer = sb;
-
-    sb.addEventListener("updateend", () => {
-        // ① Seek to live edge BEFORE enqueueing more data.
-        //    If we called _appendNextShareChunk() first it would set
-        //    sb.updating = true and the seek check would never execute.
-        if (sb.buffered.length > 0) {
-            // Use the LAST buffered range — the init segment always has timestamps
-            // near 0 while late-joiner data chunks sit at a much later timestamp,
-            // producing two separate ranges. end(0) would point to the init range,
-            // not the live edge.
-            const last = sb.buffered.length - 1;
-            const end  = sb.buffered.end(last);
-            if (end - videoEl.currentTime > 0.2) videoEl.currentTime = end - 0.05;
-            // Trim old data from the start of the live range (last range).
-            const head   = sb.buffered.start(last);
-            const cutoff = end - 2;
-            if (cutoff > head + 0.05) {
-                // ② remove() triggers another updateend which then appends.
-                try { sb.remove(head, cutoff); } catch { /* ignore */ }
-                return;
-            }
-        }
-        _appendNextShareChunk();
-        if (videoEl.paused) videoEl.play().catch(() => {});
-    }, signal ? { signal } : {});
-
-    // Safety net: if the player drifts behind the live edge jump it forward.
-    videoEl.addEventListener("timeupdate", () => {
-        if (!viewShareSourceBuffer || viewShareSourceBuffer.updating) return;
-        if (sb.buffered.length === 0) return;
-        const last = sb.buffered.length - 1;
-        const end  = sb.buffered.end(last);
-        if (end - videoEl.currentTime > 1) videoEl.currentTime = end - 0.05;
-    }, signal ? { signal } : {});
-
-    return true;
-}
-
-function _appendNextShareChunk() {
-    const sb = viewShareSourceBuffer;
-    if (!sb || sb.updating) return;
-    if (viewSharePending.length === 0) return;
-    if (viewShareMediaSource?.readyState !== "open") return;
-    // ③ Peek before shifting — if appendBuffer throws the chunk stays in the queue.
-    const chunk = viewSharePending[0];
-    try {
-        sb.appendBuffer(chunk);
-        viewSharePending.shift();
-    } catch (e) {
-        if (e.name === "QuotaExceededError" && sb.buffered.length > 0) {
-            const last  = sb.buffered.length - 1;
-            const start = sb.buffered.start(last);
-            const end   = sb.buffered.end(last);
-            if (end - start > 2) {
-                try { sb.remove(start, end - 1); } catch { /* ignore */ }
-            }
-        }
-    }
-}
-
-async function _pollShareViewerMedia() {
-    if (!viewShareId) return;
-    if (viewSharePollingActive) return;
-    viewSharePollingActive = true;
-    let payload;
-    try {
-        const resp = await fetch(`/screenshare/${viewShareId}/media?after=${viewShareLastSeq}`);
-        if (!resp.ok) { viewSharePollingActive = false; return; }
-        payload = await resp.json();
-    } catch { viewSharePollingActive = false; return; }
-    viewSharePollingActive = false;
-
-    if (payload.active === false) { closeShareViewer(); return; }
-
-    if (payload.init && !viewShareInitReceived) {
-        // MediaSource may not be open yet on the very first poll — retry next tick.
-        if (viewShareMediaSource?.readyState !== "open") return;
-        const mimeType = payload.mime_type || "video/webm";
-        if (!_createShareSourceBuffer(mimeType)) return;
-        viewShareInitReceived = true;
-        viewSharePending.unshift(_b64ToBuffer(payload.init));
-    }
-    for (const chunk of payload.chunks) {
-        viewShareLastSeq = chunk.seq;
-        viewSharePending.push(_b64ToBuffer(chunk.data));
-    }
-    _appendNextShareChunk();
 }
 
 // Clean up standalone share state when switching channels
@@ -994,10 +890,10 @@ async function startCall() {
     if (activeCallId) return;
     if (!_requireSecureContext()) return;
 
-    // Acquire the microphone BEFORE creating the call on the server.
-    // If we created the call first and then getUserMedia timed out or was denied,
-    // the catch block would call /end while Alice is the only accepted participant,
-    // ending the call immediately — giving Bob only a few seconds of ring time.
+    // Acquire the microphone BEFORE creating the call on the server.  If we
+    // created the call first and then getUserMedia timed out or was denied, the
+    // catch block would call /end while we are the only accepted participant,
+    // ending the call immediately and giving the callee only seconds of ring time.
     try {
         localStream = await _getLocalMedia();
     } catch (err) {
@@ -1030,8 +926,8 @@ async function startCall() {
             callingAudio.loop = true;
             callingAudio.play().catch(() => {});
         }
-        await _startMediaCapture(activeCallId);
-        _startScreenPoll();
+        _startMicLevelMeter();
+        _startCallSignaling();
         _startCallStatePolling();
         ringTimeoutId = setTimeout(_handleRingTimeout, RING_TIMEOUT_MS);
     } catch (err) {
@@ -1069,8 +965,8 @@ async function acceptCall() {
         localStream = await _getLocalMedia();
         openActiveCallUI();
         _startCallTimer();
-        await _startMediaCapture(activeCallId);
-        _startScreenPoll();
+        _startMicLevelMeter();
+        _startCallSignaling();
         _startCallStatePolling();
     } catch (err) {
         console.error("Call accept failed:", err);
@@ -1101,12 +997,13 @@ function _cleanupCall() {
     if (callingAudio) { callingAudio.pause(); callingAudio = null; }
     if (ringTimeoutId) { clearTimeout(ringTimeoutId); ringTimeoutId = null; }
     _stopCallTimer();
+    _stopMicLevelMeter();
     clearInterval(callStatePollId); callStatePollId = null;
+    _stopCallSignaling();
+    if (screenEnabled) _stopInCallScreenShare();
     _removeAllParticipants();
-    _stopScreenPoll();
     currentScreenSender = null;
-    _stopMediaCapture();
-    if (screenEnabled) { _stopScreenCapture(); screenEnabled = false; }
+    _clearRemoteScreen(null);
     closeActiveCallUI();
     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
 }
@@ -1121,7 +1018,7 @@ function toggleAudioMute() {
 }
 
 
-// ── Call-state polling (3 s) — detects remote hang-up ────────────────────────
+// ── Call-state polling (3 s) — detects accepts, hang-ups, screen share ────────
 
 function _startCallStatePolling() {
     callStatePollId = setInterval(_pollCallState, 3000);
@@ -1131,24 +1028,21 @@ function _diffParticipants(accepted) {
     for (const u of accepted) {
         if (!remoteParticipants.has(u)) _addRemoteParticipant(u);
     }
-    for (const u of remoteParticipants.keys()) {
+    for (const u of [...remoteParticipants.keys()]) {
         if (!accepted.has(u)) _removeRemoteParticipant(u);
     }
 }
 
 function _handleScreenshareState(newSender) {
-    if (newSender !== currentScreenSender) {
-        _stopScreenReceiving();
-        lastScreenSeq       = -1;
-        screenInitReceived  = false;
-        currentScreenSender = newSender;
-    }
+    // Enforce single sharer: if someone else claimed the screen, drop ours.
     if (screenEnabled && newSender && newSender !== CURRENT_USER) {
-        screenEnabled = false;
-        _stopScreenCapture();
+        _stopInCallScreenShare();
         const sb = document.getElementById("call-screen-btn");
         if (sb) { sb.classList.remove("active"); sb.classList.add("muted"); sb.title = "Share screen"; }
     }
+    // Backup for the WebRTC track 'ended'/'mute' events: if the server says no
+    // one is sharing but we are still showing a screen, hide it.
+    if (!newSender && currentScreenSender) _clearRemoteScreen(currentScreenSender);
 }
 
 async function _pollCallState() {
@@ -1190,7 +1084,6 @@ async function toggleCallInvitePanel() {
         panel.style.display = "none";
         return;
     }
-    // Fetch all users, cache them
     if (_inviteAllUsers.length === 0) {
         try {
             const r = await fetch("/users");
@@ -1289,4 +1182,3 @@ document.getElementById("call-panel").addEventListener("click", (e) => {
         panel.style.display = "none";
     }
 });
-

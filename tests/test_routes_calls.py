@@ -1331,3 +1331,165 @@ def test_reset_all_screenshares_ended(alice_and_bob):
 
     active = alice_and_bob.get("/screenshare/active?channel=dm:alice:bob").get_json()
     assert active == []
+
+
+# ── POST /calls/<id>/screenshare ──────────────────────────────────────────────
+
+
+def test_set_screenshare_unauthenticated_redirects(client):
+    resp = client.post("/calls/fake-id/screenshare", json={"on": True})
+    assert resp.status_code in (302, 401)
+
+
+def test_set_screenshare_unknown_call_returns_404(alice):
+    resp = alice.post(f"/calls/{uuid.uuid4()}/screenshare", json={"on": True})
+    assert resp.status_code == 404
+
+
+def test_set_screenshare_non_active_call_returns_409(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="ringing")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    resp = alice_and_bob.post(f"/calls/{call_id}/screenshare", json={"on": True})
+    assert resp.status_code == 409
+
+
+def test_set_screenshare_on_and_off(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/screenshare", json={"on": True})
+    assert resp.status_code == 200
+    assert _get_call(call_id)["screenshare_user"] == "alice"
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/screenshare", json={"on": False})
+    assert resp.status_code == 200
+    assert _get_call(call_id)["screenshare_user"] is None
+
+
+def test_set_screenshare_off_only_clears_own(alice_and_bob):
+    """Releasing the screen must not clear another user's active share."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    db.execute(
+        "UPDATE calls SET screenshare_user = 'bob' WHERE call_id = ?", (call_id,)
+    )
+    db.commit()
+    db.close()
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/screenshare", json={"on": False})
+    assert resp.status_code == 200
+    assert _get_call(call_id)["screenshare_user"] == "bob"
+
+
+# ── signaling cleanup on call end ─────────────────────────────────────────────
+
+
+def test_end_last_participant_purges_signals(alice_and_bob):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="left")
+    _insert_signal(call_id, "alice", "bob", "offer")
+    _insert_signal(call_id, "bob", "alice", "answer")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/end")
+    assert resp.status_code == 200
+    assert _get_call(call_id)["state"] == "ended"
+
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    remaining = db.execute(
+        "SELECT COUNT(*) FROM call_signals WHERE call_id = ?", (call_id,)
+    ).fetchone()[0]
+    db.close()
+    assert remaining == 0
+
+
+# ── POST/GET /screenshare/<id>/signal[s] ──────────────────────────────────────
+
+
+def _start_share(client, channel="dm:alice:bob"):
+    return client.post("/screenshare/start", json={"channel": channel}).get_json()[
+        "share_id"
+    ]
+
+
+def test_share_signal_unauthenticated_redirects(client):
+    resp = client.post(f"/screenshare/{uuid.uuid4()}/signal", json={})
+    assert resp.status_code in (302, 401)
+
+
+def test_share_signal_missing_fields_returns_400(alice_and_bob):
+    share_id = _start_share(alice_and_bob)
+    resp = alice_and_bob.post(f"/screenshare/{share_id}/signal", json={"to": "bob"})
+    assert resp.status_code == 400
+
+
+def test_share_signal_invalid_type_returns_400(alice_and_bob):
+    share_id = _start_share(alice_and_bob)
+    resp = alice_and_bob.post(
+        f"/screenshare/{share_id}/signal",
+        json={"to": "bob", "type": "bogus", "payload": {}},
+    )
+    assert resp.status_code == 400
+
+
+def test_share_signal_unknown_share_returns_404(alice_and_bob):
+    resp = alice_and_bob.post(
+        f"/screenshare/{uuid.uuid4()}/signal",
+        json={"to": "bob", "type": "offer", "payload": {"sdp": "x"}},
+    )
+    assert resp.status_code == 404
+
+
+def test_share_signal_stores_and_round_trips(app, isolated_dbs, alice_and_bob):
+    import minimost.auth as auth_mod
+
+    try:
+        auth_mod._add_user(auth_mod.AUTH_DB, "bob", "Pass1234!")
+    except Exception:
+        pass
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    share_id = _start_share(alice_and_bob)
+
+    # bob (viewer) sends an offer to alice (sharer)
+    payload = {"type": "offer", "sdp": "v=0\r\no=bob..."}
+    resp = bob_client.post(
+        f"/screenshare/{share_id}/signal",
+        json={"to": "alice", "type": "offer", "payload": payload},
+    )
+    assert resp.status_code == 200
+
+    # alice polls and receives bob's offer
+    got = alice_and_bob.get(f"/screenshare/{share_id}/signals").get_json()
+    assert len(got) == 1
+    assert got[0]["from"] == "bob"
+    assert got[0]["type"] == "offer"
+    assert got[0]["payload"] == payload
+
+    # the after cursor filters already-seen signals
+    after = got[0]["id"]
+    again = alice_and_bob.get(
+        f"/screenshare/{share_id}/signals?after={after}"
+    ).get_json()
+    assert again == []
+
+
+def test_share_signal_purged_on_stop(alice_and_bob):
+    share_id = _start_share(alice_and_bob)
+    _insert_signal(share_id, "bob", "alice", "offer")
+
+    alice_and_bob.post(f"/screenshare/{share_id}/stop")
+
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    remaining = db.execute(
+        "SELECT COUNT(*) FROM call_signals WHERE call_id = ?", (share_id,)
+    ).fetchone()[0]
+    db.close()
+    assert remaining == 0
