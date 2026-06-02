@@ -67,16 +67,26 @@ Real-time Interaction
 ~~~~~~~~~~~~~~~~~~~~~
 
 - **Voice calling** — one-click calls directly in any DM or private channel.
-  Audio is captured with ``MediaRecorder`` and relayed through the server as
-  binary chunks, so calls work even behind strict firewalls with no UDP or
-  peer-to-peer connectivity.  Unanswered calls time out and cancel automatically.
+  Audio streams **peer-to-peer over WebRTC** (``RTCPeerConnection``) for
+  low-latency, real-time voice; only the call's setup signalling passes through
+  the server.  Unanswered calls time out and cancel automatically.
 - **Group calling** — any participant in an active call can invite additional
   registered users via an in-call "Add person" button with fuzzy-search.
   Participants join or leave independently; the call ends only when the last
-  person leaves.  Avatar tiles reflow dynamically: one caller fills the panel,
+  person leaves.  Group calls form a WebRTC **full mesh** (one peer connection
+  per pair).  Avatar tiles reflow dynamically: one caller fills the panel,
   two split 50/50, three or more tile in a grid.  Each tile shows an
   independent speaking-ring animation driven by per-participant voice activity
-  detection.
+  detection, and your own microphone button shows a live input-level meter.
+- **Screen sharing** — share your screen peer-to-peer over WebRTC, either
+  during a call or standalone in any DM/private channel.  Standalone shares are
+  viewer-initiated (each viewer offers, the sharer answers with its screen
+  track), supporting one sharer to many viewers.
+- **LAN-first, zero-config WebRTC** — media never touches the server.  ICE uses
+  only host candidates plus a small **bundled STUN server** (``minimost.stun``,
+  pure standard library), so peers gather a real-IP server-reflexive candidate
+  and connect without any external/public STUN/TURN server and without relying
+  on mDNS — it works on fully air-gapped LANs out of the box.
 - **Emoji reactions** — react to any message with one of 477 emoji; reactions
   are toggled atomically and sync instantly across all users.
 - **Typing indicators** — see when other users are composing a message.
@@ -153,7 +163,8 @@ Technical Stack
    * - Templating
      - Jinja2 (Flask default)
    * - Calling media transport
-     - HTTP-relayed binary chunks (``MediaRecorder`` → ``MediaSource``)
+     - WebRTC peer-to-peer (``RTCPeerConnection``); HTTP-polled signalling +
+       a bundled stdlib STUN server (no public STUN/TURN)
    * - TLS certificates
      - Auto-generated on first run via system ``openssl`` (self-signed)
    * - Production server
@@ -183,7 +194,8 @@ Project Structure
         ├── __init__.py             # Flask app factory
         ├── __main__.py             # CLI entry point
         ├── auth.py                 # Authentication routes & utilities
-        ├── calls.py                # Voice/video calling routes & media relay
+        ├── calls.py                # Voice/video calling: lifecycle + WebRTC signalling
+        ├── stun.py                 # Bundled stdlib STUN server for LAN WebRTC
         ├── chat.py                 # Messaging routes & channel logic
         ├── presence.py             # Presence, typing, reactions
         ├── common.py               # Database path helpers

@@ -36,10 +36,11 @@
 - **Editing & deletion** — edit or delete your own messages; changes propagate in real time
 - **Emoji reactions** — react to any message; reactions sync across all users instantly
 - **Read receipts** — see who has read your messages
-- **Voice calling** — one-click calls in any DM or private channel; audio is relayed through the server so calls work even behind restrictive firewalls; unanswered calls time out and cancel automatically
-- **Group calling** — any participant in an active call can invite additional registered users via the in-call "Add person" button; up to any number of callers can share the same call; participants can leave individually without ending the call for others; the last person to leave ends the call
-- **Dynamic call layout** — participants appear as avatar tiles that reflow automatically: one caller fills the panel, two callers split 50/50, three or more tile in a grid; each tile has an independent speaking-ring animation driven by per-participant voice activity detection
-- **Screen sharing** — share your screen during a call with one click; the shared screen takes the majority of the panel while participant avatars move to a right-hand sidebar; only one participant may share at a time — starting a new share automatically stops any existing one; stopping the browser capture ends the share
+- **Voice calling** — one-click calls in any DM or private channel; audio streams **peer-to-peer over WebRTC** (`RTCPeerConnection`) for low-latency, real-time voice; unanswered calls time out and cancel automatically
+- **Group calling** — any participant in an active call can invite additional registered users via the in-call "Add person" button; up to any number of callers can share the same call (a WebRTC full mesh); participants can leave individually without ending the call for others; the last person to leave ends the call
+- **Dynamic call layout** — participants appear as avatar tiles that reflow automatically: one caller fills the panel, two callers split 50/50, three or more tile in a grid; each tile has an independent speaking-ring animation driven by per-participant voice activity detection, plus a live level meter on your own mic button
+- **Screen sharing** — share your screen peer-to-peer over WebRTC, either during a call or standalone in any DM/private channel; the shared screen takes the majority of the panel while participant avatars move to a right-hand sidebar; only one participant may share at a time during a call — starting a new share automatically stops any existing one; stopping the browser capture ends the share
+- **LAN-first WebRTC** — call and screen-share media never touch the server; signaling (offer/answer/ICE) is relayed through the existing Flask backend and a small **bundled STUN server**, so there are no external/public STUN/TURN servers to configure and it works on fully air-gapped LANs
 - **Presence indicators** — active, idle, away, and offline states updated automatically; overlaid on user avatars
 - **User avatars** — default initials avatar for every account; upload a custom image via Settings; displayed in the DM sidebar, private channel tooltips, and the member list
 - **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
@@ -116,7 +117,9 @@ minimost --host 192.168.1.10 --port 8080
 
 To reach the server from another machine, navigate to `https://<server-ip>:<port>` in a browser. The generated certificate is self-signed, so your browser will show a security warning — add a permanent exception to dismiss it.
 
-> **Note:** HTTPS is required for voice and video calling (browsers only allow camera/microphone access in secure contexts). If `openssl` is not installed, MiniMost will still start over plain HTTP but the calling feature will not work.
+> **Note:** HTTPS is required for voice and video calling (browsers only allow camera/microphone and WebRTC access in secure contexts). If `openssl` is not installed, MiniMost will still start over plain HTTP but the calling feature will not work.
+
+> **Note:** Calls and screen shares connect peers directly over WebRTC. For this to work, peers must be on the **same LAN/subnet** and able to reach each other (and the bundled STUN server on UDP `3478`, configurable via `stun_port` in `settings.json`) over UDP. No public STUN/TURN server is used, so calls work on air-gapped networks, but they will not traverse the public internet or connect peers on different subnets.
 
 ### Production deployment
 

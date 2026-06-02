@@ -120,19 +120,17 @@ loop calls a different API endpoint and updates the DOM based on the response.
        for both ringing calls and active-call invitations.
    * - ``_pollCallState()``
      - 3 s
-     - During an active call: diffs the participant list, detects call end,
-       and tracks ``screenshare_user`` changes. Started by ``startCall()``
-       and ``acceptCall()``; stopped by ``_cleanupCall()``.
-   * - Per-participant audio poll
-     - 100 ms
-     - One interval per remote participant; polls
-       ``/calls/<id>/media?sender=<user>:audio`` and schedules PCM chunks
-       on the shared ``AudioContext``.
-   * - Screen media poll (``_pollScreenMedia``)
-     - 500 ms
-     - Polls ``/calls/<id>/media?sender=<screenshare_user>:screen`` and
-       feeds chunks into the screen ``MediaSource`` pipeline. Active only
-       while ``currentScreenSender`` is set to a remote user.
+     - During an active call: diffs the participant list (opening/closing
+       ``RTCPeerConnection`` s), detects call end, and tracks
+       ``screenshare_user`` changes. Started by ``startCall()`` and
+       ``acceptCall()``; stopped by ``_cleanupCall()``.
+   * - WebRTC signalling poll (``_pollCallSignals``)
+     - 600 ms
+     - Drains ``/calls/<id>/signals`` and dispatches each offer/answer/ICE
+       candidate to the matching peer connection (perfect negotiation).
+       Standalone screen shares poll ``/screenshare/<id>/signals`` the same
+       way.  Call and screen **media** travels peer-to-peer and is never
+       polled.
    * - Presence heartbeat
      - 30 s
      - Re-sends the current presence state to keep ``last_seen`` fresh.
@@ -425,7 +423,18 @@ Calling
 Voice calls (audio only) are initiated from a phone icon displayed in the
 topbar when the active channel is a DM or private channel.  Calls support
 any number of participants; any member of an active call can invite additional
-registered users.
+registered users.  Media travels **peer-to-peer over WebRTC**
+(``RTCPeerConnection``); the server only relays signalling and runs a bundled
+STUN server for LAN ICE (see :doc:`architecture`).
+
+**ICE configuration:**
+
+``RTC_CONFIG`` points ICE at the app's own STUN server using the page's
+hostname (``stun:<location.hostname>:<STUN_PORT>``, injected into the template
+as ``STUN_PORT``).  No public STUN/TURN servers are used, so calls work on an
+air-gapped LAN.  ``_logPeerState()`` logs the ICE connection state to the
+console and, on failure, hints at the likely cause (e.g. unreachable STUN UDP
+port or peers on different subnets).
 
 **Caller flow:**
 
@@ -442,6 +451,11 @@ registered users.
 5. ``_startCallStatePolling()`` polls ``GET /calls/<id>/state`` every 3
    seconds.  When ``state === "active"`` the ring timeout is cleared and
    ``call_accepted.mp3`` plays.
+6. ``_startCallSignaling()`` begins a 600 ms poll of
+   ``GET /calls/<id>/signals``.  As participants are seen as ``accepted`` (via
+   the state poll) or a signal arrives from them, a ``RTCPeerConnection`` is
+   created, the local microphone track is added, and offers/answers/ICE
+   candidates are exchanged through ``POST /calls/<id>/signal``.
 
 **Callee / invite flow:**
 
@@ -471,16 +485,26 @@ server state.  On every tick it:
 3. Reads ``screenshare_user`` from the response and triggers screen-receive
    transitions (see below).
 
-**Per-participant audio and voice activity detection:**
+**Peer connections, remote audio, and voice activity detection:**
 
-Each remote participant has independent polling state:
+Each remote participant has one ``RTCPeerConnection`` (stored on its
+``remoteParticipants`` entry) negotiated with the perfect-negotiation pattern
+(``polite = CURRENT_USER < username`` to break offer glare):
 
-- A 100 ms ``setInterval`` polls ``GET /calls/<id>/media?sender=<user>:audio``
-  and schedules decoded PCM chunks on a shared ``AudioContext`` using the Web
-  Audio API for gapless, drift-free playback.
-- An ``AnalyserNode`` connected to the participant's audio output drives a
-  100 ms VAD interval that toggles the ``speaking`` CSS class on their tile's
-  ring element.
+- The remote audio track arrives via the connection's ``ontrack`` event and is
+  attached to a hidden ``<audio>`` element for playback.
+- An ``AnalyserNode`` tapped off that remote stream drives a 100 ms VAD
+  interval that toggles the ``speaking`` CSS class on the participant's tile
+  ring.
+
+**Local microphone meter:**
+
+``_startMicLevelMeter()`` taps the local ``getUserMedia`` track through its own
+``AudioContext`` + ``AnalyserNode`` and updates the ``#call-mic-level`` fill on
+the mute button every 50 ms, giving the user immediate "my mic works" feedback
+(independent of the WebRTC connection).  It resumes a suspended ``AudioContext``
+(and retries on the next gesture) and logs the chosen input device's
+``label``/``muted``/``readyState`` to aid debugging silent-microphone issues.
 
 **Participant tile grid:**
 
@@ -512,7 +536,7 @@ participants remain.  Participants still in the call detect the departure on
 their next ``_pollCallState`` tick (the departed user's entry changes to
 ``state: "left"``), remove their tile, and play ``left_call.mp3``.
 
-**Screen sharing flow:**
+**In-call screen sharing flow:**
 
 Screen sharing is available during an active call.  Only one participant may
 share at a time; the server tracks the current sharer in the ``screenshare_user``
@@ -522,23 +546,29 @@ column of the ``calls`` table.
    handler.  ``navigator.mediaDevices.getDisplayMedia()`` is called
    immediately — without any intermediate async calls — so the browser's
    user-gesture activation token is preserved.
-2. The resulting stream is passed to ``_startScreenCapture()``, which sets up
-   a ``MediaRecorder`` for the screen track.  Chunks are uploaded via
-   ``POST /calls/<id>/media`` with ``X-Track: screen``.
-3. When the first screen init segment arrives, the server sets
-   ``screenshare_user = <sender>``; any existing sharer is atomically
-   replaced (takeover).
-4. On the receiver side, ``_pollCallState()`` reads ``screenshare_user``.
-   When it differs from ``currentScreenSender`` the old ``MediaSource`` /
-   ``SourceBuffer`` pipeline is torn down and a new one is started for the
-   new sender.  If the local user was sharing, ``_stopScreenCapture()`` is
-   called automatically.
-5. When ``screenshare_user`` becomes ``null`` (sharer left or stopped),
-   ``_stopScreenReceiving()`` removes the ``screen-share-active`` CSS class
-   and the participant grid returns to the full-panel layout.
-6. If a participant who is screensharing leaves the call,
-   ``_removeRemoteParticipant()`` immediately calls ``_stopScreenReceiving()``
-   without waiting for the next state poll.
+2. The display video track is added to every existing ``RTCPeerConnection``
+   via ``addTrack()``, which triggers renegotiation (perfect negotiation).
+   ``POST /calls/<id>/screenshare`` records the sharer in ``screenshare_user``.
+3. On the receiver side the new video track arrives via ``ontrack`` and is
+   shown in ``#call-screen-video`` (the ``screen-share-active`` class expands
+   it to the main panel).  ``_pollCallState()`` reads ``screenshare_user`` to
+   enforce the single-sharer policy and as a backup for tearing the view down.
+4. Stopping (button, native "stop sharing", or leaving) removes the track
+   (renegotiating) and clears ``screenshare_user``; the receiver hides the
+   screen on the track's ``ended``/``mute`` event.
+
+**Standalone screen sharing (outside a call):**
+
+The topbar share button (``toggleStandaloneScreenShare()``) starts a share in
+any DM/private channel via ``POST /screenshare/start``.  This is
+**viewer-initiated**: other members see a banner (``refreshScreenShares()``
+polls ``GET /screenshare/active``) and click *View* to open
+``openShareViewer()``, which creates a recvonly ``RTCPeerConnection``, sends an
+offer to the sharer, and renders the answered track.  The sharer polls
+``GET /screenshare/<id>/signals`` and, for each viewer offer, attaches its
+screen track (via ``replaceTrack`` on the offered transceiver) and answers —
+fanning out one sharer to many viewers.  ICE candidates are buffered until the
+remote description is set so none are dropped to a signalling race.
 
 **Sound effects:**
 
@@ -575,14 +605,21 @@ All call audio respects the notification mute toggle.
    * - ``activeCallId``
      - UUID of the call currently in progress; ``null`` when idle.
    * - ``remoteParticipants``
-     - ``Map<username, state>`` holding per-participant polling state
-       (audio intervals, VAD analyser, tile DOM element, etc.).
-   * - ``sharedAudioCtx``
-     - A single ``AudioContext`` shared across all remote participants for
-       gapless PCM playback.
+     - ``Map<username, state>`` holding per-participant WebRTC state: the
+       ``RTCPeerConnection``, perfect-negotiation flags, buffered ICE
+       candidates, remote ``<audio>`` element, VAD analyser, and tile element.
+   * - ``RTC_CONFIG``
+     - ICE configuration — a single ``stun:<hostname>:<STUN_PORT>`` server
+       (the bundled STUN server); no public STUN/TURN.
+   * - ``lastCallSignalId``
+     - Cursor (``?after=``) for the WebRTC signalling poll so each
+       offer/answer/ICE message is processed once.
+   * - ``sharedAudioCtx`` / ``micMeterCtx``
+     - ``AudioContext`` s for remote-participant VAD analysers and the local
+       microphone level meter, respectively.
    * - ``currentScreenSender``
-     - Username of the participant whose ``:screen`` track is currently
-       being received; ``null`` when no screen share is active.
+     - Username of the participant whose screen video is currently being
+       received; ``null`` when no screen share is active.
    * - ``ringTimeoutId``
      - Handle for the caller-side 30-second ring timeout.
    * - ``incomingRingTimeout``
@@ -595,13 +632,16 @@ All call audio respects the notification mute toggle.
    * - ``localStream``
      - The ``MediaStream`` from ``getUserMedia``; stopped on hang-up.
    * - ``screenStream``
-     - The ``MediaStream`` from ``getDisplayMedia``; ``null`` when not sharing.
-   * - ``screenRecorder``
-     - The ``MediaRecorder`` instance for the screen track.
+     - The ``MediaStream`` from ``getDisplayMedia`` for an in-call share;
+       ``null`` when not sharing.
    * - ``screenEnabled``
-     - ``true`` while the local user is screensharing.
-   * - ``screenPollId``
-     - Handle for the screen-relay download poll interval.
+     - ``true`` while the local user is screensharing in a call.
+   * - ``standaloneShareId`` / ``standaloneViewerPeers``
+     - The active standalone share id and the map of viewer username →
+       ``RTCPeerConnection`` the sharer answers.
+   * - ``viewSharePc``
+     - The viewer-side ``RTCPeerConnection`` for the standalone share being
+       watched; ``null`` when not viewing.
 
 Mobile Support
 --------------

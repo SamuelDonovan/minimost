@@ -187,7 +187,7 @@ limiting on the ``/signup`` route.
 **TLS / HTTPS**
 
 Voice and video calling requires a secure context — browsers refuse to grant
-microphone and camera access over plain HTTP.  MiniMost automatically
+microphone, camera, and WebRTC access over plain HTTP.  MiniMost automatically
 generates a self-signed TLS certificate on first run using the system
 ``openssl`` binary (see :doc:`deployment`).  This certificate is suitable
 for LAN use; replace it with a CA-signed certificate for public-facing
@@ -195,6 +195,19 @@ deployments.
 
 The TLS private key (``key.pem``) should be protected with the same
 filesystem permissions as ``secret.key`` and ``auth.db``.
+
+**WebRTC media and the STUN server**
+
+Call and screen-share media is exchanged peer-to-peer over WebRTC and is
+encrypted in transit by WebRTC's mandatory DTLS-SRTP — it never passes through
+the server.  The bundled STUN server (:mod:`minimost.stun`) answers only
+unauthenticated STUN Binding Requests with the requester's reflexive address
+(standard, public-by-design behaviour); it stores no data, performs no
+authentication, and is intentionally bound to all interfaces so LAN peers can
+reach it.  Because MiniMost uses **no public STUN/TURN servers**, no call
+metadata or IP addresses are sent to third parties.  As a LAN application it
+expects to run on a trusted network; the STUN UDP port (``3478`` by default)
+need only be reachable by trusted peers.
 
 **Session cookie flags**
 

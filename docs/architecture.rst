@@ -47,11 +47,15 @@ The factory is responsible for:
    - :mod:`minimost.auth` — authentication routes.
    - :mod:`minimost.chat` — messaging routes.
    - :mod:`minimost.presence` — presence, typing, and reaction routes.
-   - :mod:`minimost.calls` — voice/video calling and media relay routes.
+   - :mod:`minimost.calls` — voice/video calling lifecycle and WebRTC
+     signalling routes.
 
 5. Resetting all presence records to ``"offline"`` and all in-progress call
-   records to ``"ended"`` so stale state from a previous server run does not
-   persist.
+   records to ``"ended"`` (and clearing stale signalling rows) so stale state
+   from a previous server run does not persist.
+
+6. Starting the bundled STUN server (:mod:`minimost.stun`) in a daemon thread
+   so LAN WebRTC peers can gather a real-IP server-reflexive ICE candidate.
 
 Blueprint structure means each module is self-contained and the URL routing
 is defined close to the handler code.
@@ -124,9 +128,11 @@ to all users simultaneously.
 - **Typing indicators** — shown to channel members in real time.
 - **Read receipts** — visible to the message sender.
 - **Reactions** — visible to all users on the message.
-- **Call state** — ``calls``, ``call_participants``, ``call_signals``, and
-  ``call_media`` tables that track the full lifecycle of every voice/video
-  call and buffer the relayed media chunks.
+- **Call state** — ``calls`` and ``call_participants`` track the full
+  lifecycle of every voice/video call; ``call_signals`` relays WebRTC
+  offer/answer/ICE-candidate messages between peers during connection setup.
+  (The legacy ``call_media``/``share_media`` tables are retained but unused now
+  that media flows peer-to-peer over WebRTC.)
 
 All of this lives in ``presence.db``. The key table is ``message_reactions``,
 which stores individual ``(channel, msg_ts, emoji, reactor)`` tuples. This
@@ -181,27 +187,16 @@ The client runs several ``setInterval`` loops:
      - Updates ``✓`` read checkmarks.
    * - ``_pollCallState``
      - 3 s
-     - Polls ``GET /calls/<id>/state`` during an active call; tears down
-       the call UI when the remote side hangs up.
-   * - Media relay (upload)
-     - 500 ms
-     - Uploads ``MediaRecorder`` chunks via ``POST /calls/<id>/media``
-       while a call is active.  Camera/mic uses ``X-Track: video``; screen
-       share uses ``X-Track: screen``.
-   * - Media relay (download)
-     - 500 ms
-     - Polls ``GET /calls/<id>/media`` for the remote participant's chunks
-       and feeds them into a ``MediaSource`` / ``SourceBuffer``.  Screen
-       share is polled on a separate interval using ``?sender=user:screen``.
-   * - Screen relay (upload)
-     - 500 ms
-     - Uploads screen-share ``MediaRecorder`` chunks with ``X-Track: screen``
-       while screen sharing is active.
-   * - Screen relay (download)
-     - 500 ms
-     - Polls ``GET /calls/<id>/media?sender=<user>:screen`` and feeds chunks
-       into a dedicated ``MediaSource`` / ``SourceBuffer`` for the screen
-       video element.
+     - Polls ``GET /calls/<id>/state`` during an active call; diffs the
+       participant list to open/close peer connections and tears down the
+       call UI when the remote side hangs up.
+   * - WebRTC signalling poll
+     - 600 ms
+     - During an active call, polls ``GET /calls/<id>/signals`` and dispatches
+       offers/answers/ICE candidates to the matching ``RTCPeerConnection``.
+       Standalone screen shares use ``GET /screenshare/<id>/signals`` the same
+       way.  (Call/screen-share **media** itself flows peer-to-peer over
+       WebRTC and is never polled.)
    * - ``refreshTotalUnreadCount``
      - 5 s
      - Updates the browser tab title badge.
@@ -299,16 +294,37 @@ The client renders the result as a card below the message:
 Calling Architecture
 --------------------
 
-Voice, video, and screen-share calls are handled entirely over HTTP — there
-is no WebRTC peer-to-peer connection, no STUN server, and no UDP.  All media
-is relayed through Flask, which makes calls work even behind NAT and
-restrictive corporate firewalls.
+Voice, video, and screen-share **media flows peer-to-peer over WebRTC**
+(``RTCPeerConnection``).  Flask's only role is the call lifecycle state machine
+(the ``calls`` and ``call_participants`` tables) and relaying the WebRTC
+signalling messages (offer/answer/ICE) through the ``call_signals`` table.
 
-**Why HTTP relay instead of WebRTC?**
+**Why WebRTC?**
 
-WebRTC P2P requires either a direct network path or a TURN relay server.
-MiniMost's HTTP relay is simpler to operate: it needs only the same Flask
-server that handles chat.
+MiniMost is a LAN application, so the firewall-traversal benefit of an HTTP
+media relay is unnecessary, while its costs — polling latency, irregular
+``MediaRecorder`` bursts, TCP head-of-line blocking, and per-chunk SQLite I/O —
+caused freezing during calls and screen shares.  WebRTC gives a smooth,
+low-latency, congestion-controlled real-time stream directly between peers.
+
+**ICE without external servers:**
+
+Because the app is LAN-only there is no NAT between peers, so no TURN relay is
+needed.  ICE is configured with **no public STUN/TURN servers**.  Instead,
+:mod:`minimost.stun` is a tiny, dependency-free STUN server started with the
+app (UDP ``3478`` by default).  Pointing the browser at it lets each peer
+gather a **server-reflexive** candidate carrying its real LAN IP — unlike host
+candidates, srflx candidates are not obfuscated as ``*.local`` mDNS names, so
+peers connect without avahi/Bonjour and the whole thing works air-gapped.
+
+**Topology:**
+
+Calls form a **full mesh** — one ``RTCPeerConnection`` per pair of accepted
+participants, negotiated with the "perfect negotiation" pattern to avoid offer
+glare.  In-call screen share adds the display video track to each existing peer
+connection (renegotiating).  Standalone screen share is **viewer-initiated**:
+each viewer creates the offer and the sharer answers with its screen track,
+giving a one-sharer-to-many-viewers fan-out.
 
 **Call lifecycle:**
 
@@ -323,39 +339,22 @@ server that handles chat.
       │                                 │                               │
       │  GET /calls/<id>/state (3 s)    │  GET /calls/incoming (1 s)    │
       │ ─────────────────────────► │ ◄─────────────────────── │
-      │                                 │                               │
       │                                 │  ───────────────────────► │
       │                                 │  incoming call overlay shown  │
-      │                                 │                               │
-      │  [user answers]                 │                               │
-      │                                 │  POST /calls/<id>/accept      │
+      │  [user answers]                 │  POST /calls/<id>/accept      │
       │                                 │ ◄──────────────────────── │
-      │                                 │  UPDATE calls (active)        │
+      │  ◄── state: active ────────── │  UPDATE calls (active)        │
       │                                 │                               │
-      │  ◄── state: active ────────── │                               │
+      │   ── signalling (offer/answer/ICE) via /calls/<id>/signal[s] ── │
+      │  POST /signal  ───────────► │  INSERT call_signals          │
+      │  GET  /signals (600 ms) ◄── │  ───────────────────────► GET │
       │                                 │                               │
-      │  POST /calls/<id>/media (500ms) │  GET /calls/<id>/media (500ms)│
-      │ ─────────────────────────► │ ◄──────────────────────── │
-      │  X-Track: video                 │  (camera/mic SourceBuffer)    │
-      │                                 │                               │
-      │  [user starts screen share]     │                               │
-      │                                 │                               │
-      │  POST /calls/<id>/media (500ms) │  GET /calls/<id>/media (500ms)│
-      │ ─────────────────────────► │ ◄──────────────────────── │
-      │  X-Track: screen                │  ?sender=user:screen          │
-      │                                 │  (screen SourceBuffer)        │
+      │  ◄════════ WebRTC media (audio / screen) flows P2P ══════════► │
+      │            (never touches the server)                          │
       │                                 │                               │
       │  POST /calls/<id>/end           │                               │
       │ ─────────────────────────► │  UPDATE calls (ended)         │
-      │                                 │  DELETE call_media            │
-
-**Track multiplexing:**
-
-A single ``call_media`` table carries both the camera/mic stream and the
-screen-share stream simultaneously.  The ``sender`` column is used as a
-namespace: camera chunks are stored as ``"username"`` and screen chunks as
-``"username:screen"``.  The receiver fetches each track independently using
-the ``?sender=`` query parameter.  No additional tables or columns are needed.
+      │                                 │  DELETE call_signals          │
 
 **Screen sharing layout:**
 
@@ -365,7 +364,9 @@ call overlay and the camera feed shrinks to a picture-in-picture corner.
 Removing the class restores the camera to full size.  Stopping the
 browser's native screen-capture (via its built-in stop button) fires the
 ``"ended"`` event on the video track, which calls ``toggleScreenShare()``
-automatically to keep the UI in sync.
+automatically to keep the UI in sync.  The current in-call sharer is recorded
+via ``POST /calls/<id>/screenshare`` in the ``screenshare_user`` column so the
+single-sharer policy and viewer UI stay in sync.
 
 **Ring timeout:**
 
@@ -399,20 +400,21 @@ two complementary mechanisms:
      - One row per (call, user): ``role`` (initiator/participant),
        ``state`` (pending/accepted/rejected/left), and timestamps.
    * - ``call_signals``
-     - Retained for backwards compatibility; not used by the HTTP relay
-       frontend.
-   * - ``call_media``
-     - Binary media chunks uploaded by ``MediaRecorder``.  Marked
-       ``is_init = 1`` for the initialisation segment (so late-joining
-       receivers can bootstrap their ``SourceBuffer``).  Purged when the
-       call ends.
+     - WebRTC signalling relay: offer/answer/ICE-candidate messages between
+       peers, keyed by ``call_id`` (and reused for standalone screen shares,
+       keyed by ``share_id``).  Purged when the call/share ends and at startup.
+   * - ``call_media`` / ``share_media``
+     - Legacy HTTP media-relay buffers, retained for one release as a fallback
+       but **no longer used** now that media flows peer-to-peer over WebRTC.
 
 **HTTPS requirement:**
 
-Browsers only grant microphone and camera access in a `secure context
+Browsers only grant microphone, camera, and WebRTC access in a `secure context
 <https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts>`_
 (HTTPS or localhost).  MiniMost auto-generates a self-signed TLS certificate
-on first run (see :doc:`deployment`) to satisfy this requirement.
+on first run (see :doc:`deployment`) to satisfy this requirement.  Note the
+bundled STUN server uses plain UDP (STUN is not a TLS protocol); only the page
+and signalling traffic need HTTPS.
 
 Frontend Architecture
 ---------------------

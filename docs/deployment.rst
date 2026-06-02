@@ -28,6 +28,30 @@ Encrypt), simply place your ``cert.pem`` and ``key.pem`` (or equivalent
 PEM files) in the project root before starting the server.  Auto-generation
 is skipped when both files are already present.
 
+Networking for Calls and Screen Sharing
+----------------------------------------
+
+Call and screen-share **media** flows peer-to-peer over WebRTC; it never
+passes through the server.  Only the page, the HTTP signalling
+(``/calls/<id>/signal[s]``), and the STUN server involve the server.  For
+calls to connect:
+
+- **Peers must be on the same LAN/subnet** and able to reach each other over
+  **UDP** (WebRTC opens ephemeral UDP ports for the direct media path).  There
+  is no TURN relay, so peers on different subnets or across the public internet
+  will not connect.
+- **The bundled STUN server must be reachable** on UDP ``3478`` (configurable
+  via ``stun_port`` in ``settings.json``).  It is started automatically with
+  the app and bound to all interfaces.  It lets each peer discover its real LAN
+  IP, which is what avoids the ``*.local`` mDNS resolution that otherwise breaks
+  calls on LANs without avahi/Bonjour — so **no external/public STUN/TURN
+  server is needed and calls work air-gapped**.
+- If a host firewall is enabled, allow inbound UDP on ``3478`` and the
+  ephemeral UDP range on the LAN interface.
+
+If a call fails to connect, open the browser console: ``_logPeerState()`` logs
+the ICE state and, on failure, whether the STUN/UDP path is the likely cause.
+
 Development Server
 ------------------
 

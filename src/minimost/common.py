@@ -25,6 +25,8 @@ DB_DIR : pathlib.Path
 from pathlib import Path
 import sqlite3
 
+from werkzeug.utils import secure_filename
+
 _HERE = Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent.parent
 
@@ -49,7 +51,11 @@ def user_db_path(username: str) -> Path:
         path = user_db_path("alice")
         # e.g. PosixPath('/srv/minimost/users/alice.db')
     """
-    return DB_DIR / f"{username}.db"
+    # Defence in depth: usernames are validated at signup, but sanitise the
+    # value here too so an untrusted name can never escape DB_DIR via path
+    # traversal.  secure_filename is a no-op for valid usernames
+    # ([A-Za-z0-9_-]) and strips any separators or ".." from a crafted one.
+    return DB_DIR / f"{secure_filename(username)}.db"
 
 
 def init_user_db(username: str):
