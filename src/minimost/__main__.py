@@ -121,8 +121,9 @@ def _ensure_certs():
                 "-config",
                 conf_path,
             ],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
         )
     finally:
         os.unlink(conf_path)

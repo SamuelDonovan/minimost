@@ -37,6 +37,7 @@ DEFAULT_STUN_PORT : int
 import socket
 import struct
 import threading
+from typing import Optional
 
 DEFAULT_STUN_PORT = 3478
 
@@ -54,7 +55,7 @@ _started_lock = threading.Lock()
 _started = False
 
 
-def build_binding_response(data: bytes, addr: tuple) -> bytes | None:
+def build_binding_response(data: bytes, addr: tuple) -> Optional[bytes]:
     """Build a Binding Success Response for a STUN Binding Request.
 
     :param data: The raw datagram received from the client.

@@ -646,12 +646,14 @@ def save_settings():
 
     db = sqlite3.connect(auth.AUTH_DB)
     db.execute(_WAL)
+    # Upsert without ON CONFLICT (SQLite >= 3.24) so this works on the older
+    # SQLite that ships with some Python 3.6 systems.  INSERT OR IGNORE creates
+    # the row if absent; the UPDATE then sets only these columns, preserving any
+    # others (e.g. avatar_file).
+    db.execute("INSERT OR IGNORE INTO user_settings (username) VALUES (?)", (user,))
     db.execute(
-        "INSERT INTO user_settings (username, name_color, bio) VALUES (?, ?, ?)"
-        " ON CONFLICT(username) DO UPDATE SET"
-        "  name_color = excluded.name_color,"
-        "  bio = excluded.bio",
-        (user, name_color, bio),
+        "UPDATE user_settings SET name_color = ?, bio = ? WHERE username = ?",
+        (name_color, bio, user),
     )
     db.commit()
     db.close()
@@ -754,10 +756,10 @@ def upload_avatar():
             (AVATAR_DIR / row[0]).unlink()
         except FileNotFoundError:
             pass
+    db.execute("INSERT OR IGNORE INTO user_settings (username) VALUES (?)", (user,))
     db.execute(
-        "INSERT INTO user_settings (username, avatar_file) VALUES (?, ?)"
-        " ON CONFLICT(username) DO UPDATE SET avatar_file = excluded.avatar_file",
-        (user, filename),
+        "UPDATE user_settings SET avatar_file = ? WHERE username = ?",
+        (filename, user),
     )
     db.commit()
     db.close()
@@ -783,9 +785,9 @@ def delete_avatar():
             (AVATAR_DIR / row[0]).unlink()
         except FileNotFoundError:
             pass
+    db.execute("INSERT OR IGNORE INTO user_settings (username) VALUES (?)", (user,))
     db.execute(
-        "INSERT INTO user_settings (username, avatar_file) VALUES (?, NULL)"
-        " ON CONFLICT(username) DO UPDATE SET avatar_file = NULL",
+        "UPDATE user_settings SET avatar_file = NULL WHERE username = ?",
         (user,),
     )
     db.commit()
