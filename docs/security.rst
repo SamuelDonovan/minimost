@@ -19,17 +19,38 @@ never stored.
 Both the frontend (JavaScript, for immediate feedback) and the backend (Python,
 as the authoritative check) enforce the following rules:
 
-- At least 8 characters.
+- At least 8 characters, and at most 1024 (the upper bound is also guarded at
+  login so an oversized password cannot force the server to spend CPU hashing
+  it).
 - At least one uppercase ASCII letter.
 - At least one digit.
 - At least one special character from ``!@#$%^&*()_+-=[]{};\\':|,./<>?`~``.
+
+**Usernames**
+
+Usernames are case-insensitive: ``Alice`` and ``alice`` refer to the same
+account. The spelling chosen at registration is preserved for display, but
+registration rejects names that differ only by case (preventing look-alike
+impersonation) and login matches regardless of the case typed.
 
 **Brute-force protection**
 
 Failed login attempts sleep for 3 seconds before the server responds. This
 limits brute-force attacks to approximately 20 attempts per minute per
-connection. For stronger protection, use a reverse proxy with rate limiting
-(e.g. Nginx's ``limit_req_zone``).
+connection, and — because it applies to every failed attempt — also slows
+password spraying across many accounts from a single source. For stronger
+protection, use a reverse proxy with rate limiting (e.g. Nginx's
+``limit_req_zone``).
+
+In addition, **account lockout** temporarily disables an account after too many
+consecutive failed logins. Once ``max_login_attempts`` (default ``5``)
+consecutive failures are recorded, the account is locked for
+``lockout_duration_minutes`` (default ``15``); during that window logins are
+rejected without the password being checked. A successful login resets the
+counter. Both values are configured in ``settings.json`` (see
+:doc:`configuration`), and setting ``max_login_attempts`` to ``0`` disables the
+feature. Lockout is tracked per account rather than per IP, so it complements —
+but does not replace — proxy-level rate limiting.
 
 **Password reset tokens**
 

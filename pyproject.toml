@@ -25,6 +25,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the src/ layout on sys.path so `import minimost` works without installing
+# the package (pytest >= 7 honours this ini option).
+pythonpath = ["src"]
 addopts = "--cov=src/minimost --cov-report=xml --cov-report=term-missing"
 
 [tool.coverage.run]

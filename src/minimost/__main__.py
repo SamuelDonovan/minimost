@@ -253,13 +253,17 @@ def _cmd_reset_password(argv):
 
     db = sqlite3.connect(AUTH_DB)
     db.execute(_WAL)
+    # Match case-insensitively and use the stored spelling for the token so the
+    # generated link targets the account regardless of the case typed.
     row = db.execute(
-        "SELECT username FROM users WHERE username = ?", (args.username,)
+        "SELECT username FROM users WHERE username = ? COLLATE NOCASE",
+        (args.username,),
     ).fetchone()
     if not row:
         print(f"Error: user '{args.username}' does not exist", file=sys.stderr)
         db.close()
         sys.exit(1)
+    username = row[0]
 
     token = secrets.token_urlsafe(32)
     expires_ts = time.time() + args.expires * 60
@@ -267,17 +271,17 @@ def _cmd_reset_password(argv):
     db.execute(
         "INSERT INTO password_reset_tokens (token, username, expires_ts, used)"
         " VALUES (?, ?, ?, 0)",
-        (token, args.username, expires_ts),
+        (token, username, expires_ts),
     )
     db.commit()
     db.close()
 
-    _send_reset_dm(args.username, args.expires)
+    _send_reset_dm(username, args.expires)
 
     url = f"{args.base_url.rstrip('/')}/reset-password/{token}"
     minutes_word = "minute" if args.expires == 1 else "minutes"
     print(
-        f"Password reset URL for '{args.username}'"
+        f"Password reset URL for '{username}'"
         f" (expires in {args.expires} {minutes_word}):"
     )
     print(url)

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>Login – MiniMost</title>
-    <link rel="stylesheet" href="../static/auth.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
@@ -20,8 +20,8 @@
         <form method="post" autocomplete="on">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="auth-field">
-                <input id="username" type="text" name="username" placeholder="Username" required autocomplete="username">
-                <input name="password" type="password" placeholder="Password" required autocomplete="current-password">
+                <input id="username" type="text" name="username" placeholder="Username" required autocomplete="username" {% if not error %}autofocus{% endif %} value="{{ username or '' }}">
+                <input name="password" type="password" placeholder="Password" required autocomplete="current-password" maxlength="1024" {% if error %}autofocus{% endif %}>
             </div>
             <button type="submit">Log in</button>
         </form>
@@ -34,5 +34,6 @@
         </p>
     </div>
     <div class="version-tag"># v{{ app_version }}</div>
+    <script src="{{ url_for('static', filename='auth-password-field.js') }}"></script>
 </body>
 </html>

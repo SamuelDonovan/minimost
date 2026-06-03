@@ -5,5 +5,7 @@
     "message_retention_days": 770,
     "max_upload_size_mb": 25,
     "max_avatar_size_mb": 5,
-    "stun_port": 3478
+    "stun_port": 3478,
+    "max_login_attempts": 5,
+    "lockout_duration_minutes": 15
 }

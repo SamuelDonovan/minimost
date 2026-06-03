@@ -91,6 +91,52 @@ button[type="submit"]:disabled {
     margin-bottom: 16px;
 }
 
+/* Caps Lock warning shown beneath a focused password field.  The base rule sets
+   no `display`, so the UA `[hidden] { display: none }` still hides it; the
+   `:not([hidden])` rule restores the flex layout only when shown. */
+.caps-warning {
+    font-size: 12px;
+    color: #f0c674; /* NOSONAR — amber warning; contrast on dark bg exceeds 4.5:1 */
+    margin-top: -2px;
+}
+.caps-warning:not([hidden]) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.caps-warning::before {
+    content: "\26A0"; /* ⚠ warning sign */
+}
+
+/* Wrapper added by auth-password-field.js so the Show/Hide button can sit
+   inside the password field. */
+.pw-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.pw-wrap > input {
+    flex: 1;
+    padding-right: 56px; /* leave room for the reveal button */
+}
+.pw-reveal {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #9cdcfe; /* NOSONAR — link-blue accent; contrast on dark bg exceeds 4.5:1 */
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+.pw-reveal:hover {
+    color: #6cf;
+    background: #333;
+}
+
 .auth-footer {
     margin-top: 16px;
     font-size: 13px;

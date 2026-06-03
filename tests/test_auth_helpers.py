@@ -89,7 +89,8 @@ def test_seed_existing_user_no_db_file(isolated_dbs):
     from werkzeug.security import generate_password_hash
 
     db.execute(
-        "INSERT INTO users VALUES (?, ?)", ("ghost", generate_password_hash("x"))
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        ("ghost", generate_password_hash("x")),
     )
     db.commit()
     db.close()
@@ -107,7 +108,8 @@ def test_seed_copies_public_channel_messages(isolated_dbs):
 
     adb = sqlite3.connect(auth_mod.AUTH_DB)
     adb.execute(
-        "INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x"))
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        ("existing", generate_password_hash("x")),
     )
     adb.commit()
     adb.close()
@@ -138,7 +140,8 @@ def test_seed_does_not_copy_dm_messages(isolated_dbs):
 
     adb = sqlite3.connect(auth_mod.AUTH_DB)
     adb.execute(
-        "INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x"))
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        ("existing", generate_password_hash("x")),
     )
     adb.commit()
     adb.close()
@@ -166,7 +169,8 @@ def test_seed_empty_public_history(isolated_dbs):
 
     adb = sqlite3.connect(auth_mod.AUTH_DB)
     adb.execute(
-        "INSERT INTO users VALUES (?, ?)", ("existing", generate_password_hash("x"))
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        ("existing", generate_password_hash("x")),
     )
     adb.commit()
     adb.close()

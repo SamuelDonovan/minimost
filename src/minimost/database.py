@@ -54,6 +54,15 @@ def init_auth_db():
          - PBKDF2 hash produced by
            :func:`werkzeug.security.generate_password_hash`.  Never stored
            in plaintext.
+       * - ``failed_attempts``
+         - INTEGER
+         - Count of consecutive failed login attempts since the last success.
+           Reset to ``0`` on a successful login or when the account is locked.
+       * - ``lockout_until``
+         - REAL
+         - Unix timestamp until which logins are rejected, or ``NULL`` when the
+           account is not locked.  Set once ``failed_attempts`` reaches the
+           configured threshold.  See :func:`minimost.auth.login_post`.
 
     This function is idempotent — safe to call multiple times.
 
@@ -64,7 +73,9 @@ def init_auth_db():
     db.execute("""
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
-            password_hash TEXT NOT NULL
+            password_hash TEXT NOT NULL,
+            failed_attempts INTEGER NOT NULL DEFAULT 0,
+            lockout_until REAL
         )
     """)
     db.execute("""
@@ -88,6 +99,18 @@ def init_auth_db():
         pass
     try:
         db.execute("ALTER TABLE user_settings ADD COLUMN bio TEXT")
+    except sqlite3.OperationalError:
+        pass
+    # Account-lockout columns — added by migration for databases created before
+    # the lockout feature existed.  Harmless OperationalError once present.
+    try:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN lockout_until REAL")
     except sqlite3.OperationalError:
         pass
     db.commit()

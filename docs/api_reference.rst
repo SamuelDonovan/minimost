@@ -29,7 +29,10 @@ Authentication
    .. note::
 
       Failed login attempts are deliberately delayed by 3 seconds to slow
-      brute-force attacks.
+      brute-force attacks.  Repeated failures additionally trigger **account
+      lockout**: after ``max_login_attempts`` consecutive failures an account is
+      locked for ``lockout_duration_minutes`` (both configurable in
+      ``settings.json``).
 
 .. http:get:: /logout
 

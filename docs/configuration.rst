@@ -23,7 +23,9 @@ Example (showing all available keys with their defaults)::
         "message_retention_days": 770,
         "max_upload_size_mb": 25,
         "max_avatar_size_mb": 5,
-        "stun_port": 3478
+        "stun_port": 3478,
+        "max_login_attempts": 5,
+        "lockout_duration_minutes": 15
     }
 
 ``channels``
@@ -81,6 +83,28 @@ Example (showing all available keys with their defaults)::
     IANA-assigned STUN port). Avoid the OS ephemeral range
     (typically ``32768``–``60999`` on Linux) to prevent bind collisions.
     Changes require a **server restart** to take effect.
+
+``max_login_attempts``
+    Number of **consecutive failed login attempts** allowed against an existing
+    account before it is temporarily locked. Defaults to ``5``. Set to ``0`` (or
+    any non-positive value) to **disable** account lockout entirely. The counter
+    resets to zero on the next successful login. Read fresh on every login
+    attempt, so changes take effect without a restart.
+
+``lockout_duration_minutes``
+    How long, in minutes, an account remains locked once
+    ``max_login_attempts`` is reached. During the lockout window every login is
+    rejected **without checking the password**, and the user is shown how many
+    minutes remain. Defaults to ``15``. Read fresh on every login attempt, so
+    changes take effect without a restart.
+
+    .. note::
+
+       Lockout is tracked **per account** (in the ``users.failed_attempts`` and
+       ``users.lockout_until`` columns of ``auth.db``), not per IP address. A
+       lockout message confirms that the account exists, which is a deliberate
+       trade-off for clear user feedback; the rest of the login flow keeps
+       invalid-username and invalid-password failures indistinguishable.
 
 .. warning::
 

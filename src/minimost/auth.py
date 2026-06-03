@@ -33,6 +33,7 @@ _USERNAME_RE : re.Pattern
 """
 
 # From the python standard library
+import json
 import re
 from functools import wraps
 import sqlite3
@@ -56,7 +57,67 @@ _WAL = "PRAGMA journal_mode=WAL"
 _RESET_PW_TEMPLATE = "reset_password.html"
 _SIGNUP_TEMPLATE = "signup.html"
 
+# settings.json is bundled inside the package (src/minimost/); _HERE is the
+# package directory.
+_SETTINGS_FILE = _HERE / "settings.json"
+_DEFAULT_MAX_LOGIN_ATTEMPTS = 5
+_DEFAULT_LOCKOUT_MINUTES = 15
+
+# Upper bound on password length.  Enforced at signup/reset and guarded at login
+# so an attacker cannot force the server to hash a huge string (PBKDF2 cost
+# scales with input length).
+_MAX_PASSWORD_LEN = 1024
+
 auth_bp = Blueprint("auth", __name__)
+
+
+def _lockout_settings() -> tuple:
+    """Return ``(max_attempts, lockout_seconds)`` for account lockout.
+
+    Reads ``max_login_attempts`` and ``lockout_duration_minutes`` from
+    ``settings.json`` on each call, so changes take effect without a restart.
+    A ``max_login_attempts`` of ``0`` (or any non-positive value) **disables**
+    lockout entirely.  Missing, malformed, or invalid values fall back to the
+    built-in defaults (``5`` attempts, ``15`` minutes).
+
+    :returns: ``(max_attempts, lockout_seconds)`` — the number of consecutive
+        failed attempts allowed before locking, and the lockout duration in
+        seconds.
+    :rtype: tuple[int, int]
+    """
+    max_attempts = _DEFAULT_MAX_LOGIN_ATTEMPTS
+    minutes = _DEFAULT_LOCKOUT_MINUTES
+    try:
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("max_login_attempts")
+        if isinstance(value, int) and not isinstance(value, bool):
+            max_attempts = value
+        duration = data.get("lockout_duration_minutes")
+        if (
+            isinstance(duration, (int, float))
+            and not isinstance(duration, bool)
+            and duration > 0
+        ):
+            minutes = duration
+    except (OSError, json.JSONDecodeError):
+        pass
+    return max_attempts, int(minutes * 60)
+
+
+def _lockout_message(minutes) -> str:
+    """Return the user-facing error shown while an account is locked out.
+
+    :param minutes: Whole minutes remaining in the lockout (rounded up; a
+        minimum of ``1`` is always shown).
+    :returns: A human-readable lockout message.
+    :rtype: str
+    """
+    minutes = max(1, int(minutes))
+    unit = "minute" if minutes == 1 else "minutes"
+    return (
+        "Account locked due to too many failed login attempts. "
+        f"Try again in {minutes} {unit}."
+    )
 
 
 def hash_password(password: str) -> str:
@@ -227,6 +288,15 @@ def login_post():
       error (username and password failures are intentionally
       indistinguishable).
 
+    **Account lockout:** consecutive failed attempts against an existing
+    account are counted in ``users.failed_attempts``.  Once they reach
+    ``max_login_attempts`` (from ``settings.json``) the account is locked for
+    ``lockout_duration_minutes`` by setting ``users.lockout_until``; further
+    logins are rejected — without checking the password — until that time
+    passes.  A successful login clears the counter.  Setting
+    ``max_login_attempts`` to ``0`` disables the feature.  See
+    :func:`_lockout_settings`.
+
     Routes: ``POST /login``, ``POST /login.html``
 
     :returns: A rendered ``login.html`` template on failure, or a redirect
@@ -236,21 +306,83 @@ def login_post():
     username = request.form["username"].strip()
     password = request.form["password"]
 
+    # No valid password can exceed this (enforced at signup/reset); reject an
+    # oversized one cheaply rather than spending CPU hashing it.
+    if len(password) > _MAX_PASSWORD_LEN:
+        time.sleep(3)
+        return render_template(
+            "login.html", error="Invalid credentials", username=username
+        )
+
+    max_attempts, lockout_seconds = _lockout_settings()
+    lockout_enabled = max_attempts > 0
+    now = time.time()
+
     db = sqlite3.connect(AUTH_DB)
     db.execute(_WAL)
+    # Username matching is case-insensitive; ``canonical`` is the stored spelling
+    # used for the session and every follow-up query so per-user DB paths and
+    # cross-references stay consistent regardless of the case the user typed.
     row = db.execute(
-        "SELECT password_hash FROM users WHERE username = ?", (username,)
+        "SELECT username, password_hash, failed_attempts, lockout_until"
+        " FROM users WHERE username = ? COLLATE NOCASE",
+        (username,),
     ).fetchone()
-    db.close()
+    canonical = row[0] if row else username
 
-    if not row or not check_password_hash(row[0], password):
+    # Account currently locked — reject without checking the password.
+    if row and lockout_enabled and row[3] and now < row[3]:
+        db.close()
+        time.sleep(3)
+        remaining = int((row[3] - now) // 60) + 1
+        return render_template(
+            "login.html", error=_lockout_message(remaining), username=username
+        )
+
+    if not row or not check_password_hash(row[1], password):
+        # Record the failed attempt against an existing account and lock it once
+        # the threshold is reached.
+        if row and lockout_enabled:
+            attempts = row[2] + 1
+            if attempts >= max_attempts:
+                db.execute(
+                    "UPDATE users SET failed_attempts = 0, lockout_until = ?"
+                    " WHERE username = ?",
+                    (now + lockout_seconds, canonical),
+                )
+                db.commit()
+                db.close()
+                time.sleep(3)
+                return render_template(
+                    "login.html",
+                    error=_lockout_message(lockout_seconds // 60),
+                    username=username,
+                )
+            db.execute(
+                "UPDATE users SET failed_attempts = ? WHERE username = ?",
+                (attempts, canonical),
+            )
+            db.commit()
+        db.close()
         # Delay to prevent users from brute forcing others passwords
         time.sleep(3)
-        return render_template("login.html", error="Invalid credentials")
+        return render_template(
+            "login.html", error="Invalid credentials", username=username
+        )
 
-    session["user"] = username
-    common.init_user_db(username)
-    presence.update_presence(username, "active")
+    # Success — clear any recorded failed-attempt / lockout state.
+    if row[2] or row[3]:
+        db.execute(
+            "UPDATE users SET failed_attempts = 0, lockout_until = NULL"
+            " WHERE username = ?",
+            (canonical,),
+        )
+        db.commit()
+    db.close()
+
+    session["user"] = canonical
+    common.init_user_db(canonical)
+    presence.update_presence(canonical, "active")
     return redirect("/")
 
 
@@ -274,6 +406,28 @@ def logout():
     return redirect("/login")
 
 
+def _validate_password(password: str):
+    """Return an error string if *password* fails the strength rules, else ``None``.
+
+    Shared by signup and password reset so the rules stay in one place.
+
+    :param password: The submitted password.
+    :returns: A human-readable error message, or ``None`` if all rules pass.
+    :rtype: str or None
+    """
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if len(password) > _MAX_PASSWORD_LEN:
+        return f"Password must be at most {_MAX_PASSWORD_LEN} characters"
+    if not re.search(r"\d", password):
+        return "Password must contain at least one number"
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
+        return "Password must contain at least one special character"
+    return None
+
+
 def _validate_signup(username: str, password: str, confirm: str):
     """Validate signup form fields and return an error string, or ``None`` on success.
 
@@ -289,14 +443,9 @@ def _validate_signup(username: str, password: str, confirm: str):
         return '"minimost" is a protected username'
     if not _USERNAME_RE.fullmatch(username):
         return "Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)"
-    if len(password) < 8:
-        return "Password must be at least 8 characters"
-    if not re.search(r"\d", password):
-        return "Password must contain at least one number"
-    if not re.search(r"[A-Z]", password):
-        return "Password must contain at least one uppercase letter"
-    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
-        return "Password must contain at least one special character"
+    password_error = _validate_password(password)
+    if password_error:
+        return password_error
     if password != confirm:
         return "Passwords do not match"
     return None
@@ -368,10 +517,20 @@ def signup_post():
 
     error = _validate_signup(username, password, confirm)
     if error:
-        return render_template(_SIGNUP_TEMPLATE, error=error)
+        return render_template(_SIGNUP_TEMPLATE, error=error, username=username)
 
     db = sqlite3.connect(AUTH_DB)
     db.execute(_WAL)
+    # Reject names that collide case-insensitively with an existing account
+    # (e.g. "Admin" vs "admin") to prevent look-alike impersonation.
+    existing = db.execute(
+        "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username,)
+    ).fetchone()
+    if existing:
+        db.close()
+        return render_template(
+            _SIGNUP_TEMPLATE, error="User already exists", username=username
+        )
     try:
         db.execute(
             "INSERT INTO users (username, password_hash) VALUES (?, ?)",
@@ -380,7 +539,9 @@ def signup_post():
         db.commit()
     except sqlite3.IntegrityError:
         db.close()
-        return render_template(_SIGNUP_TEMPLATE, error="User already exists")
+        return render_template(
+            _SIGNUP_TEMPLATE, error="User already exists", username=username
+        )
 
     db.close()
 
@@ -400,14 +561,9 @@ def signup_post():
 
 def _validate_password_reset(password: str, confirm: str):
     """Return an error string if the new password fails validation, else None."""
-    if len(password) < 8:
-        return "Password must be at least 8 characters"
-    if not re.search(r"\d", password):
-        return "Password must contain at least one number"
-    if not re.search(r"[A-Z]", password):
-        return "Password must contain at least one uppercase letter"
-    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
-        return "Password must contain at least one special character"
+    password_error = _validate_password(password)
+    if password_error:
+        return password_error
     if password != confirm:
         return "Passwords do not match"
     return None
