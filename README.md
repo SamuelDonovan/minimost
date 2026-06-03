@@ -121,6 +121,16 @@ To reach the server from another machine, navigate to `https://<server-ip>:<port
 
 > **Note:** Calls and screen shares connect peers directly over WebRTC. For this to work, peers must be on the **same LAN/subnet** and able to reach each other (and the bundled STUN server on UDP `3478`, configurable via `stun_port` in `settings.json`) over UDP. No public STUN/TURN server is used, so calls work on air-gapped networks, but they will not traverse the public internet or connect peers on different subnets.
 
+### Ports & firewall
+
+| Port | Protocol | Open on | Required for | Notes |
+|------|----------|---------|--------------|-------|
+| `6767` (Gunicorn) / `5000` (dev) | TCP | Server (inbound) | Everything — web UI, chat, file uploads, call signaling | The only port needed for text chat. Set via `--port` or `gunicorn.conf.py`. |
+| `3478` | UDP | Server (inbound) | Voice/video calls & screen sharing | Bundled STUN server. Set via `stun_port` in `settings.json`. |
+| Ephemeral UDP (Linux `32768`–`60999`) | UDP | Between clients | WebRTC media (audio/video/screen) | Peer-to-peer, browser-chosen; only matters if clients run host firewalls or sit on segmented LANs. |
+
+No outbound internet access is required (no external database, no public STUN/TURN) — MiniMost runs fully air-gapped. There is **no TURN relay**, so peers must be on the same LAN/subnet, and SQLite is file-based so there is no database port. See the [deployment docs](docs/deployment.rst) for an administrator setup checklist plus `firewalld` / `ufw` examples.
+
 ### Production deployment
 
 The built-in Flask server is suitable for development and small private networks. For a more robust deployment, run MiniMost behind a WSGI server such as Gunicorn:

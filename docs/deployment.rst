@@ -1,6 +1,103 @@
 Deployment
 ==========
 
+Ports and Firewall
+------------------
+
+MiniMost listens on a small, fixed set of ports. Only the application port and
+the STUN port are opened *on the server*; WebRTC call/screen-share media flows
+directly between the participating clients and never touches the server.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 8 20 48
+
+   * - Port
+     - Protocol
+     - Where to open it
+     - Purpose
+   * - ``6767`` (Gunicorn) / ``5000`` (dev server)
+     - TCP
+     - Inbound on the **server**
+     - The HTTPS web app: page loads, chat polling, file uploads, and all
+       call/screen-share **signalling** (offer/answer/ICE). This is the only
+       port required for text chat. Change it with the ``--port`` flag (dev
+       server) or the ``bind`` line in ``gunicorn.conf.py``.
+   * - ``3478``
+     - UDP
+     - Inbound on the **server**
+     - The bundled STUN server, used by WebRTC to discover each peer's real LAN
+       IP. Required for voice/video calls and screen sharing. Change it with
+       ``stun_port`` in ``settings.json`` (must be ``1``–``65535``; avoid the OS
+       ephemeral range).
+   * - Ephemeral UDP (Linux default ``32768``–``60999``)
+     - UDP
+     - **Between clients**, both directions
+     - The peer-to-peer WebRTC media path (audio, video, and screen frames). The
+       browser picks these ports dynamically per connection; they cannot be
+       pinned without a TURN server, which MiniMost does not use. Relevant only
+       if clients sit on segmented LANs or run host firewalls.
+
+Key points:
+
+- **Text chat needs only the one TCP application port.** Everything else is for
+  calls and screen sharing.
+- **No outbound internet access is required.** There is no external database and
+  no public STUN/TURN server, so MiniMost runs fully air-gapped.
+- **No TURN relay.** Peers must be on the same LAN/subnet and able to reach one
+  another over UDP; connections across different subnets or the public internet
+  will not establish.
+- **SQLite is file-based** — there is no database port to open.
+- The dev server defaults to ``127.0.0.1`` (loopback only); pass
+  ``--host 0.0.0.0`` to accept LAN connections. Gunicorn binds ``0.0.0.0`` by
+  default.
+
+Example — opening the required ports with ``firewalld`` (adjust the application
+port to match your deployment)::
+
+    # Application (HTTPS) — Gunicorn default
+    sudo firewall-cmd --permanent --add-port=6767/tcp
+    # Bundled STUN server
+    sudo firewall-cmd --permanent --add-port=3478/udp
+    # WebRTC media (ephemeral UDP range) — only if a host firewall is active
+    sudo firewall-cmd --permanent --add-port=32768-60999/udp
+    sudo firewall-cmd --reload
+
+Or with ``ufw``::
+
+    sudo ufw allow 6767/tcp
+    sudo ufw allow 3478/udp
+    sudo ufw allow 32768:60999/udp
+
+Administrator Setup Checklist
+-----------------------------
+
+A complete first-time setup on a fresh host:
+
+1. **Install Python 3.6+ and MiniMost** (``pip install minimost-*.whl``, or
+   ``pip install -e .`` from a source checkout). The only runtime dependency is
+   Flask; install ``gunicorn`` separately for production.
+2. **Install the ``openssl`` binary** (e.g. ``apt install openssl``) so MiniMost
+   can auto-generate the self-signed TLS certificate on first run. Without it,
+   chat works but calls and screen sharing do not — browsers require HTTPS for
+   camera, microphone, and WebRTC access. See `TLS Certificates`_.
+3. **Choose a working/data directory the service account can write to.** All
+   runtime state — ``auth.db``, ``presence.db``, ``users/``, ``uploads/``,
+   ``avatars/``, ``secret.key`` and the generated ``cert.pem`` / ``key.pem`` — is
+   written there (the project root in a source checkout, or the process working
+   directory under Gunicorn). ``settings.json`` ships inside the package and is
+   read from there.
+4. **Open the firewall ports** listed in `Ports and Firewall`_ — the TCP
+   application port for everyone, plus UDP ``3478`` and the ephemeral UDP range
+   if you want calls and screen sharing.
+5. **Preserve ``secret.key`` across restarts.** It is generated automatically on
+   first run and signs session cookies; deleting it logs every user out.
+6. **(Production) Run behind Gunicorn**, optionally as a systemd service, and
+   review the ``bind`` address/port in ``gunicorn.conf.py``. See
+   `Gunicorn (Recommended for Production)`_ and `Systemd Service`_.
+7. **On each client**, browse to ``https://<server-ip>:<port>`` and accept the
+   self-signed certificate exception once.
+
 TLS Certificates
 ----------------
 
@@ -47,7 +144,8 @@ calls to connect:
   calls on LANs without avahi/Bonjour — so **no external/public STUN/TURN
   server is needed and calls work air-gapped**.
 - If a host firewall is enabled, allow inbound UDP on ``3478`` and the
-  ephemeral UDP range on the LAN interface.
+  ephemeral UDP range on the LAN interface — see `Ports and Firewall`_ for the
+  full list and ``firewalld`` / ``ufw`` examples.
 
 If a call fails to connect, open the browser console: ``_logPeerState()`` logs
 the ICE state and, on failure, whether the STUN/UDP path is the likely cause.
