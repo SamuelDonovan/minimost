@@ -143,7 +143,8 @@ Edit `settings.json` in the project root to configure MiniMost. All keys are opt
     "file_retention_days": 30,
     "message_retention_days": 770,
     "max_upload_size_mb": 25,
-    "max_avatar_size_mb": 5
+    "max_avatar_size_mb": 5,
+    "stun_port": 3478
 }
 ```
 
@@ -155,6 +156,7 @@ Edit `settings.json` in the project root to configure MiniMost. All keys are opt
 | `message_retention_days` | `770` | Days before messages are permanently deleted from the database. No restart needed. |
 | `max_upload_size_mb` | `25` | Maximum size in MB for a single file attachment. Restart required. |
 | `max_avatar_size_mb` | `5` | Maximum size in MB for a profile avatar upload. Restart required. |
+| `stun_port` | `3478` | UDP port for the bundled STUN server used by WebRTC calls/screen share. Must be `1`–`65535`. Restart required. |
 
 ---
 

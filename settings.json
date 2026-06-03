@@ -4,5 +4,6 @@
     "file_retention_days": 30,
     "message_retention_days": 770,
     "max_upload_size_mb": 25,
-    "max_avatar_size_mb": 5
+    "max_avatar_size_mb": 5,
+    "stun_port": 3478
 }
