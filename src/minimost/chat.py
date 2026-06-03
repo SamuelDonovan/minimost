@@ -138,7 +138,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 AVATAR_DIR = _PROJECT_ROOT / "avatars"
 AVATAR_DIR.mkdir(exist_ok=True)
 
-_SETTINGS_FILE = _PROJECT_ROOT / "settings.json"
+# settings.json is bundled inside the package (src/minimost/) so it ships in
+# the wheel; _HERE is the package directory.
+_SETTINGS_FILE = _HERE / "settings.json"
 
 
 def _load_channels() -> List[str]:

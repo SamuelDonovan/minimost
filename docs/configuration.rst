@@ -8,7 +8,8 @@ application for your environment.
 settings.json
 -------------
 
-**Location:** ``<project_root>/settings.json``
+**Location:** ``src/minimost/settings.json`` — the file is bundled inside the
+package so it ships in the wheel.
 
 The main configuration file for MiniMost. It is a JSON object. All keys are
 optional — missing keys fall back to built-in defaults.
@@ -21,7 +22,8 @@ Example (showing all available keys with their defaults)::
         "file_retention_days": 30,
         "message_retention_days": 770,
         "max_upload_size_mb": 25,
-        "max_avatar_size_mb": 5
+        "max_avatar_size_mb": 5,
+        "stun_port": 3478
     }
 
 ``channels``
@@ -71,6 +73,14 @@ Example (showing all available keys with their defaults)::
     is always small in practice — this limit guards against oversized source
     files being loaded into browser memory. Defaults to ``5``. Changes require
     a **server restart** to take effect.
+
+``stun_port``
+    UDP port the bundled STUN server listens on, used by WebRTC calls and
+    screen sharing so LAN peers can gather a server-reflexive ICE candidate.
+    Must be an integer in the range ``1``–``65535``. Defaults to ``3478`` (the
+    IANA-assigned STUN port). Avoid the OS ephemeral range
+    (typically ``32768``–``60999`` on Linux) to prevent bind collisions.
+    Changes require a **server restart** to take effect.
 
 .. warning::
 

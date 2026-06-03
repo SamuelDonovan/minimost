@@ -134,7 +134,7 @@ The bundled `gunicorn.conf.py` also handles automatic TLS certificate generation
 
 ### Configuration
 
-Edit `settings.json` in the project root to configure MiniMost. All keys are optional and fall back to sensible defaults if omitted:
+Edit `settings.json` (bundled with the package at `src/minimost/settings.json`) to configure MiniMost. All keys are optional and fall back to sensible defaults if omitted:
 
 ```json
 {

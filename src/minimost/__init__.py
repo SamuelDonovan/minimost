@@ -79,7 +79,9 @@ def _read_version() -> str:
 
 _APP_VERSION = _read_version()
 
-_SETTINGS_FILE = _PROJECT_ROOT / "settings.json"
+# settings.json is bundled inside the package (src/minimost/) so it ships in
+# the wheel; _HERE is the package directory.
+_SETTINGS_FILE = _HERE / "settings.json"
 
 
 def _max_upload_size_mb() -> int:
@@ -250,7 +252,7 @@ def _start_cleanup_scheduler(
     """
     upload_dir = _PROJECT_ROOT / "uploads"
     users_dir = _PROJECT_ROOT / "users"
-    settings_file = _PROJECT_ROOT / "settings.json"
+    settings_file = _HERE / "settings.json"
 
     def _read_retention() -> tuple:
         with suppress(Exception):

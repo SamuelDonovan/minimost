@@ -38,4 +38,5 @@ minimost = [
     "templates/*",
     "static/*",
     "static/reactions/*",
+    "settings.json",
 ]
