@@ -1645,6 +1645,10 @@ a { color: #9cdcfe; }
 #screenshare-viewer-video {
     flex: 1;
     width: 100%;
+    /* min-height: 0 lets this flex item shrink below the video's intrinsic
+       resolution; without it a tall shared screen overflows the column and the
+       bottom is clipped off-screen (object-fit: contain then can't letterbox). */
+    min-height: 0;
     object-fit: contain;
     background: #111;
 }

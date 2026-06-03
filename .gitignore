@@ -212,6 +212,8 @@ __marimo__/
 
 # Databases
 **/*.db
+**/*.db-shm
+**/*.db-wal
 
 # Images 
 uploads/*
