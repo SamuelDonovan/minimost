@@ -550,6 +550,15 @@ body {
     opacity: 1;
     transform: none;
 }
+#send-btn.inactive {
+    background: #3a3a3a;
+    color: #888;
+    cursor: default;
+}
+#send-btn.inactive:hover {
+    background: #3a3a3a;
+    transform: none;
+}
 #attach-btn .icon-text {
     display: none;
 }

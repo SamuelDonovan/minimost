@@ -156,7 +156,7 @@
                     <span class="icon-text">Attach</span>
                 </button>
 
-                <button onclick="send()" id="send-btn" class="icon-btn" title="Send message">
+                <button onclick="send()" id="send-btn" class="icon-btn inactive" title="Send message">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                         <path d="M15.854.146a.5.5 0 0 0-.528-.103l-15 6a.5.5 0 0 0 0 .914l5.5 2.2 2.2 5.5a.5.5 0 0 0 .914 0l6-15a.5.5 0 0 0-.103-.528z"/>
                     </svg>
@@ -578,18 +578,27 @@
 const fileInput = document.getElementById("fileInput");
 const preview = document.getElementById("image-preview");
 const msgBox = document.getElementById("msg");
+const sendBtn = document.getElementById("send-btn");
 const dropzone = document.getElementById("input");
 
 // Typing indicator — throttled send
 let lastTypingSend = 0;
 let _typingShowing = false;
 msgBox.addEventListener("input", () => {
+    updateSendState();
     const now = Date.now();
     if (now - lastTypingSend >= 2000) {
         lastTypingSend = now;
         fetch(`/typing/${channel}`, { method: "POST" });
     }
 });
+
+// Send button is greyed out until there's something to send
+// (message text or an attached file).
+function updateSendState() {
+    const hasContent = msgBox.value.trim().length > 0 || pendingFiles.length > 0;
+    sendBtn.classList.toggle("inactive", !hasContent);
+}
 
 function fetchTyping() {
     fetch(`/typing/${channel}`)
@@ -811,6 +820,7 @@ function addFiles(files) {
         btn.onclick = () => {
             pendingFiles = pendingFiles.filter(f => f !== file);
             div.remove();
+            updateSendState();
         };
 
         if (file.type.startsWith("image/")) {
@@ -827,6 +837,7 @@ function addFiles(files) {
         div.appendChild(btn);
         preview.appendChild(div);
     }
+    updateSendState();
 }
 
 // File-deleted detection
@@ -1355,6 +1366,7 @@ function send() {
             msgBox.value = "";
             pendingFiles = [];
             preview.innerHTML = "";
+            updateSendState();
             cancelReply();
             fetchMessages();
         }
