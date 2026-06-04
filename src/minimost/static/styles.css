@@ -906,10 +906,47 @@ button, input, textarea{
 #input-actions {
     display: flex;
     flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     gap: 4px;
     flex-shrink: 0;
-    align-self: flex-end;
+    align-self: stretch;
     margin-top: 6px;
+}
+#format-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 2px;
+}
+#input-actions-main {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+}
+.format-btn .icon-text {
+    display: none;
+}
+.format-btn {
+    border-radius: 6px;
+    opacity: 0.55;
+    transition: opacity 0.15s, background 0.15s, transform 0.15s;
+}
+.format-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.08);
+    transform: none;
+}
+.format-btn:active {
+    transform: scale(0.92);
+}
+.format-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 #input-actions #help-btn {
     margin-right: 8px;
