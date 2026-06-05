@@ -1168,6 +1168,36 @@ def _try_append_message(channel, sender, text, ts, recipients, filenames, reply_
     return True
 
 
+def post_welcome_message(new_user: str) -> None:
+    """Post a system welcome message greeting a new user.
+
+    Called from the signup flow when a new account is created.  Inserts a
+    ``content_type = "system"`` message — rendered under the "MiniMost"
+    identity, like other system notices — into the first public channel for
+    every recipient (including the newcomer), so the whole community sees
+    the new arrival being greeted.
+
+    No-op if no public channels are configured.
+
+    :param new_user: The username of the newly registered account.
+    :type new_user: str
+    :returns: None
+    """
+    if not CHANNELS:
+        return
+    channel = CHANNELS[0]
+    content = f"Welcome to MiniMost, {new_user}! \U0001f44b Say hello \U0001f44b"
+    now = time()
+    for recipient in channel_users(channel):
+        db = get_db(recipient)
+        db.execute(
+            _INSERT_MSG_SQL,
+            (channel, "system", content, "system", now, 1),
+        )
+        db.commit()
+        db.close()
+
+
 @chat_bp.route("/send/<channel>", methods=["POST"])
 @auth.login_required
 def send(channel):

@@ -207,6 +207,81 @@ def test_signup_seeds_history(client):
     )
 
     new_db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
-    count = new_db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    # Count only the seeded history row; the signup also posts a system
+    # welcome message into the same channel, which is asserted separately.
+    count = new_db.execute(
+        "SELECT COUNT(*) FROM messages WHERE content = 'hello world'"
+    ).fetchone()[0]
     new_db.close()
     assert count == 1
+
+
+def test_signup_posts_welcome_message(client):
+    """A new signup drops a system welcome message in the first public channel."""
+    import minimost.chat as chat_mod
+
+    client.post(
+        "/signup",
+        data={
+            "username": "newuser",
+            "password": "Password1!",
+            "confirm_password": "Password1!",
+        },
+    )
+
+    db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
+    row = db.execute(
+        "SELECT channel, sender, content, content_type FROM messages"
+        " WHERE content_type = 'system'"
+    ).fetchone()
+    db.close()
+    assert row is not None
+    channel, sender, content, content_type = row
+    assert channel == chat_mod.CHANNELS[0]
+    assert sender == "system"
+    assert content_type == "system"
+    assert "newuser" in content
+
+
+def test_signup_welcome_reaches_existing_users(client):
+    """Existing users also receive the welcome message for a newcomer."""
+    _add_user("existing")
+
+    client.post(
+        "/signup",
+        data={
+            "username": "newuser",
+            "password": "Password1!",
+            "confirm_password": "Password1!",
+        },
+    )
+
+    db = sqlite3.connect(str(common_mod.user_db_path("existing")))
+    row = db.execute(
+        "SELECT content FROM messages WHERE content_type = 'system'"
+    ).fetchone()
+    db.close()
+    assert row is not None
+    assert "newuser" in row[0]
+
+
+def test_signup_welcome_no_public_channels(client):
+    """Welcome posting is a no-op when no public channels are configured."""
+    import minimost.chat as chat_mod
+
+    with patch.object(chat_mod, "CHANNELS", []):
+        client.post(
+            "/signup",
+            data={
+                "username": "newuser",
+                "password": "Password1!",
+                "confirm_password": "Password1!",
+            },
+        )
+
+    db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
+    count = db.execute(
+        "SELECT COUNT(*) FROM messages WHERE content_type = 'system'"
+    ).fetchone()[0]
+    db.close()
+    assert count == 0

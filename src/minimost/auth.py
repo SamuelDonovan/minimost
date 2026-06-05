@@ -504,7 +504,9 @@ def signup_post():
     1. Inserts ``(username, hashed_password)`` into ``auth.db``.
     2. Calls :func:`minimost.common.init_user_db` to create the user's DB.
     3. Calls :func:`_seed_channel_history` to populate public channel history.
-    4. Sets ``session["user"]`` and redirects to ``/``.
+    4. Calls :func:`minimost.chat.post_welcome_message` to greet the new user
+       in the first public channel under the MiniMost identity.
+    5. Sets ``session["user"]`` and redirects to ``/``.
 
     On failure:
 
@@ -560,6 +562,12 @@ def signup_post():
 
     common.init_user_db(username)
     _seed_channel_history(username)
+
+    # Greet the newcomer in the first public channel under the MiniMost
+    # identity.  Imported lazily because chat imports auth at module load.
+    from . import chat
+
+    chat.post_welcome_message(username)
 
     session["user"] = username
     presence.update_presence(username, "active")
