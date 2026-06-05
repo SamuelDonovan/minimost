@@ -181,6 +181,11 @@ function formatText(text) {
         url => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
     );
 
+    // 5b. @mention pills (after links so URLs containing @ are left untouched)
+    if (typeof applyMentionPills === "function") {
+        safe = applyMentionPills(safe);
+    }
+
     // 6. Restore code blocks with syntax highlighting
     safe = safe.replace(/(\d+)/g, (_, i) => {
         const { lang, code } = blocks[Number(i)];

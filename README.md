@@ -36,6 +36,7 @@
 - **Editing & deletion** — edit or delete your own messages; changes propagate in real time
 - **Emoji reactions** — react to any message; reactions sync across all users instantly
 - **Read receipts** — see who has read your messages
+- **@mentions** — type `@` to open a fuzzy-search dropdown of the channel's members; a mentioned user sees the message highlighted and gets a sound and desktop notification (honoring their toggles) even while the page is open. Mention `@everyone` to ping the whole channel
 - **Voice calling** — one-click calls in any DM or private channel; audio streams **peer-to-peer over WebRTC** (`RTCPeerConnection`) for low-latency, real-time voice; unanswered calls time out and cancel automatically
 - **Group calling** — any participant in an active call can invite additional registered users via the in-call "Add person" button; up to any number of callers can share the same call (a WebRTC full mesh); participants can leave individually without ending the call for others; the last person to leave ends the call
 - **Dynamic call layout** — participants appear as avatar tiles that reflow automatically: one caller fills the panel, two callers split 50/50, three or more tile in a grid; each tile has an independent speaking-ring animation driven by per-participant voice activity detection, plus a live level meter on your own mic button
@@ -47,7 +48,7 @@
 - **Close DM conversations** — hide a DM thread from the sidebar with one click; it reappears automatically if a new message arrives
 - **File attachments** — paste, drag-and-drop, or use the paperclip button to attach any file type; images are displayed inline, other files appear as a download link; uploaded files auto-delete after a configurable retention period
 - **Automatic message retention** — a background thread permanently removes messages older than a configurable threshold (default: 770 days) so database files never grow without bound; runs every 24 hours with no cron job required
-- **Desktop & sound notifications** — configurable per session, mutable with one click
+- **Desktop & sound notifications** — configurable per session, mutable with one click; `@mentions` alert you even when the tab is focused
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing
 - **Dark theme** — easy on the eyes
 - **Password security** — salted hashes (PBKDF2), enforced complexity requirements
@@ -182,6 +183,7 @@ Edit `settings.json` (bundled with the package at `src/minimost/settings.json`) 
 |-----|--------|
 | `Enter` | Send message |
 | `Shift + Enter` | New line |
+| `@` | Open the mention dropdown (`↑`/`↓` navigate, `Enter`/`Tab` accept) |
 | `Esc` | Unfocus input / close menus |
 
 ### Navigation

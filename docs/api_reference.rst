@@ -53,6 +53,8 @@ Authentication
    Register a new account.
 
    :form username: 1–32 characters; letters, numbers, hyphens, underscores.
+       The reserved names ``minimost``, ``everyone``, and ``deleteduser`` are
+       rejected (case-insensitively).
    :form password: Minimum 8 characters; must include uppercase, digit, and
        special character.
    :form confirm_password: Must match ``password``.
@@ -165,12 +167,24 @@ Messages
       * - ``reactions_ts``
         - float or null
         - Timestamp of the most recent reaction change.
+      * - ``mentions``
+        - string (JSON) or null
+        - JSON-encoded array of the channel members ``@``-mentioned in the
+          message, e.g. ``"[\"alice\"]"``. The sentinel ``"@everyone"`` marks
+          a channel-wide mention. ``null`` when the message mentions no one.
+          The client highlights the message and notifies the viewer when their
+          username (or ``@everyone``) appears here.
 
 .. http:post:: /send/(channel)
 
    Send a message and/or image attachment(s) to a channel.
 
    **Requires authentication.**
+
+   Any ``@username`` tokens in *text* that resolve to real channel members are
+   extracted (case-insensitively) and stored in the message's ``mentions``
+   column; ``@everyone`` is stored as the sentinel ``"@everyone"``. Tokens
+   inside emails (``foo@bar``) and URLs are ignored.
 
    :param channel: Target channel or DM identifier.
    :form text: Message text body (optional if files are provided).
@@ -202,7 +216,8 @@ Messages
    **Requires authentication.** Only the original sender can edit.
 
    :param int msg_id: Message ID in the current user's database.
-   :form text: Replacement message text.
+   :form text: Replacement message text. Mentions are re-extracted from the new
+       text and the ``mentions`` column is updated accordingly.
    :status 200: Returns ``"ok"``.
    :status 403: Not the sender, or message not found.
 
@@ -253,6 +268,19 @@ Users and Presence
    **Requires authentication.**
 
    :>json array: List of username strings.
+
+.. http:get:: /channel_members/(channel)
+
+   Return the members of a channel that the current user may ``@``-mention,
+   excluding the current user. For public channels this is every other
+   registered user; for private channels the other members; for DMs the other
+   participants. Used to populate the ``@``-mention autocomplete dropdown.
+
+   **Requires authentication.**
+
+   :param channel: Channel name, DM identifier, or ``private:<id>``.
+   :>json array: List of mentionable username strings.
+   :status 403: User is not permitted to access the channel.
 
 .. http:get:: /user_colors
 

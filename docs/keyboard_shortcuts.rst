@@ -20,7 +20,12 @@ Messaging
      - Insert a newline (multi-line message).
    * - ``Esc``
      - Unfocus the message input box; close any open modal or cancel
-       an in-progress reply or edit.
+       an in-progress reply or edit. Also closes the ``@``-mention dropdown.
+   * - ``@``
+     - Open the mention autocomplete dropdown for the channel's members. While
+       it is open, ``↑``/``↓`` navigate, ``Enter`` or ``Tab`` accept the
+       highlighted name, and ``Esc`` closes it. Type ``@everyone`` to mention
+       the whole channel.
    * - ``i``
      - Focus the message input box (works from anywhere).
 

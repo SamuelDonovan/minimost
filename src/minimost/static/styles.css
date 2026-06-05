@@ -815,6 +815,56 @@ body {
 .autocomplete-suggestion:hover {
     background: #444;
 }
+/* @mention autocomplete: anchored above the composer box */
+#input-main {
+    position: relative;
+}
+#mention-suggestions {
+    bottom: calc(100% + 4px);
+    max-height: 200px;
+    border-radius: 6px;
+}
+.mention-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.mention-everyone-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(247, 201, 72, 0.25);
+    color: #f7c948;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.mention-suggestion-hint {
+    display: block;
+    font-size: 11px;
+    color: #999;
+}
+/* @mention pills inside rendered messages */
+.mention {
+    background: rgba(126, 184, 247, 0.18);
+    color: #7eb8f7;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-weight: 600;
+}
+.mention-me {
+    background: rgba(247, 201, 72, 0.22);
+    color: #f7c948;
+}
+/* Whole-message highlight shown to a mentioned user */
+.msg.mentioned {
+    background: rgba(247, 201, 72, 0.09);
+    border-left: 3px solid #f7c948;
+    padding-left: 4px;
+    border-radius: 2px;
+}
 mark.fuzzy-highlight {
     background: transparent;
     color: #7eb8f7;

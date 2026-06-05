@@ -122,6 +122,7 @@
         </div>
         <div id="image-preview"></div>
         <div id="input-main">
+            <div id="mention-suggestions" class="autocomplete-suggestions"></div>
             <textarea
                 id="msg"
                 rows="3"
@@ -811,6 +812,10 @@ let fetchController = null;
 let privateChannelMap = {};
 let privateChannelMembers = {};
 let readReceiptsMap = {};
+// Suppresses mention notifications during the initial bulk load of a channel
+// (page load or channel switch), so old @mentions in history don't re-alert.
+// Armed after the first poll response for the current channel completes.
+let mentionNotifyArmed = false;
 
 // Preview Renderer
 function addFiles(files) {
@@ -1126,6 +1131,7 @@ function switchChannel(c) {
 
     channel = c;
     lastTs = 0;
+    mentionNotifyArmed = false;
     lastRenderedDate = null;
 
     document.getElementById("chat").innerHTML = "";
@@ -1299,6 +1305,10 @@ function fetchMessages() {
         .then(data => {
             // ❌ Ignore if aborted or channel changed
             if (signal.aborted || requestedChannel !== channel) return;
+            // The first completed response for a channel is its baseline load;
+            // mentions seen in it are history, not fresh alerts.
+            const notifyArmed = mentionNotifyArmed;
+            mentionNotifyArmed = true;
             if (!data || data.length === 0) return;
 
             const chat = document.getElementById("chat");
@@ -1307,6 +1317,7 @@ function fetchMessages() {
 
             let appended = false;
             let playNewMsgSound = false;
+            let mentionMsg = null;
 
             data.forEach(m => {
                 if (requestedChannel !== channel) return;
@@ -1388,6 +1399,7 @@ function fetchMessages() {
                     existing.innerHTML = html;
                     existing.dataset.sender = m.sender;
                     existing.dataset.ts = m.ts;
+                    existing.classList.toggle("mentioned", isMentioned(m));
                     _injectMsgAvatar(existing, m.sender);
                     schedulePreview(existing);
                     _checkDeletedFiles(existing);
@@ -1397,6 +1409,7 @@ function fetchMessages() {
                     d.id = msgId;
                     d.dataset.sender = m.sender;
                     d.dataset.ts = m.ts;
+                    if (isMentioned(m)) d.classList.add("mentioned");
                     d.innerHTML = html;
                     _injectMsgAvatar(d, m.sender);
                     chat.appendChild(d);
@@ -1404,14 +1417,25 @@ function fetchMessages() {
                     _checkDeletedFiles(d);
                     appended = true;
                     if (m.sender !== CURRENT_USER) playNewMsgSound = true;
+                    if (m.sender !== CURRENT_USER && isMentioned(m)) mentionMsg = m;
                 }
 
                 if (m.reply_to_id) loadQuotedMsg(m.id, m.reply_to_id);
                 lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0, m.reactions_ts || 0);
             });
 
-            if (playNewMsgSound && document.hidden && !notifMuted) {
+            const mentionAlert = mentionMsg && notifyArmed;
+
+            // Play the alert sound when a backgrounded tab gets any new
+            // message, or — even when focused — when the user is mentioned.
+            if (((playNewMsgSound && document.hidden) || mentionAlert) && !notifMuted) {
                 new Audio('/static/notification.mp3').play().catch(() => {});
+            }
+
+            // A mention fires a native OS notification regardless of whether
+            // the tab is focused (respecting the native-notification toggle).
+            if (mentionAlert) {
+                notifyMention(mentionMsg);
             }
 
             if (appended && !document.hidden) {
@@ -1672,6 +1696,7 @@ function scrollToMsg(msgId) {
 <script src="/static/chat-channels.js?v={{ app_version }}"></script>
 <script src="/static/chat-reactions.js?v={{ app_version }}"></script>
 <script src="/static/chat-search.js?v={{ app_version }}"></script>
+<script src="/static/chat-mentions.js?v={{ app_version }}"></script>
 <script src="/static/chat-calls.js?v={{ app_version }}"></script>
 <div id="pc-member-tooltip"></div>
 </body>

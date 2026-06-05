@@ -166,6 +166,55 @@ def _load_channels() -> List[str]:
 CHANNELS = _load_channels()
 MAX_CHANNEL_NAME_LEN = 80
 
+# Matches an ``@username`` mention.  The negative lookbehind for word
+# characters, ``@`` and ``/`` prevents matching inside email addresses
+# (``foo@bar``) and URLs (``.../@handle``).  Username charset mirrors the
+# ``[A-Za-z0-9_-]`` rule enforced at signup (see auth._USERNAME_RE).
+_MENTION_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9_-]+)")
+
+# Reserved keyword: ``@everyone`` mentions the whole channel.  Stored as a
+# sentinel in the ``mentions`` column instead of expanding to the (possibly
+# large, possibly stale) member list.  Usernames can never collide with it
+# because ``@`` is not a legal username character.
+MENTION_EVERYONE = "@everyone"
+
+
+def extract_mentions(text: str, channel: str) -> List[str]:
+    """Return the channel members that are ``@``-mentioned in *text*.
+
+    Parses every ``@name`` token out of *text* and keeps only those that
+    resolve (case-insensitively) to an actual member of *channel*.  The
+    returned usernames use their canonical (stored) casing, in channel
+    membership order.  Returns ``[]`` when *text* is empty or contains no
+    valid mentions.
+
+    The reserved keyword ``@everyone`` mentions the whole channel; when it is
+    present the single-element list ``[MENTION_EVERYONE]`` is returned
+    regardless of any other tokens, since it already covers every member.
+
+    :param text: The raw message body.
+    :type text: str
+    :param channel: The channel the message is being posted to.
+    :type channel: str
+    :returns: Canonical usernames of mentioned channel members, or
+        ``[MENTION_EVERYONE]`` for a channel-wide mention.
+    :rtype: list of str
+    """
+    if not text:
+        return []
+    found = {name.lower() for name in _MENTION_RE.findall(text)}
+    if not found:
+        return []
+    if "everyone" in found:
+        return [MENTION_EVERYONE]
+    return [u for u in channel_users(channel) if u.lower() in found]
+
+
+def _mentions_json(text: str, channel: str):
+    """Return a JSON-encoded mention list for *text*, or ``None`` if empty."""
+    mentions = extract_mentions(text, channel)
+    return json.dumps(mentions) if mentions else None
+
 
 def _get_private_db():
     """Return an open WAL connection to the shared ``presence.db``.
@@ -1027,7 +1076,8 @@ def messages(channel):
             deleted_ts,
             reply_to_id,
             reactions,
-            reactions_ts
+            reactions_ts,
+            mentions
         FROM messages
         WHERE channel = ?
           AND (
@@ -1064,12 +1114,14 @@ def messages(channel):
     return jsonify(result)
 
 
-def _insert_for_recipient(db, channel, sender, text, ts, reply_to_id, filenames):
+def _insert_for_recipient(
+    db, channel, sender, text, ts, reply_to_id, filenames, mentions=None
+):
     if text:
         db.execute(
-            "INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)"
-            " VALUES (?, ?, ?, NULL, ?, 0, ?)",
-            (channel, sender, text, ts, reply_to_id),
+            "INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id, mentions)"
+            " VALUES (?, ?, ?, NULL, ?, 0, ?, ?)",
+            (channel, sender, text, ts, reply_to_id, mentions),
         )
     for filename in filenames:
         db.execute(
@@ -1103,12 +1155,13 @@ def _try_append_message(channel, sender, text, ts, recipients, filenames, reply_
         return False
     combined = prev["content"] + "\n" + text
     prev_ts = prev["ts"]
+    mentions = _mentions_json(combined, channel)
     for r in recipients:
         db = get_db(r)
         db.execute(
-            "UPDATE messages SET content = ?, edited_ts = ?"
+            "UPDATE messages SET content = ?, edited_ts = ?, mentions = ?"
             " WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL",
-            (combined, ts, channel, sender, prev_ts),
+            (combined, ts, mentions, channel, sender, prev_ts),
         )
         db.commit()
         db.close()
@@ -1206,9 +1259,10 @@ def send(channel):
     ):
         return "ok"
 
+    mentions = _mentions_json(text, channel)
     for r in recipients:
         _insert_for_recipient(
-            get_db(r), channel, sender, text, ts, reply_to_id, filenames
+            get_db(r), channel, sender, text, ts, reply_to_id, filenames, mentions
         )
 
     return "ok"
@@ -1410,15 +1464,16 @@ def edit(msg_id):
         recipients.append(editor)
 
     edited_time = time()
+    mentions = _mentions_json(new_text, channel)
     for r in recipients:
         db = get_db(r)
         db.execute(
             """
             UPDATE messages
-            SET content = ?, edited = 1, edited_ts = ?
+            SET content = ?, edited = 1, edited_ts = ?, mentions = ?
             WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL
             """,
-            (new_text, edited_time, channel, editor, ts),
+            (new_text, edited_time, mentions, channel, editor, ts),
         )
         db.commit()
         db.close()
@@ -2234,6 +2289,32 @@ def users():
     """
     me = session["user"]
     return jsonify([u for u in all_users() if u != me])
+
+
+@chat_bp.route("/channel_members/<channel>", methods=["GET"])
+@auth.login_required
+def channel_members(channel):
+    """Return the mentionable members of a channel (excluding the caller).
+
+    Route: ``GET /channel_members/<channel>``
+
+    Requires authentication and that the caller is permitted to access the
+    channel.  Used by the client to populate the ``@``-mention autocomplete
+    dropdown: for public channels this is every other registered user, for
+    private channels the other members, and for DMs the other participants.
+
+    :param channel: The channel name, DM identifier, or ``"private:<id>"``.
+    :type channel: str
+    :returns: JSON array of usernames the caller may mention, excluding
+        themselves.
+    :rtype: flask.Response (application/json)
+
+    :raises: ``403 forbidden`` — if the caller may not access the channel.
+    """
+    user = session["user"]
+    if not is_valid_channel(channel, user):
+        return "forbidden", 403
+    return jsonify([m for m in channel_users(channel) if m != user])
 
 
 @chat_bp.route("/link_preview", methods=["GET"])

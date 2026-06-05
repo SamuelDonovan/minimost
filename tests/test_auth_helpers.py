@@ -1,4 +1,5 @@
 import sqlite3
+import pytest
 from werkzeug.security import check_password_hash
 
 from minimost.auth import hash_password, _validate_signup, _seed_channel_history
@@ -70,6 +71,15 @@ def test_validate_signup_passwords_mismatch():
 
 def test_validate_signup_valid_hyphens_underscores():
     assert _validate_signup("alice_bob-123", "Password1!", "Password1!") is None
+
+
+@pytest.mark.parametrize(
+    "name", ["minimost", "MiniMost", "everyone", "deleteduser", "DeletedUser"]
+)
+def test_validate_signup_reserved_usernames(name):
+    err = _validate_signup(name, "Password1!", "Password1!")
+    assert err is not None
+    assert "protected" in err
 
 
 # ── _seed_channel_history ─────────────────────────────────────────────────────

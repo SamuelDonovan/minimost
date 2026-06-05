@@ -62,6 +62,9 @@ Route Summary
      - ``/users``
      - :func:`minimost.chat.users`
    * - GET
+     - ``/channel_members/<channel>``
+     - :func:`minimost.chat.channel_members`
+   * - GET
      - ``/search_messages``
      - :func:`minimost.chat.search_messages`
    * - GET

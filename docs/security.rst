@@ -33,6 +33,12 @@ account. The spelling chosen at registration is preserved for display, but
 registration rejects names that differ only by case (preventing look-alike
 impersonation) and login matches regardless of the case typed.
 
+A small set of names is reserved and rejected at registration:
+``minimost`` (the system message author), ``everyone`` (the channel-wide
+``@``-mention keyword), and ``deleteduser`` (which would shadow the
+"Deleted User" author used for soft-deleted accounts). The comparison is
+case-insensitive.
+
 **Brute-force protection**
 
 Failed login attempts sleep for 3 seconds before the server responds. This

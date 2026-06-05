@@ -159,7 +159,8 @@ Message Rendering
 4. Scrolls to the bottom if the user was already at the bottom before the
    update.
 5. Triggers desktop and sound notifications for new messages when the tab
-   is hidden.
+   is hidden, and for ``@mentions`` of the current user even when the tab is
+   focused (see :ref:`mentions`).
 
 Message DOM Structure
 ~~~~~~~~~~~~~~~~~~~~~
@@ -213,6 +214,11 @@ Text Formatting
    * - ``https://...``
      - ``<a href="...">...</a>``
      - Auto-linked URLs (``http`` and ``https`` only)
+   * - ``@username``
+     - ``<span class="mention">@username</span>``
+     - Mention pill, rendered only for known users and ``@everyone`` (see
+       :ref:`mentions`). Applied after link auto-linking so URLs containing
+       ``@`` are left untouched.
 
 All text is HTML-escaped before formatting is applied to prevent XSS.
 
@@ -249,6 +255,50 @@ from the array) provides O(1) name-to-character access. The workflow:
 
 Each reaction chip shows the emoji character and a count. Hovering reveals a
 tooltip with the list of reactor usernames.
+
+.. _mentions:
+
+Mentions
+--------
+
+The ``@``-mention system lives in ``chat-mentions.js`` and has three parts.
+
+**Autocomplete dropdown.** Typing ``@`` in the composer opens a fuzzy-search
+dropdown of the current channel's members:
+
+1. ``activeMentionToken()`` inspects the text before the caret and returns the
+   ``@token`` being typed (start offset and partial query), or ``null``.
+2. ``ensureMentionMembers()`` lazily fetches ``GET /channel_members/<channel>``
+   and caches the result per channel. The reserved keyword ``everyone`` is
+   always offered alongside the real members.
+3. ``refreshMentions()`` ranks candidates with the shared ``fuzzySearch`` and
+   renders them (avatar + name, or an ``@`` badge and hint for ``everyone``).
+   A capture-phase ``keydown`` handler runs before the send-on-Enter handler so
+   ``↑``/``↓`` navigate, ``Enter``/``Tab`` accept, and ``Esc`` closes.
+4. ``acceptMention()`` replaces the ``@token`` with ``@username`` (or
+   ``@everyone``) plus a trailing space.
+
+**Pill rendering.** ``applyMentionPills(html)`` (called from ``formatText``)
+wraps ``@username`` tokens for known users in ``<span class="mention">`` pills,
+using a brighter ``mention-me`` variant for the current user and ``@everyone``.
+Known users come from a ``GET /users`` fetch at load plus every channel-members
+fetch. Tokens preceded by a word character, ``@`` or ``/`` are skipped, so
+emails and URLs never become pills.
+
+**Highlighting and notifications.** Mentions are extracted and validated
+server-side and returned in each message's ``mentions`` field (a JSON array, or
+the ``"@everyone"`` sentinel). ``isMentioned(m)`` is true when the current user
+appears there — or for ``@everyone`` on any copy except the sender's own.
+``fetchMessages()`` then:
+
+- toggles the ``mentioned`` CSS class (a highlighted, left-barred message), and
+- plays the new-message sound (honoring ``notifMuted``) and fires
+  ``notifyMention()`` — a native ``Notification`` honoring ``nativeNotifEnabled``
+  and browser permission — **even when the tab is focused**.
+
+A ``mentionNotifyArmed`` flag, reset on page load and channel switch and armed
+after the first poll response, suppresses these alerts for the historical
+mentions in a channel's initial backlog.
 
 Search
 ------

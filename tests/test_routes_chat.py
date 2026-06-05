@@ -826,3 +826,93 @@ def test_file_preview_missing_file(alice):
     resp = alice.get("/file_preview/nonexistent.py")
     assert resp.status_code == 200
     assert resp.get_json() == {}
+
+
+# ── @-mentions ────────────────────────────────────────────────────────────────
+
+
+def test_extract_mentions_matches_members(alice_and_bob):
+    mentions = chat_mod.extract_mentions("hey @bob and @nobody", "general")
+    assert mentions == ["bob"]
+
+
+def test_extract_mentions_case_insensitive(alice_and_bob):
+    assert chat_mod.extract_mentions("yo @BOB", "general") == ["bob"]
+
+
+def test_extract_mentions_ignores_emails(alice_and_bob):
+    assert chat_mod.extract_mentions("mail me at foo@bob.com", "general") == []
+
+
+def test_extract_mentions_empty_text(alice_and_bob):
+    assert chat_mod.extract_mentions("", "general") == []
+    assert chat_mod.extract_mentions("no pings here", "general") == []
+
+
+def test_send_stores_mentions(alice_and_bob):
+    alice_and_bob.post("/send/general", data={"text": "ping @bob"})
+    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
+    db.close()
+    assert json.loads(row[0]) == ["bob"]
+
+
+def test_send_no_mentions_stores_null(alice_and_bob):
+    alice_and_bob.post("/send/general", data={"text": "plain message"})
+    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
+    db.close()
+    assert row[0] is None
+
+
+def test_messages_returns_mentions(alice_and_bob):
+    alice_and_bob.post("/send/general", data={"text": "ping @bob"})
+    data = alice_and_bob.get("/messages/general?after=0").get_json()
+    assert json.loads(data[0]["mentions"]) == ["bob"]
+
+
+def test_edit_updates_mentions(alice_and_bob):
+    alice_and_bob.post("/send/general", data={"text": "no ping"})
+    msg = alice_and_bob.get("/messages/general?after=0").get_json()[0]
+    alice_and_bob.post(f"/edit/{msg['id']}", data={"text": "now @bob"})
+    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
+    db.close()
+    assert json.loads(row[0]) == ["bob"]
+
+
+def test_channel_members_excludes_self(alice_and_bob):
+    data = alice_and_bob.get("/channel_members/general").get_json()
+    assert "bob" in data
+    assert "alice" not in data
+
+
+def test_channel_members_forbidden(alice_and_bob):
+    resp = alice_and_bob.get("/channel_members/dm:bob:charlie")
+    assert resp.status_code == 403
+
+
+def test_channel_members_dm(alice_and_bob):
+    data = alice_and_bob.get("/channel_members/dm:alice:bob").get_json()
+    assert data == ["bob"]
+
+
+def test_extract_mentions_everyone(alice_and_bob):
+    assert chat_mod.extract_mentions("hey @everyone", "general") == [
+        chat_mod.MENTION_EVERYONE
+    ]
+
+
+def test_extract_mentions_everyone_overrides_others(alice_and_bob):
+    # @everyone already covers every member, so it collapses other mentions.
+    assert chat_mod.extract_mentions("@bob @everyone", "general") == [
+        chat_mod.MENTION_EVERYONE
+    ]
+
+
+def test_send_everyone_stores_sentinel(alice_and_bob):
+    alice_and_bob.post("/send/general", data={"text": "listen up @everyone"})
+    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
+    db.close()
+    assert json.loads(row[0]) == [chat_mod.MENTION_EVERYONE]

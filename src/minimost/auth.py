@@ -53,6 +53,13 @@ _PROJECT_ROOT = _HERE.parent.parent
 AUTH_DB = str(_PROJECT_ROOT / "auth.db")
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_\-]{1,32}")
+
+# Usernames that nobody may register because the app gives them special
+# meaning: "minimost" is the system author, "everyone" is the channel-wide
+# @-mention keyword, and "deleteduser" shadows the "Deleted User" author used
+# for soft-deleted accounts.  Compared case-insensitively.
+_RESERVED_USERNAMES = {"minimost", "everyone", "deleteduser"}
+
 _WAL = "PRAGMA journal_mode=WAL"
 _RESET_PW_TEMPLATE = "reset_password.html"
 _SIGNUP_TEMPLATE = "signup.html"
@@ -439,8 +446,8 @@ def _validate_signup(username: str, password: str, confirm: str):
     """
     if not username or not password:
         return "Missing fields"
-    if username.lower() == "minimost":
-        return '"minimost" is a protected username'
+    if username.lower() in _RESERVED_USERNAMES:
+        return f'"{username}" is a protected username'
     if not _USERNAME_RE.fullmatch(username):
         return "Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)"
     password_error = _validate_password(password)

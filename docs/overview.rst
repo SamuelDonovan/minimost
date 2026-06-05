@@ -89,6 +89,13 @@ Real-time Interaction
   on mDNS — it works on fully air-gapped LANs out of the box.
 - **Emoji reactions** — react to any message with one of 477 emoji; reactions
   are toggled atomically and sync instantly across all users.
+- **@mentions** — typing ``@`` opens a fuzzy-search dropdown of the current
+  channel's members (DM participants, private-channel members, or every other
+  user for public channels).  Mentions are validated server-side and stored in
+  the message's ``mentions`` column; a mentioned user sees the message
+  highlighted and receives a sound and desktop notification — honoring their
+  notification toggles — even while the page is focused.  The reserved keyword
+  ``@everyone`` mentions the whole channel.
 - **Typing indicators** — see when other users are composing a message.
 - **Read receipts** — checkmark indicators showing who has read each message.
 - **Presence indicators** — active, idle, hidden, and offline states updated
@@ -125,10 +132,12 @@ Interface
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, and
   pinch-to-zoom font sizing.
 - **Desktop notifications** — browser push notifications when a new message
-  arrives and the tab is in the background; mutable per session.
+  arrives and the tab is in the background; an ``@mention`` notifies you even
+  while the tab is focused.  Mutable per session.
 - **Sound notifications** — configurable audio alerts: new messages, incoming
   calls, call answered, hang-up, and participant-left tones; all mutable with
-  one click.
+  one click.  An ``@mention`` plays the new-message alert even when the tab is
+  focused.
 
 Security
 ~~~~~~~~

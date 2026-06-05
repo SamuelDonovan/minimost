@@ -108,6 +108,13 @@ across all recipients. This shared timestamp is used as the cross-user
 identity token for edits, deletes, and reactions — since row ``id`` values
 differ between per-user databases.
 
+Before the loop, :func:`minimost.chat.extract_mentions` scans the text for
+``@username`` tokens that resolve to real channel members and stores the result
+(JSON, or the ``"@everyone"`` sentinel for a channel-wide mention) in each
+recipient's ``mentions`` column. Editing a message re-extracts mentions from
+the new text. The polling response returns ``mentions`` so each client can
+highlight and notify the mentioned viewer.
+
 Shared State: auth.db and presence.db
 --------------------------------------
 
@@ -226,7 +233,9 @@ New User Registration Flow
 --------------------------
 
 1. User submits the signup form.
-2. Server validates username format and password complexity rules.
+2. Server validates username format and password complexity rules. The
+   reserved names ``minimost``, ``everyone``, and ``deleteduser`` are rejected
+   (case-insensitively) because the app gives them special meaning.
 3. ``(username, hash)`` is inserted into ``auth.db``.
 4. :func:`minimost.common.init_user_db` creates ``users/<username>.db``.
 5. :func:`minimost.auth._seed_channel_history` copies all public channel
