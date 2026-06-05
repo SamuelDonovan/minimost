@@ -610,6 +610,69 @@ describe('search input keyboard navigation', () => {
     });
 });
 
+// ── "From" user fuzzy finder ─────────────────────────────────────────────────
+describe('From user fuzzy finder', () => {
+    let fromInput;
+    let suggestions;
+
+    beforeEach(() => {
+        // The finder reads the shared user cache populated by the DM modal.
+        global.allUsers = ['bob', 'carol', 'dave'];
+        global.usersLoaded = true;
+        fromInput = document.getElementById('msg-search-from');
+        suggestions = document.getElementById('msg-search-from-suggestions');
+        fromInput.value = '';
+        suggestions.innerHTML = '';
+        suggestions.style.display = 'none';
+    });
+
+    function typeFrom(value) {
+        fromInput.value = value;
+        fromInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    test('shows fuzzy-matched users for a partial query', () => {
+        typeFrom('ca');
+        expect(suggestions.style.display).toBe('block');
+        const labels = [...suggestions.children].map(c => c.textContent);
+        expect(labels).toContain('carol');
+        expect(labels).not.toContain('bob');
+    });
+
+    test('includes the current user as a candidate', () => {
+        typeFrom('ali');  // CURRENT_USER is 'alice', excluded from /users
+        const labels = [...suggestions.children].map(c => c.textContent);
+        expect(labels).toContain('alice');
+    });
+
+    test('hides the dropdown when the field is cleared', () => {
+        typeFrom('ca');
+        typeFrom('');
+        expect(suggestions.style.display).toBe('none');
+    });
+
+    test('hides the dropdown when nothing matches', () => {
+        typeFrom('zzzzz');
+        expect(suggestions.style.display).toBe('none');
+    });
+
+    test('clicking a suggestion fills the input and closes the list', () => {
+        typeFrom('ca');
+        suggestions.children[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        expect(fromInput.value).toBe('carol');
+        expect(suggestions.style.display).toBe('none');
+    });
+
+    test('ArrowDown + Enter selects the highlighted user', () => {
+        typeFrom('a');  // matches alice, carol, dave
+        fromInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+        fromInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        // First match becomes the value; list closes.
+        expect(suggestions.style.display).toBe('none');
+        expect(fromInput.value.length).toBeGreaterThan(0);
+    });
+});
+
 // ── linkify ───────────────────────────────────────────────────────────────────
 describe('linkify()', () => {
     test('converts http URL to anchor tag', () => {

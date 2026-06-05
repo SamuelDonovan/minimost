@@ -1483,8 +1483,10 @@ def search_messages():
     if len(clauses) == 1:
         return jsonify([])
 
+    # Only constant clause strings are joined in; every user value is bound
+    # via a ? placeholder in `params`, so this is not an injection vector.
     sql = (
-        "SELECT id, channel, sender, content, ts FROM messages WHERE "
+        "SELECT id, channel, sender, content, ts FROM messages WHERE "  # nosec B608
         + " AND ".join(clauses)
         + " ORDER BY ts DESC LIMIT 50"
     )
