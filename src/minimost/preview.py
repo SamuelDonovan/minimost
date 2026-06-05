@@ -108,6 +108,14 @@ _TEXT_EXTENSIONS = frozenset(
         "cmake",
         "mk",
         "make",
+        "groovy",
+        "gradle",
+        "vhd",
+        "vhdl",
+        "v",
+        "vh",
+        "sv",
+        "svh",
         "xml",
         "xsl",
         "xslt",
@@ -157,6 +165,23 @@ _TEXT_FILENAMES = frozenset(
         "requirements.txt",
     }
 )
+
+
+def is_text_filename(name):
+    """Return ``True`` if *name* (a basename) denotes a previewable text file.
+
+    Matches by extension (:data:`_TEXT_EXTENSIONS`), by exact filename
+    (:data:`_TEXT_FILENAMES`), or by the ``jenkinsfile`` prefix — which covers
+    ``Jenkinsfile``, ``Jenkinsfile.prod`` and similar (case-insensitive).
+    """
+    name = name.lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+    return (
+        ext in _TEXT_EXTENSIONS
+        or name in _TEXT_FILENAMES
+        or name.startswith("jenkinsfile")
+    )
+
 
 _PRIVATE_RANGES = re.compile(
     r"^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1)"
@@ -673,9 +698,8 @@ def _text_file_preview(url):
     """
     parsed = urllib.parse.urlparse(url)
     filename = parsed.path.rstrip("/").rsplit("/", 1)[-1]
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-    if ext not in _TEXT_EXTENSIONS and filename.lower() not in _TEXT_FILENAMES:
+    if not is_text_filename(filename):
         return {}
 
     filepath = parsed.path.lstrip("/") or filename

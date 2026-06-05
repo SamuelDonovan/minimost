@@ -574,8 +574,9 @@ const _EXT_TO_LANG = {
     sh: 'sh', bash: 'sh', zsh: 'sh', shell: 'sh',
     makefile: 'make', mk: 'make', make: 'make',
     cmake: 'cmake',
+    groovy: 'groovy', gradle: 'groovy', jenkinsfile: 'groovy',
     vhd: 'vhdl', vhdl: 'vhdl',
-    v: 'verilog', sv: 'verilog', svh: 'verilog', verilog: 'verilog',
+    v: 'verilog', vh: 'verilog', sv: 'verilog', svh: 'verilog', verilog: 'verilog',
     java: 'java', go: 'go', golang: 'go', rs: 'rust', rust: 'rust',
     xml: 'xml', xsl: 'xml', xslt: 'xml', xsd: 'xml', svg: 'xml', html: 'xml', htm: 'xml',
 };
@@ -695,6 +696,32 @@ const _HL_RULES = (() => {
             [kw('ifeq','ifneq','ifdef','ifndef','else','endif',
                'include','override','export','unexport',
                'define','endef','undefine'), 'kw'],
+        ],
+        groovy: [
+            [STR,     'str'],
+            [CMT_BLK, 'cmt'], [CMT_SL, 'cmt'],
+            [DEC_PY,  'dec'],   // @Library, @NonCPS and other annotations
+            [kw('as','assert','break','case','catch','class','const',
+               'continue','def','default','do','else','enum','extends',
+               'false','finally','for','goto','if','implements','import',
+               'in','instanceof','interface','new','null','package',
+               'return','super','switch','this','throw','throws','trait',
+               'true','try','while','abstract','final','native','private',
+               'protected','public','static','strictfp','synchronized',
+               'transient','volatile','var'), 'kw'],
+            [kw('boolean','byte','char','double','float','int','long',
+               'short','void','String','Object','List','Map','Set',
+               'Boolean','Integer','Long','Double','Float','Number',
+               'BigDecimal','BigInteger','Closure','GString'), 'type'],
+            [kw('pipeline','agent','stages','stage','steps','script',
+               'environment','options','parameters','triggers','tools',
+               'when','post','always','success','failure','unstable',
+               'changed','cleanup','parallel','matrix','node','sh','bat',
+               'echo','dir','withEnv','withCredentials','checkout','git',
+               'input','timeout','retry','build','archiveArtifacts','junit',
+               'stash','unstash','error','catchError','readFile','writeFile',
+               'fileExists','emailext','docker','label'), 'bi'],
+            [NUM_HEX, 'num'], [NUM_DEC, 'num'],
         ],
         cmake: [
             [STR,     'str'],
@@ -910,6 +937,17 @@ function _syntaxHighlight(text, ext) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Resolve the highlighter language from a basename, covering extensionless
+// files (Jenkinsfile → groovy, Makefile → make) the server can't key off an
+// extension. Falls back to the server-provided language (the file extension).
+function _previewLang(filename, language) {
+    const base = (filename || '').toLowerCase();
+    if (base === 'cmakelists.txt') return 'cmake';
+    if (base.startsWith('jenkinsfile')) return 'groovy';
+    if (base === 'makefile' || base === 'gnumakefile') return 'make';
+    return language || '';
+}
+
 function _previewCodeEl(data) {
     const wrap = document.createElement("div");
     wrap.className = "preview-code";
@@ -917,12 +955,19 @@ function _previewCodeEl(data) {
     const header = document.createElement("div");
     header.className = "preview-code-header";
 
-    const link = document.createElement("a");
-    link.href = data.url;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = data.filepath;
-    header.appendChild(link);
+    if (data._fileChip) {
+        // Uploaded file: reuse the download chip (logo + name + size) as the
+        // header instead of a duplicate plain filename link. Moving it here
+        // removes it as a standalone sibling, so the file shows as one card.
+        header.appendChild(data._fileChip);
+    } else {
+        const link = document.createElement("a");
+        link.href = data.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = data.filepath;
+        header.appendChild(link);
+    }
 
     if (data.highlight_start) {
         const rangeEl = document.createElement("span");
@@ -942,9 +987,7 @@ function _previewCodeEl(data) {
     const firstNum = data.first_line_num || 1;
     const hlStart = data.highlight_start;
     const hlEnd = data.highlight_end || hlStart;
-    const cmakeLang = (data.filename || '').toLowerCase() === 'cmakelists.txt'
-        ? 'cmake'
-        : (data.language || '');
+    const codeLang = _previewLang(data.filename, data.language);
 
     codeLines.forEach((line, i) => {
         const lineNum = firstNum + i;
@@ -959,7 +1002,7 @@ function _previewCodeEl(data) {
         row.appendChild(ln);
 
         const content = document.createElement("span");
-        content.innerHTML = _syntaxHighlight(line, cmakeLang);
+        content.innerHTML = _syntaxHighlight(line, codeLang);
         row.appendChild(content);
 
         pre.appendChild(row);
@@ -1005,6 +1048,7 @@ const _PREVIEWABLE_EXTENSIONS = new Set([
     "java","kt","scala","rs","go","rb","php","pl","lua",
     "sh","bash","zsh","fish",
     "cmake","mk","make",
+    "groovy","gradle","vhd","vhdl","v","vh","sv","svh",
     "xml","xsl","xslt","xsd","svg",
     "html","htm","css","scss","sass","less",
     "json","yaml","yml","toml","ini","cfg","conf",
@@ -1012,13 +1056,27 @@ const _PREVIEWABLE_EXTENSIONS = new Set([
     "r","swift","m","ex","exs","erl","tf","hcl","proto",
 ]);
 
+// Original (display) basename of an uploaded file, lowercased — strips the
+// 32-char UUID prefix the server prepends to stored filenames.
+function _previewBaseName(fn) {
+    const name = (fn.length > 33 && fn[32] === "_") ? fn.slice(33) : fn;
+    return name.toLowerCase();
+}
+
+// True if an uploaded file should get a code preview — by extension, or by
+// special name (Jenkinsfile*, Makefile) which have no useful extension.
+function _isPreviewableFile(fn) {
+    const base = _previewBaseName(fn);
+    const ext = base.includes(".") ? base.split(".").pop() : "";
+    if (_PREVIEWABLE_EXTENSIONS.has(ext)) return true;
+    return base.startsWith("jenkinsfile")
+        || base === "makefile" || base === "gnumakefile";
+}
+
 function _msgHasPreviewableContent(msgEl) {
     if (msgEl.querySelector(".text a[href^='http']")) return true;
     const fn = msgEl.querySelector("a.file-download[data-fn]")?.dataset.fn;
-    if (fn) {
-        const ext = fn.includes(".") ? fn.split(".").pop().toLowerCase() : "";
-        if (_PREVIEWABLE_EXTENSIONS.has(ext)) return true;
-    }
+    if (fn && _isPreviewableFile(fn)) return true;
     return false;
 }
 
@@ -1058,14 +1116,16 @@ async function attachPreview(msgEl) {
     const fileLink = msgEl.querySelector("a.file-download[data-fn]");
     if (!fileLink) return;
     const fn = fileLink.dataset.fn;
-    const ext = fn.includes(".") ? fn.split(".").pop().toLowerCase() : "";
-    if (!_PREVIEWABLE_EXTENSIONS.has(ext)) return;
+    if (!_isPreviewableFile(fn)) return;
 
     let data;
     try {
         const resp = await fetch(`/file_preview/${encodeURIComponent(fn)}`);
         data = await resp.json();
     } catch { return; }
+    // Fold the standalone download chip into the preview's header so the same
+    // file isn't shown as two separate cards (chip + preview).
+    if (data && data.type === "code") data._fileChip = fileLink;
     _attachPreviewEl(msgEl, data);
 }
 

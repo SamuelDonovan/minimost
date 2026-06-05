@@ -1288,13 +1288,15 @@ def file_preview(filename):
     if not safe_name:
         abort(404)
     path = UPLOAD_DIR / safe_name
-    ext = path.suffix.lstrip(".").lower()
-    base = path.name.lower()
 
-    if (
-        ext not in preview_mod._TEXT_EXTENSIONS
-        and base not in preview_mod._TEXT_FILENAMES
-    ):
+    # Strip the 32-char UUID prefix to recover the original filename — needed
+    # both for the header and for matching special names (Makefile, Jenkinsfile)
+    # whose stored form is prefixed and so never matches on its own.
+    display_name = (
+        filename[33:] if len(filename) > 33 and filename[32] == "_" else filename
+    )
+
+    if not preview_mod.is_text_filename(display_name):
         return jsonify({})
 
     try:
@@ -1302,10 +1304,6 @@ def file_preview(filename):
     except Exception:
         return jsonify({})
 
-    # Strip the 32-char UUID prefix to show the original filename in the header
-    display_name = (
-        filename[33:] if len(filename) > 33 and filename[32] == "_" else filename
-    )
     result = preview_mod._build_code_result(
         raw, display_name, None, None, f"/files/{filename}"
     )

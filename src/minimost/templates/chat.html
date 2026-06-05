@@ -828,10 +828,30 @@ function addFiles(files) {
             img.src = URL.createObjectURL(file);
             div.appendChild(img);
         } else {
-            const label = document.createElement("span");
-            label.className = "file-preview-name";
-            label.textContent = file.name;
-            div.appendChild(label);
+            const card = document.createElement("div");
+            card.className = "file-preview-card";
+
+            const icon = document.createElement("img");
+            icon.className = "file-type-icon";
+            icon.src = `/static/file-icons/${fileIconFor(file.name)}.svg`;
+            icon.alt = "";
+
+            const meta = document.createElement("div");
+            meta.className = "file-meta";
+
+            const nm = document.createElement("span");
+            nm.className = "file-name";
+            nm.textContent = file.name;
+
+            const sz = document.createElement("span");
+            sz.className = "file-size";
+            sz.textContent = formatBytes(file.size);
+
+            meta.appendChild(nm);
+            meta.appendChild(sz);
+            card.appendChild(icon);
+            card.appendChild(meta);
+            div.appendChild(card);
         }
 
         div.appendChild(btn);
@@ -842,6 +862,59 @@ function addFiles(files) {
 
 // File-deleted detection
 const _fileExistsCache = new Map();
+const _fileSizeCache = new Map();
+
+// Map a file's extension (or special filename) to a bundled file-type logo
+// under /static/file-icons/. Unknown types fall back to a generic glyph.
+const FILE_ICON_EXT = {
+    py: "python", pyw: "python", pyi: "python",
+    cpp: "cplusplus", cxx: "cplusplus", cc: "cplusplus", hpp: "cplusplus", hh: "cplusplus",
+    c: "c", h: "c",
+    cmake: "cmake",
+    js: "javascript", mjs: "javascript", cjs: "javascript",
+    ts: "typescript", tsx: "typescript",
+    html: "html5", htm: "html5",
+    css: "css3",
+    md: "markdown", markdown: "markdown",
+    sh: "bash", bash: "bash", zsh: "bash",
+    rs: "rust",
+    go: "go",
+    java: "java",
+    rb: "ruby",
+    php: "php",
+    json: "json",
+    yml: "yaml", yaml: "yaml",
+    vhd: "vhdl", vhdl: "vhdl",
+    v: "vhdl", vh: "vhdl", sv: "vhdl", svh: "vhdl",
+    groovy: "groovy", gradle: "gradle",
+    mk: "make", make: "make",
+};
+const FILE_ICON_NAME = {
+    "cmakelists.txt": "cmake",
+    "dockerfile": "docker",
+    "makefile": "make",
+    "gnumakefile": "make",
+};
+
+function fileIconFor(name) {
+    const lower = name.toLowerCase();
+    // Prefix-matched families (e.g. Jenkinsfile, Jenkinsfile.prod, Makefile.inc).
+    if (lower.startsWith("jenkinsfile")) return "jenkins";
+    if (lower.startsWith("makefile")) return "make";
+    if (FILE_ICON_NAME[lower]) return FILE_ICON_NAME[lower];
+    const dot = lower.lastIndexOf(".");
+    const ext = dot >= 0 ? lower.slice(dot + 1) : "";
+    return FILE_ICON_EXT[ext] || "generic";
+}
+
+function formatBytes(bytes) {
+    if (!Number.isFinite(bytes)) return "";
+    if (bytes < 1024) return bytes + " B";
+    const units = ["KB", "MB", "GB", "TB"];
+    let i = -1;
+    do { bytes /= 1024; i++; } while (bytes >= 1024 && i < units.length - 1);
+    return (bytes < 10 ? bytes.toFixed(1) : Math.round(bytes)) + " " + units[i];
+}
 
 function _markFileDeleted(linkEl) {
     const span = document.createElement("span");
@@ -853,14 +926,23 @@ function _markFileDeleted(linkEl) {
 function _checkDeletedFiles(msgEl) {
     msgEl.querySelectorAll("a.file-download[data-fn]").forEach(link => {
         const fn = link.dataset.fn;
+        const applySize = size => {
+            if (!Number.isFinite(size)) return;
+            const sizeEl = link.querySelector(".file-size");
+            if (sizeEl) sizeEl.textContent = formatBytes(size);
+        };
         if (_fileExistsCache.has(fn)) {
             if (!_fileExistsCache.get(fn)) _markFileDeleted(link);
+            else applySize(_fileSizeCache.get(fn));
             return;
         }
         fetch(`/files/${fn}`, { method: "HEAD" })
             .then(r => {
                 _fileExistsCache.set(fn, r.ok);
-                if (!r.ok) _markFileDeleted(link);
+                if (!r.ok) { _markFileDeleted(link); return; }
+                const len = parseInt(r.headers.get("Content-Length"), 10);
+                _fileSizeCache.set(fn, len);
+                applySize(len);
             })
             .catch(() => {});
     });
@@ -1157,7 +1239,9 @@ function _buildMsgHtml(m, time, fullTime, color) {
                 bodyHtml += `<a href="/files/${fn}" target="_blank"><img src="/files/${fn}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='static/retention.png';"></a>`;
             } else {
                 const displayName = (fn.length > 33 && fn[32] === "_") ? fn.slice(33) : fn;
-                bodyHtml += `<a href="/files/${fn}" class="file-download" data-fn="${fn}" download="${displayName}"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4v-2h14v2H5z"/></svg> ${displayName}</a>`;
+                const safeName = escapeHtml(displayName);
+                const icon = fileIconFor(displayName);
+                bodyHtml += `<a href="/files/${fn}" class="file-download" data-fn="${fn}" download="${safeName}"><img class="file-type-icon" src="/static/file-icons/${icon}.svg" alt="" loading="lazy"><span class="file-meta"><span class="file-name">${safeName}</span><span class="file-size"></span></span></a>`;
             }
         }
     }
