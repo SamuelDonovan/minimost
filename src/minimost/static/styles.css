@@ -750,8 +750,8 @@ body {
 
 .unread-badge {
     margin-left: auto;
-    background: #c0392b;
-    color: white;
+    background: #fff;
+    color: #1e1e1e;
     font-size: 11px;
     padding: 2px 6px;
     border-radius: 10px;
