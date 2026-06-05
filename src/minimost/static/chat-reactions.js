@@ -625,3 +625,91 @@ document.addEventListener("click", function(e) {
     }
 });
 
+// ── Emoji picker (inserts emoji into the message box) ────────────────────────
+// Reuses the REACTIONS emoji set. Unlike the reaction picker, clicking an item
+// inserts the character at the caret in the message box and leaves the picker
+// open so several emoji can be added in a row.
+
+(function buildEmojiPicker() {
+    const grid = document.getElementById("emoji-picker-grid");
+    if (!grid) return;
+    REACTIONS.forEach(function(r) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "emoji-picker-item";
+        btn.title = r.label;
+        btn.dataset.name = r.name;
+        btn.dataset.label = r.label.toLowerCase();
+        btn.textContent = r.emoji;
+        btn.onclick = function(e) { e.stopPropagation(); insertEmoji(r.emoji); };
+        grid.appendChild(btn);
+    });
+    const search = document.getElementById("emoji-search");
+    search.addEventListener("input", function() { filterEmojis(this.value); });
+    search.addEventListener("click", function(e) { e.stopPropagation(); });
+    search.addEventListener("keydown", function(e) {
+        if (e.key === "Escape") { closeEmojiPicker(); }
+        else if (e.key === "Enter") {
+            e.preventDefault();
+            const first = Array.from(grid.querySelectorAll(".emoji-picker-item"))
+                .find(el => el.style.display !== "none");
+            if (first) first.click();
+        }
+    });
+})();
+
+function filterEmojis(query) {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll("#emoji-picker-grid .emoji-picker-item").forEach(function(item) {
+        const match = !q || item.dataset.name.includes(q) || item.dataset.label.includes(q);
+        item.style.display = match ? "" : "none";
+    });
+}
+
+function insertEmoji(emoji) {
+    const box = document.getElementById("msg");
+    if (!box) return;
+    const start = box.selectionStart ?? box.value.length;
+    const end = box.selectionEnd ?? box.value.length;
+    box.value = box.value.slice(0, start) + emoji + box.value.slice(end);
+    box.selectionStart = box.selectionEnd = start + emoji.length;
+    box.focus();
+    // Notify the rest of the app (send-button state, typing indicator, …).
+    box.dispatchEvent(new Event("input"));
+}
+
+function openEmojiPicker(event) {
+    event.stopPropagation();
+    const picker = document.getElementById("emoji-picker");
+    if (picker.style.display === "block") { closeEmojiPicker(); return; }
+    picker.style.display = "block";
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pw = picker.offsetWidth;
+    const ph = picker.offsetHeight;
+    let left = Math.max(8, Math.min(rect.left, window.innerWidth - pw - 8));
+    // The message box sits at the bottom, so open above the button.
+    let top = rect.top - ph - 6;
+    if (top < 8) top = rect.bottom + 6;
+    picker.style.left = left + "px";
+    picker.style.top = top + "px";
+    const search = document.getElementById("emoji-search");
+    search.value = "";
+    filterEmojis("");
+    requestAnimationFrame(function() { search.focus(); });
+}
+
+function closeEmojiPicker() {
+    const picker = document.getElementById("emoji-picker");
+    if (picker) picker.style.display = "none";
+}
+
+document.addEventListener("click", function(e) {
+    const picker = document.getElementById("emoji-picker");
+    const btn = document.getElementById("emoji-btn");
+    if (picker && picker.style.display === "block"
+        && !picker.contains(e.target)
+        && !(btn && btn.contains(e.target))) {
+        closeEmojiPicker();
+    }
+});
+

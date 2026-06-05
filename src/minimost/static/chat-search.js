@@ -134,6 +134,22 @@ function strikethrough(text) {
     return text.replace(/~~(.+?)~~/g, "<s>$1</s>");
 }
 
+// True if a message is nothing but emoji (and whitespace) — used to render
+// such messages at a larger size. Matches an emoji base (pictographic char or
+// regional-indicator) plus any trailing variation selector, skin-tone
+// modifier, or ZWJ-joined sequence (families, professions, etc.).
+const _EMOJI_BASE = String.raw`\p{Extended_Pictographic}|\p{Regional_Indicator}`;
+const _EMOJI_SEQ = new RegExp(
+    `(?:${_EMOJI_BASE})(?:\\uFE0F|[\\u{1F3FB}-\\u{1F3FF}]|\\u200D(?:${_EMOJI_BASE}))*`,
+    "gu"
+);
+
+function isEmojiOnly(text) {
+    const t = (text || "").replace(/\s+/g, "");
+    if (!t) return false;
+    return t.replace(_EMOJI_SEQ, "").length === 0;
+}
+
 function formatText(text) {
     // 1. Extract fenced code blocks before any escaping.
     // Strip the newline immediately before/after each fence so the block
