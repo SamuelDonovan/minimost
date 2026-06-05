@@ -216,6 +216,24 @@ def _mentions_json(text: str, channel: str):
     return json.dumps(mentions) if mentions else None
 
 
+def _opt_float(value):
+    """Parse *value* as a float, returning ``None`` for empty/invalid input.
+
+    Used to coerce optional numeric query-string parameters (e.g. the search
+    date bounds) without raising on absent or malformed values.
+
+    :param value: The raw query-string value, or ``None``.
+    :returns: The parsed float, or ``None`` if *value* is missing or invalid.
+    :rtype: float or None
+    """
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_private_db():
     """Return an open WAL connection to the shared ``presence.db``.
 
@@ -1410,32 +1428,68 @@ def search_messages():
     **current user's database only**, which means only messages that user has
     access to (including all public channels and their DMs) are searched.
 
-    Query parameters:
-        **q** (str): The search term.  An empty query returns ``[]``
-        immediately without hitting the database.
+    Query parameters (all optional, combined with ``AND``):
+        **q** (str): Keyword matched as a case-insensitive ``LIKE`` substring
+        of the message content.
+
+        **from** (str): Restrict to messages from this sender (matched
+        case-insensitively).
+
+        **channel** (str): Restrict to a single channel identifier.
+
+        **start** / **end** (float): Inclusive lower / exclusive upper bound
+        on the message timestamp, as epoch seconds.  The client computes
+        these from the picked dates using the viewer's local timezone.
+
+    At least one filter must be supplied; a request with no filters returns
+    ``[]`` without hitting the database, so an empty search box never dumps
+    the whole history.
 
     :returns: JSON array of matching message objects, each with keys
         ``id``, ``channel``, ``sender``, ``content``, and ``ts``.
-        Returns ``[]`` if *q* is empty.
     :rtype: flask.Response (application/json)
     """
     user = session["user"]
+
+    clauses = ["deleted = 0"]
+    params = []
+
     query = request.args.get("q", "").strip()
-    if not query:
+    if query:
+        clauses.append("content LIKE ?")
+        params.append(f"%{query}%")
+
+    sender = request.args.get("from", "").strip()
+    if sender:
+        clauses.append("sender = ? COLLATE NOCASE")
+        params.append(sender)
+
+    channel = request.args.get("channel", "").strip()
+    if channel:
+        clauses.append("channel = ?")
+        params.append(channel)
+
+    start_ts = _opt_float(request.args.get("start"))
+    if start_ts is not None:
+        clauses.append("ts >= ?")
+        params.append(start_ts)
+
+    end_ts = _opt_float(request.args.get("end"))
+    if end_ts is not None:
+        clauses.append("ts < ?")
+        params.append(end_ts)
+
+    # Only the constant "deleted = 0" clause means no real filter was given.
+    if len(clauses) == 1:
         return jsonify([])
 
-    db = get_db(user)
-    cur = db.execute(
-        """
-        SELECT id, channel, sender, content, ts
-        FROM messages
-        WHERE content LIKE ?
-          AND deleted = 0
-        ORDER BY ts DESC
-        LIMIT 50
-        """,
-        (f"%{query}%",),
+    sql = (
+        "SELECT id, channel, sender, content, ts FROM messages WHERE "
+        + " AND ".join(clauses)
+        + " ORDER BY ts DESC LIMIT 50"
     )
+    db = get_db(user)
+    cur = db.execute(sql, params)
     results = [dict(r) for r in cur.fetchall()]
     db.close()
     return jsonify(results)

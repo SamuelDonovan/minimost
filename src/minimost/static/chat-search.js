@@ -68,17 +68,138 @@ function buildSearchSnippet(content, indices, maxLen = 120) {
 
 let searchSelectedIndex = -1;
 
+// Mirror a channel identifier to its sidebar display name (e.g. a DM or
+// private-channel id → its friendly label). Falls back to the raw id.
+function _searchChannelLabel(ch) {
+    const item = document.querySelector(
+        `#sidebar-dynamic .sidebar-item[data-channel="${(ch || '').replaceAll('"', '\\"')}"]`
+    );
+    return item?.querySelector(".label")?.textContent || ch;
+}
+
+// Rebuild the channel <select> from the channels currently in the sidebar so
+// the filter always reflects what the user can actually see.
+function populateSearchChannels() {
+    const previous = searchChannel.value;
+    searchChannel.innerHTML = '<option value="">All channels</option>';
+    document.querySelectorAll("#sidebar-dynamic .sidebar-item[data-channel]").forEach(item => {
+        const opt = document.createElement("option");
+        opt.value = item.dataset.channel;
+        opt.textContent = item.querySelector(".label")?.textContent || item.dataset.channel;
+        searchChannel.appendChild(opt);
+    });
+    searchChannel.value = previous;
+}
+
+// ── "From" user fuzzy finder ──────────────────────────────────────────────────
+// Reuses the shared allUsers/usersLoaded cache (populated by the DM modal) and
+// the same fuzzySearch/highlight helpers as the @mention and DM autocompletes.
+
+let searchFromMatches = [];
+let searchFromIndex = -1;
+
+async function ensureSearchUsersLoaded() {
+    if (usersLoaded) return;
+    try {
+        const resp = await fetch("/users");
+        if (resp.ok) {
+            allUsers = await resp.json();
+            usersLoaded = true;
+        }
+    } catch { /* offline — finder stays empty, typed text still filters */ }
+}
+
+function hideSearchFromSuggestions() {
+    searchFromSuggestions.style.display = "none";
+    searchFromIndex = -1;
+}
+
+function updateSearchFromHighlight() {
+    Array.from(searchFromSuggestions.children).forEach((el, i) => {
+        el.classList.toggle("active", i === searchFromIndex);
+    });
+}
+
+function updateSearchFromSuggestions() {
+    const q = searchFrom.value.trim().toLowerCase();
+    searchFromIndex = -1;
+    if (!q) { hideSearchFromSuggestions(); return; }
+
+    // /users excludes the caller, so add them back — you may want your own messages.
+    const candidates = [CURRENT_USER, ...allUsers];
+    searchFromMatches = candidates
+        .map(user => ({ user, result: fuzzySearch(q, user) }))
+        .filter(({ result }) => result !== null)
+        .sort((a, b) => b.result.score - a.result.score)
+        .slice(0, 8);
+
+    if (!searchFromMatches.length) { hideSearchFromSuggestions(); return; }
+
+    searchFromSuggestions.innerHTML = "";
+    searchFromMatches.forEach(({ user, result }, idx) => {
+        const div = document.createElement("div");
+        div.className = "autocomplete-suggestion";
+        div.innerHTML = highlightFuzzyMatch(user, result.indices);
+        // mousedown (not click) so the input doesn't blur away before selection.
+        div.onmousedown = e => { e.preventDefault(); selectSearchFrom(idx); };
+        searchFromSuggestions.appendChild(div);
+    });
+    searchFromSuggestions.style.display = "block";
+}
+
+function selectSearchFrom(idx) {
+    searchFrom.value = searchFromMatches[idx].user;
+    hideSearchFromSuggestions();
+    searchFrom.focus();
+    runSearch();
+}
+
+// Keyboard navigation + dismissal for the "From" finder. Attached further down,
+// after the searchFrom element reference is initialised.
+function _onSearchFromKeydown(e) {
+    const items = searchFromSuggestions.children;
+    const visible = searchFromSuggestions.style.display === "block";
+    if (!visible || !items.length) {
+        // Let Escape bubble to the global handler to close the modal.
+        return;
+    }
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
+        searchFromIndex = (searchFromIndex + 1) % items.length;
+        updateSearchFromHighlight();
+    } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        searchFromIndex = (searchFromIndex - 1 + items.length) % items.length;
+        updateSearchFromHighlight();
+    } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        selectSearchFrom(Math.max(searchFromIndex, 0));
+    } else if (e.key === "Escape") {
+        // Close just the dropdown, not the whole modal.
+        e.stopPropagation();
+        hideSearchFromSuggestions();
+    }
+}
+
 function startSearch() {
     searchModal.style.display = "block";
     searchInput.value = "";
+    searchFrom.value = "";
+    searchStart.value = "";
+    searchEnd.value = "";
+    populateSearchChannels();
+    searchChannel.value = "";
+    hideSearchFromSuggestions();
+    ensureSearchUsersLoaded();
     searchResults.innerHTML = "";
     searchInput.focus();
 }
 
 function updateSearchHighlight() {
-    const items = searchResults.children;
-    Array.from(items).forEach((el, i) => {
+    const items = searchResults.querySelectorAll(".search-result");
+    items.forEach((el, i) => {
         el.classList.toggle("active", i === searchSelectedIndex);
+        if (i === searchSelectedIndex) scrollIntoViewIfNeeded(el);
     });
 }
 
@@ -86,6 +207,11 @@ function updateSearchHighlight() {
 const searchModal = document.getElementById("msg-search-modal");
 const searchInput = document.getElementById("msg-search-input");
 const searchResults = document.getElementById("msg-search-results");
+const searchFrom = document.getElementById("msg-search-from");
+const searchFromSuggestions = document.getElementById("msg-search-from-suggestions");
+const searchChannel = document.getElementById("msg-search-channel");
+const searchStart = document.getElementById("msg-search-start");
+const searchEnd = document.getElementById("msg-search-end");
 
 document.getElementById("msg-search-btn").onclick = () => {
     startSearch();
@@ -438,38 +564,95 @@ function _goToSearchResult(msgChannel, msgId) {
     }, 200);
 }
 
-// Live search
-searchInput.addEventListener("input", debounce(() => {
+// Collect the active filters into a query string. A date picker value is
+// converted to epoch seconds in the viewer's local timezone; "Before" is made
+// inclusive of the chosen day by advancing one day to the exclusive bound.
+function buildSearchQuery() {
+    const params = new URLSearchParams();
     const q = searchInput.value.trim();
-    if (!q) {
+    if (q) params.set("q", q);
+
+    const from = searchFrom.value.trim();
+    if (from) params.set("from", from);
+
+    if (searchChannel.value) params.set("channel", searchChannel.value);
+
+    if (searchStart.value) {
+        const t = Date.parse(`${searchStart.value}T00:00:00`);
+        if (!Number.isNaN(t)) params.set("start", String(t / 1000));
+    }
+    if (searchEnd.value) {
+        const t = Date.parse(`${searchEnd.value}T00:00:00`);
+        if (!Number.isNaN(t)) params.set("end", String(t / 1000 + 86400));
+    }
+    return params;
+}
+
+function _renderSearchResults(data, q) {
+    searchResults.innerHTML = "";
+    searchSelectedIndex = -1;
+
+    // Score each result with fuzzySearch and sort best-first. With no keyword
+    // every row scores 0, preserving the server's newest-first order.
+    const scored = data
+        .map(msg => ({ msg, result: fuzzySearch(q, msg.content) }))
+        .filter(({ result }) => result !== null)
+        .sort((a, b) => b.result.score - a.result.score);
+
+    if (!scored.length) {
+        const empty = document.createElement("div");
+        empty.className = "search-empty";
+        empty.textContent = "No matching messages";
+        searchResults.appendChild(empty);
+        return;
+    }
+
+    scored.forEach(({ msg, result }) => {
+        const d = document.createElement("div");
+        d.className = "search-result";
+        const when = new Date(msg.ts * 1000).toLocaleString([], {
+            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+        });
+        const snippet = buildSearchSnippet(msg.content, result.indices);
+        d.innerHTML =
+            `<div class="search-result-meta">` +
+            `<span class="search-result-chan">${escapeHtml(_searchChannelLabel(msg.channel))}</span>` +
+            ` · ${when} · <b>${escapeHtml(msg.sender)}</b></div>` +
+            `<div class="search-result-text">${snippet}</div>`;
+        d.onclick = () => _goToSearchResult(msg.channel, msg.id);
+        searchResults.appendChild(d);
+    });
+}
+
+// Live search — re-runs whenever the keyword or any filter changes.
+const runSearch = debounce(() => {
+    const params = buildSearchQuery();
+    if ([...params.keys()].length === 0) {
         searchResults.innerHTML = "";
         return;
     }
-    fetch(`/search_messages?q=${encodeURIComponent(q)}`)
-    .then(r => r.json())
-    .then(data => {
-        searchResults.innerHTML = "";
-        searchSelectedIndex = -1;
+    const q = searchInput.value.trim();
+    fetch(`/search_messages?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => _renderSearchResults(data, q));
+}, 250);
 
-        // Score each result with fuzzySearch and sort best-first
-        const scored = data
-            .map(msg => ({ msg, result: fuzzySearch(q, msg.content) }))
-            .filter(({ result }) => result !== null)
-            .sort((a, b) => b.result.score - a.result.score);
-
-        scored.forEach(({ msg, result }) => {
-            const d = document.createElement("div");
-            const time = new Date(msg.ts * 1000).toLocaleTimeString();
-            const snippet = buildSearchSnippet(msg.content, result.indices);
-            d.innerHTML = `[${time}] <b>${escapeHtml(msg.sender)}</b>: ${snippet}`;
-            d.onclick = () => _goToSearchResult(msg.channel, msg.id);
-            searchResults.appendChild(d);
-        });
-    });
-}, 250));
+searchInput.addEventListener("input", runSearch);
+searchFrom.addEventListener("input", () => {
+    updateSearchFromSuggestions();
+    runSearch();
+});
+searchFrom.addEventListener("keydown", _onSearchFromKeydown);
+searchFrom.addEventListener("blur", () => {
+    // Delay so a mousedown selection is processed before the list disappears.
+    setTimeout(hideSearchFromSuggestions, 120);
+});
+searchChannel.addEventListener("change", runSearch);
+searchStart.addEventListener("change", runSearch);
+searchEnd.addEventListener("change", runSearch);
 
 searchInput.addEventListener("keydown", (e) => {
-    const items = searchResults.children;
+    const items = searchResults.querySelectorAll(".search-result");
     const hasResults = items.length > 0;
 
     if (!hasResults) return;

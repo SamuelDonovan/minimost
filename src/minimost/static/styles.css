@@ -783,7 +783,79 @@ body {
     box-sizing: border-box;
     padding: 5px 10px;
 }
+#msg-search-modal .modal-content {
+    max-width: 560px;
+    width: 90%;
+    max-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    margin: 60px auto;
+    border-radius: 10px;
+}
+.search-input-wrap {
+    position: relative;
+    margin-bottom: 12px;
+}
+.search-input-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #888;
+    pointer-events: none;
+}
 #msg-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px 10px 38px;
+    border-radius: 8px;
+    border: 1px solid #3a3a3a;
+    background: #2a2a2a;
+    font-size: 15px;
+}
+#msg-search-input:focus {
+    outline: none;
+    border-color: #007acc;
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.25);
+}
+.search-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.search-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 120px;
+    min-width: 0;
+    font-size: 11px;
+    color: #999;
+}
+.search-filter > span {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+.search-filter input,
+.search-filter select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid #3a3a3a;
+    background: #2a2a2a;
+    color: #ddd;
+    font-size: 13px;
+}
+.search-filter input:focus,
+.search-filter select:focus {
+    outline: none;
+    border-color: #007acc;
+}
+.search-from-wrap {
     width: 100%;
 }
 .input-suggest-wrap {
@@ -870,18 +942,47 @@ mark.fuzzy-highlight {
     color: #7eb8f7;
     font-weight: bold;
 }
-#msg-search-results div {
-    padding: 6px;
-    border-bottom: 1px solid #333;
-    cursor: pointer;
+#msg-search-results {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -20px -20px;
+    padding: 0 12px 8px;
 }
-
-#msg-search-results div:hover {
+.search-result {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.search-result + .search-result {
+    border-top: 1px solid #2c2c2c;
+}
+.search-result:hover {
     background: #2d2d2d;
 }
-#msg-search-results .active {
-    background-color: #555;
-    color: #fff;
+.search-result.active {
+    background-color: #34608a;
+}
+.search-result-meta {
+    font-size: 11px;
+    color: #888;
+}
+.search-result-chan {
+    color: #7eb8f7;
+    font-weight: 600;
+}
+.search-result-text {
+    font-size: 13px;
+    color: #ddd;
+    line-height: 1.4;
+}
+.search-empty {
+    padding: 18px 4px;
+    text-align: center;
+    color: #888;
 }
 button, input, textarea{
     background: #2d2d2d;

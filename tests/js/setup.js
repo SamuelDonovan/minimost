@@ -225,6 +225,8 @@ const IDS = [
     'dm-modal', 'dm-users', 'dm-suggestions', 'dm-start', 'dm-cancel', 'new-dm-btn',
     // Search
     'msg-search-modal', 'msg-search-input', 'msg-search-results', 'msg-search-btn', 'msg-search-close',
+    'msg-search-from', 'msg-search-from-suggestions', 'msg-search-channel',
+    'msg-search-start', 'msg-search-end',
     // Private channels
     'create-private-ch-modal', 'rename-private-ch-modal', 'private-ch-members-modal',
     'private-ch-name', 'private-ch-name-error', 'private-ch-members-input', 'private-ch-suggestions',
@@ -285,12 +287,14 @@ IDS.forEach(id => {
             id === 'settings-name-color' || id === 'settings-bio' ||
             id === 'settings-delete-password' || id === 'settings-enter-key' ||
             id === 'msg-search-input' || id === 'settings-font-size' ||
+            id === 'msg-search-from' || id === 'msg-search-start' || id === 'msg-search-end' ||
             id === 'settings-avatar-file' || id === 'users-modal-search') {
             const input = document.createElement('input');
             input.id = id;
             input.type = id === 'settings-avatar-file' ? 'file' : 'text';
             document.body.appendChild(input);
-        } else if (id === 'settings-enter-key' || id === 'settings-font-size') {
+        } else if (id === 'settings-enter-key' || id === 'settings-font-size' ||
+                   id === 'msg-search-channel') {
             const sel = document.createElement('select');
             sel.id = id;
             document.body.appendChild(sel);

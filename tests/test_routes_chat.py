@@ -407,6 +407,55 @@ def test_search_finds_match(alice):
     assert data[0]["content"] == "find me please"
 
 
+def test_search_no_filters_returns_empty(alice):
+    _insert_message("alice", "general", "hello")
+    assert alice.get("/search_messages").get_json() == []
+
+
+def test_search_filter_by_sender(alice):
+    _insert_message("alice", "general", "from alice", sender="alice")
+    _insert_message("alice", "general", "from bob", sender="bob")
+    data = alice.get("/search_messages?from=bob").get_json()
+    assert [m["content"] for m in data] == ["from bob"]
+
+
+def test_search_filter_by_sender_is_case_insensitive(alice):
+    _insert_message("alice", "general", "from bob", sender="bob")
+    data = alice.get("/search_messages?from=BOB").get_json()
+    assert len(data) == 1
+
+
+def test_search_filter_by_channel(alice):
+    _insert_message("alice", "general", "in general")
+    _insert_message("alice", "random", "in random")
+    data = alice.get("/search_messages?channel=random").get_json()
+    assert [m["content"] for m in data] == ["in random"]
+
+
+def test_search_filter_by_date_range(alice):
+    _insert_message("alice", "general", "old", ts=1000.0)
+    _insert_message("alice", "general", "mid", ts=2000.0)
+    _insert_message("alice", "general", "new", ts=3000.0)
+    data = alice.get("/search_messages?start=1500&end=2500").get_json()
+    assert [m["content"] for m in data] == ["mid"]
+
+
+def test_search_filters_combine(alice):
+    _insert_message("alice", "general", "keep", sender="bob", ts=2000.0)
+    _insert_message("alice", "general", "wrong sender", sender="carol", ts=2000.0)
+    _insert_message("alice", "random", "wrong channel", sender="bob", ts=2000.0)
+    _insert_message("alice", "general", "too old", sender="bob", ts=100.0)
+    data = alice.get("/search_messages?from=bob&channel=general&start=1000").get_json()
+    assert [m["content"] for m in data] == ["keep"]
+
+
+def test_search_ignores_invalid_date(alice):
+    """A non-numeric date bound is dropped rather than rejected."""
+    _insert_message("alice", "general", "hello")
+    data = alice.get("/search_messages?q=hello&start=notanumber").get_json()
+    assert len(data) == 1
+
+
 # ── POST /edit/<id> ───────────────────────────────────────────────────────────
 
 

@@ -573,6 +573,7 @@ describe('search input keyboard navigation', () => {
         document.getElementById('msg-search-results').innerHTML = '';
         ['result1', 'result2', 'result3'].forEach((text, i) => {
             const div = document.createElement('div');
+            div.className = 'search-result';
             div.textContent = text;
             div.onclick = jest.fn();
             document.getElementById('msg-search-results').appendChild(div);
