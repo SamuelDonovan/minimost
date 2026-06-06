@@ -111,6 +111,8 @@ function refreshChannels() {
             } else if (lastUnreadCount === 0) {
                 stopFaviconFlash();
             }
+
+            maybeNotifyUnread();
         });
 }
 
@@ -155,6 +157,7 @@ function refreshPrivateChannels() {
                 stopFaviconFlash();
             }
 
+            maybeNotifyUnread();
             updateSidebarActive();
         });
 }
@@ -209,7 +212,7 @@ function sendPresence(state) {
 
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-        sendPresence("active");
+        reconcileOnActive();
     } else if (currentPresence !== "hidden") {
         // sendBeacon is more reliable than fetch when the tab is being hidden —
         // browsers (especially on Windows) may cancel in-flight fetch requests
@@ -220,6 +223,13 @@ document.addEventListener("visibilitychange", () => {
             new Blob([JSON.stringify({ state: "hidden" })], { type: "application/json" })
         );
     }
+});
+
+// Regaining window focus (e.g. alt-tabbing back) doesn't fire visibilitychange,
+// so reconcile here too — otherwise an unread badge on the channel the user is
+// already looking at would linger.
+window.addEventListener("focus", () => {
+    if (document.visibilityState === "visible") reconcileOnActive();
 });
 
 window.addEventListener("pagehide", () => {
@@ -244,6 +254,23 @@ function setIdleSent(v) { idleSent = v; }
             idleSent = false;
         }
     })
+);
+
+// Browsers only show OS notifications once permission is granted, and the
+// prompt must be triggered by a user gesture. The native-notification setting
+// defaults to on, but the only place that ever called requestPermission was the
+// settings toggle's "turn on" path — which never runs when it starts on. So ask
+// on the first interaction (unless the user has already granted or denied it).
+let _notifPermAsked = false;
+function ensureNotifPermission() {
+    if (_notifPermAsked) return;
+    if (!nativeNotifEnabled || !("Notification" in globalThis)) return;
+    if (Notification.permission !== "default") return;
+    _notifPermAsked = true;
+    Notification.requestPermission().catch(() => {});
+}
+["pointerdown", "keydown"].forEach(evt =>
+    document.addEventListener(evt, ensureNotifPermission)
 );
 
 function setPresence(presenceEl, state) {
@@ -280,15 +307,72 @@ let lastUnreadCount = 0;
 let channelUnreadCount = 0;
 
 
+// True when the page is genuinely in front of the user — visible *and* the
+// window/tab has OS focus. Anything else (another tab, another window, or a
+// minimised browser) counts as inactive and should raise alerts.
+function pageActive() {
+    return document.visibilityState === "visible" && document.hasFocus();
+}
+
+// Play the alert sound, debounced so the per-channel poll (fetchMessages) and
+// the cross-channel unread watcher (maybeNotifyUnread) can't both fire for the
+// same incoming message.
+let lastNotifSoundAt = 0;
+function playNotifSound() {
+    if (notifMuted) return;
+    const now = Date.now();
+    if (now - lastNotifSoundAt < 1000) return;
+    lastNotifSoundAt = now;
+    new Audio("/static/notification.mp3").play().catch(() => {});
+}
+
 function sendDesktopNotification(count) {
     if (!("Notification" in globalThis) || Notification.permission !== "granted") return;
     if (!nativeNotifEnabled) return;
-    if (!document.hidden) return;
+    if (pageActive()) return;
     new Notification("MiniMost", {
         body: `You have ${count} unread message${count === 1 ? "" : "s"}`,
         icon: "/static/web-app-manifest-192x192.png",
         tag: "minimost-unread",
         renotify: true,
+    });
+}
+
+// Cross-channel new-message watcher. Polling only fetches the active channel,
+// so messages in *other* channels surface only as unread-count changes.
+// Whenever the grand total (DMs + public + private) rises while the page is
+// inactive, fire one debounced sound + native notification. A short settle
+// window after load suppresses alerts for messages that were already unread
+// before this tab opened (the three counts arrive from separate pollers).
+let lastNotifiedTotal = 0;
+let lastMentionNotifAt = 0;
+const notifReadyAt = Date.now() + 6000;
+
+function grandTotalUnread() {
+    return channelUnreadCount + privateChannelUnreadCount + lastUnreadCount;
+}
+
+function maybeNotifyUnread() {
+    const total = grandTotalUnread();
+    if (Date.now() >= notifReadyAt && total > lastNotifiedTotal && !pageActive()) {
+        playNotifSound();
+        // Skip the generic notification if a specific mention notification just
+        // fired for the same message (avoids stacking two notifications).
+        if (Date.now() - lastMentionNotifAt > 2000) sendDesktopNotification(total);
+    }
+    lastNotifiedTotal = total;
+}
+
+// Mark the active channel read and refresh every unread badge. Called when the
+// page becomes active again — background polling deliberately leaves messages
+// unread, so this is what reconciles the sidebar once the user returns.
+function reconcileOnActive() {
+    sendPresence("active");
+    fetchMessages();
+    fetch(`/mark_read/${channel}`, { method: "POST" }).then(() => {
+        refreshChannels();
+        refreshPrivateChannels();
+        refreshTotalUnreadCount();
     });
 }
 
@@ -356,16 +440,15 @@ function refreshTotalUnreadCount() {
     fetch("/unread_count")
         .then(r => r.json())
         .then(data => {
-            const prevCount = lastUnreadCount;
             lastUnreadCount = data.count;
             updateTitleBadge(channelUnreadCount + privateChannelUnreadCount + lastUnreadCount);
             updateAppBadge(lastUnreadCount);
             if (lastUnreadCount > 0 || hasUnreadChannels || privateChannelUnreadCount > 0) {
                 startFaviconFlash();
-                if (lastUnreadCount !== prevCount) sendDesktopNotification(lastUnreadCount);
             } else {
                 stopFaviconFlash();
             }
+            maybeNotifyUnread();
         });
 }
 

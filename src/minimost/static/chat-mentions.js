@@ -67,6 +67,7 @@ function isMentioned(m) {
 function notifyMention(m) {
     if (!nativeNotifEnabled) return;
     if (!("Notification" in globalThis) || Notification.permission !== "granted") return;
+    lastMentionNotifAt = Date.now();
     const n = new Notification(`${m.sender} mentioned you — MiniMost`, {
         body: (m.content || "").slice(0, 140),
         icon: "/static/web-app-manifest-192x192.png",

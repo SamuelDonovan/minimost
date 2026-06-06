@@ -1469,10 +1469,12 @@ function fetchMessages() {
 
             const mentionAlert = mentionMsg && notifyArmed;
 
-            // Play the alert sound when a backgrounded tab gets any new
+            // Play the alert sound when the page is inactive and gets any new
             // message, or — even when focused — when the user is mentioned.
-            if (((playNewMsgSound && document.hidden) || mentionAlert) && !notifMuted) {
-                new Audio('/static/notification.mp3').play().catch(() => {});
+            // Messages in other channels are handled by maybeNotifyUnread;
+            // playNotifSound is debounced so the two paths can't double-play.
+            if ((playNewMsgSound && !pageActive()) || mentionAlert) {
+                playNotifSound();
             }
 
             // A mention fires a native OS notification regardless of whether
