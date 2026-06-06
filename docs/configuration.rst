@@ -230,10 +230,23 @@ persist until the user replaces or removes them, or the user account is deleted.
 gunicorn.conf.py
 ----------------
 
-**Location:** ``<project_root>/gunicorn.conf.py``
+**Location:** ``<project_root>/gunicorn.conf.py`` (a thin shim) and
+``minimost.gunicorn_conf`` (the packaged module shipped inside the wheel).
 
 Configuration file for the Gunicorn WSGI server, used when running in
-production. The defaults are:
+production. The top-level ``gunicorn.conf.py`` simply adds ``src/`` to the
+import path and re-exports the packaged ``minimost.gunicorn_conf`` module, so
+the two are interchangeable:
+
+- **Installed package** (wheel or ``pip install -e .``)::
+
+      gunicorn "minimost:create_app()" -c python:minimost.gunicorn_conf
+
+- **Source checkout**::
+
+      gunicorn "minimost:create_app()" --config gunicorn.conf.py
+
+The defaults are:
 
 .. list-table::
    :header-rows: 1

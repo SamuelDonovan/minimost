@@ -227,13 +227,21 @@ Gunicorn (Recommended for Production)
 
 `Gunicorn <https://gunicorn.org/>`_ is a production-grade WSGI server that
 handles multiple simultaneous requests using multiple worker processes.
-MiniMost ships with a ``gunicorn.conf.py`` configuration file.
+MiniMost ships a Gunicorn configuration **both** as a top-level
+``gunicorn.conf.py`` (for source checkouts) and as an importable module inside
+the wheel (``minimost.gunicorn_conf``), so an installed copy needs no checkout.
 
 Install Gunicorn::
 
     pip install gunicorn
 
-Start with the bundled configuration (handles TLS cert generation automatically)::
+From a **pip-installed** package, point Gunicorn at the packaged config module
+(handles TLS cert generation automatically)::
+
+    gunicorn "minimost:create_app()" -c python:minimost.gunicorn_conf
+
+From a **source checkout**, the top-level config file is equivalent — it simply
+puts ``src/`` on the path and re-exports the packaged settings::
 
     gunicorn "minimost:create_app()" --config gunicorn.conf.py
 

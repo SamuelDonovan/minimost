@@ -30,7 +30,6 @@ Usage::
 """
 
 import argparse
-import os
 import secrets
 import sqlite3
 import sys
@@ -45,207 +44,17 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 def _ensure_certs():
     """Ensure a CA-signed TLS leaf cert exists in the project root.
 
-    A long-lived local CA (``ca.pem``) is generated once and imported into the
-    browser's trusted certificates by the user.  The leaf cert served by the
-    dev server (``cert.pem``) is signed by that CA and silently regenerated
-    when missing, foreign, or near expiry, so renewals never need a re-import.
-    The leaf covers ``localhost``, the machine's short hostname, its FQDN, its
-    Avahi/mDNS ``.local`` name, and its local IP via Subject Alternative Names.
-
-    Chrome rejects any server certificate valid for more than 398 days, so the
-    leaf is capped there; the CA, being a trust anchor rather than a server
-    cert, is exempt and made long-lived.
+    Thin wrapper around :func:`minimost.certs.ensure_certs`; see that function
+    for the full CA + leaf provisioning and auto-renewal behaviour.  Kept as a
+    module-level function so it stays an easy patch point in tests.
 
     :returns: ``(cert_path, key_path)`` as :class:`pathlib.Path` objects on
-        success, or ``(None, None)`` if generation is skipped or fails.  In
-        the failure case a warning is printed to stderr but the caller should
-        continue running without TLS.
+        success, or ``(None, None)`` if generation is skipped or fails.
     :rtype: tuple[Path, Path] | tuple[None, None]
     """
-    import shutil
-    import socket
-    import subprocess  # nosec B404
-    import tempfile
+    from minimost.certs import ensure_certs
 
-    cert_path = _PROJECT_ROOT / "cert.pem"
-    key_path = _PROJECT_ROOT / "key.pem"
-    ca_cert = _PROJECT_ROOT / "ca.pem"
-    ca_key = _PROJECT_ROOT / "ca-key.pem"
-
-    # Respect a user-supplied (or legacy self-signed) cert: if a leaf is present
-    # but MiniMost's own CA is not, leave the files untouched. Delete cert.pem /
-    # key.pem to opt into the managed local-CA model.
-    if cert_path.exists() and key_path.exists() and not (
-        ca_cert.exists() and ca_key.exists()
-    ):
-        return cert_path, key_path
-
-    openssl_bin = shutil.which("openssl")
-    if not openssl_bin:
-        print(
-            "WARNING: openssl not found on PATH; cannot generate TLS certificates.\n"
-            "WARNING: Calls will not work without HTTPS. Install openssl and restart.",
-            file=sys.stderr,
-        )
-        return None, None
-
-    def run(args):
-        return subprocess.run(  # nosec B603
-            [openssl_bin, *args],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )
-
-    def write_tmp(text):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".cnf", delete=False) as tmp:
-            tmp.write(text)
-            return tmp.name
-
-    hostname = socket.gethostname()
-    fqdn = socket.getfqdn()
-    try:
-        local_ip = socket.gethostbyname(hostname)
-    except socket.gaierror:
-        local_ip = None
-
-    # Include the FQDN alongside the short hostname so the certificate matches
-    # whichever name clients use to reach the server. A name mismatch keeps the
-    # browser on "Not secure", which prevents an installed PWA from hiding the
-    # URL bar.
-    dns_names = []
-    for name in ("localhost", hostname, fqdn):
-        if name and name not in dns_names:
-            dns_names.append(name)
-    # The Avahi/mDNS ".local" name (e.g. "archlinux.local") is how LAN clients
-    # usually reach the server, but it is served by mDNS rather than the system
-    # FQDN, so socket.getfqdn() never reports it. Add it explicitly.
-    if hostname and "." not in hostname:
-        mdns_name = f"{hostname}.local"
-        if mdns_name not in dns_names:
-            dns_names.append(mdns_name)
-    san_parts = [f"DNS:{name}" for name in dns_names]
-    san_parts.append("IP:127.0.0.1")
-    if local_ip and local_ip != "127.0.0.1":
-        san_parts.append(f"IP:{local_ip}")
-    san = ",".join(san_parts)
-
-    # --- Ensure the long-lived local CA exists (import-once trust anchor) ---
-    ca_created = False
-    if not (ca_cert.exists() and ca_key.exists()):
-        ca_conf = (
-            "[req]\n"
-            "distinguished_name = req_dn\n"
-            "x509_extensions   = v3_ca\n"
-            "prompt            = no\n"
-            "\n"
-            "[req_dn]\n"
-            "CN = MiniMost local CA\n"
-            "\n"
-            "[v3_ca]\n"
-            # CA:TRUE makes this importable as an authority; keyCertSign lets it
-            # sign the leaf served by the dev server.
-            "basicConstraints = critical, CA:TRUE\n"
-            "keyUsage = critical, keyCertSign, cRLSign\n"
-        )
-        conf_path = write_tmp(ca_conf)
-        try:
-            result = run(
-                [
-                    "req", "-x509", "-newkey", "rsa:2048",
-                    "-keyout", str(ca_key), "-out", str(ca_cert),
-                    "-days", "3650", "-nodes", "-config", conf_path,
-                ]
-            )
-        finally:
-            os.unlink(conf_path)
-        if result.returncode != 0:
-            print(
-                "WARNING: Failed to generate the local CA.\n"
-                f"WARNING: {result.stderr.strip()}\n"
-                "WARNING: Calls will not work without HTTPS.",
-                file=sys.stderr,
-            )
-            return None, None
-        ca_created = True
-
-    # --- Decide whether the leaf needs (re)generating ---
-    need_leaf = ca_created or not (cert_path.exists() and key_path.exists())
-    if not need_leaf:
-        # Regenerate if the leaf no longer chains to the CA (e.g. left over from
-        # the older self-signed setup) or expires within 30 days.
-        verify = run(["verify", "-CAfile", str(ca_cert), str(cert_path)])
-        checkend = run(
-            ["x509", "-checkend", str(30 * 24 * 60 * 60), "-noout", "-in", str(cert_path)]
-        )
-        need_leaf = verify.returncode != 0 or checkend.returncode != 0
-
-    if need_leaf:
-        leaf_conf = (
-            "[req]\n"
-            "distinguished_name = req_dn\n"
-            "req_extensions    = v3_req\n"
-            "prompt            = no\n"
-            "\n"
-            "[req_dn]\n"
-            "CN = minimost\n"
-            "\n"
-            "[v3_req]\n"
-            # A leaf, not a CA. serverAuth + the SAN are what Chrome validates.
-            "basicConstraints = critical, CA:FALSE\n"
-            "keyUsage = critical, digitalSignature, keyEncipherment\n"
-            "extendedKeyUsage = serverAuth\n"
-            f"subjectAltName = {san}\n"
-        )
-        conf_path = write_tmp(leaf_conf)
-        csr_path = write_tmp("")
-        try:
-            csr = run(
-                [
-                    "req", "-newkey", "rsa:2048",
-                    "-keyout", str(key_path), "-out", csr_path,
-                    "-nodes", "-config", conf_path,
-                ]
-            )
-            # The SAN/EKU live in the config, not the CSR, so they must be
-            # re-applied via -extfile/-extensions when the CA signs the leaf.
-            # Chrome caps server certs at 398 days, so the leaf stays under it.
-            result = (
-                csr
-                if csr.returncode != 0
-                else run(
-                    [
-                        "x509", "-req", "-in", csr_path,
-                        "-CA", str(ca_cert), "-CAkey", str(ca_key), "-CAcreateserial",
-                        "-out", str(cert_path), "-days", "398",
-                        "-extfile", conf_path, "-extensions", "v3_req",
-                    ]
-                )
-            )
-        finally:
-            os.unlink(conf_path)
-            os.unlink(csr_path)
-        if result.returncode != 0:
-            print(
-                "WARNING: Failed to generate the TLS leaf certificate.\n"
-                f"WARNING: {result.stderr.strip()}\n"
-                "WARNING: Calls will not work without HTTPS.",
-                file=sys.stderr,
-            )
-            return None, None
-        print(f"Generated TLS leaf certificate (cert.pem, key.pem) in {_PROJECT_ROOT}.")
-
-    if ca_created:
-        print(
-            f"\nA local certificate authority was created at {ca_cert}.\n"
-            "Import THIS file into your browser's trusted certificates once\n"
-            "(Chrome: Manage certificates > Local certificates > Trusted Certificates).\n"
-            "The served leaf cert renews automatically and never needs re-importing\n"
-            "as long as this CA stays trusted.",
-            file=sys.stderr,
-        )
-
-    return cert_path, key_path
+    return ensure_certs(_PROJECT_ROOT)
 
 
 def main():

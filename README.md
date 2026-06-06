@@ -138,10 +138,16 @@ The built-in Flask server is suitable for development and small private networks
 
 ```bash
 pip install gunicorn
+
+# From an installed package (wheel or `pip install -e .`) — uses the config
+# module shipped inside the package, so no source checkout is required:
+gunicorn "minimost:create_app()" -c python:minimost.gunicorn_conf
+
+# From a source checkout — equivalent thin shim that re-exports the same config:
 gunicorn "minimost:create_app()" --config gunicorn.conf.py
 ```
 
-The bundled `gunicorn.conf.py` also handles automatic TLS certificate generation before Gunicorn starts.
+Both forms handle automatic TLS certificate generation before Gunicorn starts. The bundled `gunicorn.conf.py` is a thin shim around the packaged `minimost.gunicorn_conf` module, so the two are interchangeable.
 
 ### Configuration
 
