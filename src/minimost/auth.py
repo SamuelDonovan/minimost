@@ -259,11 +259,10 @@ def login_required(fn):
 
 
 @auth_bp.route("/login", methods=["GET"])
-@auth_bp.route("/login.html", methods=["GET"])
 def login():
     """Render the login page.
 
-    Routes: ``GET /login``, ``GET /login.html``
+    Routes: ``GET /login``
 
     :returns: A rendered ``login.html`` template.
     :rtype: flask.Response
@@ -272,7 +271,6 @@ def login():
 
 
 @auth_bp.route("/login", methods=["POST"])
-@auth_bp.route("/login.html", methods=["POST"])
 def login_post():
     """Authenticate a user from the login form.
 
@@ -304,7 +302,7 @@ def login_post():
     ``max_login_attempts`` to ``0`` disables the feature.  See
     :func:`_lockout_settings`.
 
-    Routes: ``POST /login``, ``POST /login.html``
+    Routes: ``POST /login``
 
     :returns: A rendered ``login.html`` template on failure, or a redirect
         to ``/`` on success.

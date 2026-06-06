@@ -224,3 +224,6 @@ avatars/*
 secret.key
 cert.pem
 key.pem
+ca.pem
+ca-key.pem
+ca.srl

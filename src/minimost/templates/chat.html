@@ -523,6 +523,18 @@
             <li>Click the bell icon in the header to mute or unmute notification sounds</li>
         </ul>
 
+        <h3 class="help-section">Trusting This Site</h3>
+        <ul>
+            <li>If your browser shows <b>“Not secure”</b>, import MiniMost's certificate authority to fix it — this also lets the installed app hide the address bar.</li>
+            <li>
+                <a href="/ca.pem" download="minimost-ca.pem"
+                   style="display:inline-block;margin:4px 0;padding:6px 12px;background:#007acc;color:#fff;border-radius:4px;text-decoration:none;font-size:13px;">⬇ Download certificate</a>
+            </li>
+            <li><b>Chrome / Edge:</b> open <kbd>chrome://certificate-manager</kbd> → <b>Local certificates</b> → <b>Trusted Certificates</b> → <b>Import</b>, choose the downloaded file, then restart the browser.</li>
+            <li><b>Firefox:</b> Settings → Privacy &amp; Security → Certificates → <b>View Certificates…</b> → <b>Authorities</b> → <b>Import…</b>, then tick <em>Trust this CA to identify websites</em>.</li>
+            <li>You only need to do this once per device — the certificate renews itself automatically and never needs re-importing.</li>
+        </ul>
+
         <h3 class="help-section">Status Indicators</h3>
         <ul>
             <li><span class="help-presence active"></span> <b>Active</b> – Currently using the app</li>
@@ -1730,5 +1742,10 @@ function scrollToMsg(msgId) {
 <script src="/static/chat-mentions.js?v={{ app_version }}"></script>
 <script src="/static/chat-calls.js?v={{ app_version }}"></script>
 <div id="pc-member-tooltip"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+      }
+    </script>
 </body>
 </html>

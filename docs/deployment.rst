@@ -95,35 +95,78 @@ A complete first-time setup on a fresh host:
 6. **(Production) Run behind Gunicorn**, optionally as a systemd service, and
    review the ``bind`` address/port in ``gunicorn.conf.py``. See
    `Gunicorn (Recommended for Production)`_ and `Systemd Service`_.
-7. **On each client**, browse to ``https://<server-ip>:<port>`` and accept the
-   self-signed certificate exception once.
+7. **On each client**, browse to ``https://<server-ip>:<port>`` and trust the
+   certificate authority once (see `Trusting the Certificate`_).
 
 TLS Certificates
 ----------------
 
 Voice and video calling requires a **secure context** — browsers will not
 grant microphone or camera access over plain HTTP.  MiniMost handles this
-automatically:
+automatically by generating its own certificate authority and a server
+certificate signed by it:
 
 - On first run, both the development server (``minimost`` / ``python3 -m
   minimost``) and the Gunicorn configuration file (``gunicorn.conf.py``)
-  check for ``cert.pem`` and ``key.pem`` in the project root.
-- If those files are absent, a self-signed certificate is generated using
-  the system ``openssl`` binary.  The certificate covers ``localhost``, the
-  server's hostname, and its local IP address via Subject Alternative Names
-  so it is valid for LAN access.
+  generate, using the system ``openssl`` binary:
+
+  - ``ca.pem`` / ``ca-key.pem`` — a long-lived **local certificate authority**
+    (valid for 10 years).  ``ca.pem`` is the file clients import to trust the
+    server; ``ca-key.pem`` is its private signing key and must never leave the
+    server.
+  - ``cert.pem`` / ``key.pem`` — the **server (leaf) certificate** actually
+    served to clients, signed by the CA.  It covers ``localhost``, the
+    server's short hostname, its FQDN, its Avahi/mDNS ``.local`` name, and its
+    local IP via Subject Alternative Names so it is valid for LAN access.
+
+- The leaf is capped at **398 days**, because Chrome rejects any server
+  certificate valid for longer (``NET::ERR_CERT_VALIDITY_TOO_LONG``) regardless
+  of whether it is trusted.  The leaf is **regenerated automatically** when it
+  is missing, no longer chains to the CA, or within 30 days of expiry — so a
+  routine restart silently renews it.  Because it is re-signed by the *same*
+  CA, clients never need to re-import anything.
 - If ``openssl`` is not installed or generation fails, a warning is printed
   to stderr and the server starts over plain HTTP.  Chat will work normally
   but calling will not.
 
-Because the certificate is self-signed, your browser will show a security
-warning on first visit.  Click **Advanced → Proceed** (Chrome) or
-**Accept the Risk and Continue** (Firefox) to add a permanent exception.
+.. _Trusting the Certificate:
 
-To replace the self-signed certificate with a proper one (e.g. from Let's
-Encrypt), simply place your ``cert.pem`` and ``key.pem`` (or equivalent
-PEM files) in the project root before starting the server.  Auto-generation
-is skipped when both files are already present.
+Trusting the certificate
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Because the CA is self-generated, browsers do not trust it until you import
+``ca.pem`` once per device.  Until you do, the site shows a **"Not secure"**
+warning and an installed PWA cannot hide the address bar.
+
+The easiest way to obtain the file is the in-app download link: open the
+**Help** menu (``?``) and, under **Trusting This Site**, click **Download
+certificate**.  This downloads ``ca.pem`` from the server's ``/ca.pem``
+endpoint.  (Only the public CA certificate is served there; the signing key is
+never exposed.)
+
+Then import it:
+
+- **Chrome / Edge:** open ``chrome://certificate-manager`` →
+  **Local certificates** → **Trusted Certificates** → **Import**, select the
+  downloaded file, and restart the browser.
+- **Firefox:** Settings → Privacy & Security → Certificates →
+  **View Certificates…** → **Authorities** → **Import…**, then tick
+  *Trust this CA to identify websites*.
+- **System-wide (Linux):** copy ``ca.pem`` to
+  ``/usr/local/share/ca-certificates/minimost.crt`` and run
+  ``sudo update-ca-certificates``.
+
+You only need to do this once per device.  Subsequent leaf renewals are
+trusted automatically because they are signed by the CA you already imported.
+
+Using a public CA instead
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To replace the self-signed setup with a proper CA-signed certificate (e.g.
+from Let's Encrypt), place your own ``cert.pem`` and ``key.pem`` (or equivalent
+PEM files) in the project root before starting the server.  When a valid leaf
+is already present, it is reused as-is; delete ``ca.pem``/``ca-key.pem`` if you
+no longer want the local CA on disk.
 
 Networking for Calls and Screen Sharing
 ----------------------------------------

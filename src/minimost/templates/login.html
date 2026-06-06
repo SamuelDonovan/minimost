@@ -35,5 +35,10 @@
     </div>
     <div class="version-tag"># v{{ app_version }}</div>
     <script src="{{ url_for('static', filename='auth-password-field.js') }}"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+      }
+    </script>
 </body>
 </html>

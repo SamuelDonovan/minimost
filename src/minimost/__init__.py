@@ -34,7 +34,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
-from flask import Flask, abort, request, session
+from flask import Flask, abort, request, send_file, session
 
 from . import calls as calls_mod
 from . import common, database, presence
@@ -208,6 +208,44 @@ def create_app():
             "max_avatar_mb": _avatar_mb,
             "stun_port": _stun,
         }
+
+    @app.route("/sw.js")
+    def service_worker():
+        """Serve the PWA service worker from the root scope.
+
+        The ``Service-Worker-Allowed: /`` header lets a script served from
+        ``/sw.js`` control the entire origin, so the installed PWA hides the
+        browser URL bar across all routes.
+        """
+        return (
+            app.send_static_file("sw.js"),
+            200,
+            {
+                "Content-Type": "application/javascript",
+                "Service-Worker-Allowed": "/",
+            },
+        )
+
+    @app.route("/ca.pem")
+    def download_ca_cert():
+        """Serve the local CA certificate so clients can trust this server.
+
+        Importing this public certificate into the browser/OS trust store makes
+        the self-signed TLS leaf MiniMost serves trusted, which clears the
+        "Not secure" warning and lets the installed PWA hide the URL bar. Only
+        the public CA cert is exposed; the signing key (``ca-key.pem``) never
+        leaves the server. ``ca.pem`` lives in the working directory alongside
+        ``cert.pem``/``key.pem`` (see ``gunicorn.conf.py``).
+        """
+        ca_path = Path.cwd() / "ca.pem"
+        if not ca_path.is_file():
+            abort(404)
+        return send_file(
+            ca_path,
+            mimetype="application/x-pem-file",
+            as_attachment=True,
+            download_name="minimost-ca.pem",
+        )
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(calls_bp)
