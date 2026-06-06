@@ -6,32 +6,19 @@ from unittest.mock import patch, MagicMock
 # ── _read_version ─────────────────────────────────────────────────────────────
 
 
-def test_read_version_from_importlib():
+def test_read_version_from_version_module():
+    import minimost
+    import minimost._version
+
+    assert minimost._read_version() == minimost._version.__version__
+
+
+def test_read_version_fallback_unknown():
     import minimost
 
-    with patch("importlib.metadata.version", return_value="9.9.9"):
-        version = minimost._read_version()
-    assert version == "9.9.9"
-
-
-def test_read_version_from_pyproject(tmp_path):
-    import minimost
-
-    toml = tmp_path / "pyproject.toml"
-    toml.write_text('[project]\nversion = "1.2.3"\n')
-    with patch("importlib.metadata.version", side_effect=Exception("not installed")):
-        with patch.object(minimost, "_PROJECT_ROOT", tmp_path):
-            version = minimost._read_version()
-    assert version == "1.2.3"
-
-
-def test_read_version_fallback_unknown(tmp_path):
-    import minimost
-
-    with patch("importlib.metadata.version", side_effect=Exception("not installed")):
-        with patch.object(minimost, "_PROJECT_ROOT", tmp_path):
-            version = minimost._read_version()
-    assert version == "unknown"
+    # Simulate the _version module being unimportable (e.g. a corrupted install).
+    with patch.dict(sys.modules, {"minimost._version": None}):
+        assert minimost._read_version() == "unknown"
 
 
 # ── create_app ────────────────────────────────────────────────────────────────

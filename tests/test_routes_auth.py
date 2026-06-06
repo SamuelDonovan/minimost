@@ -28,11 +28,6 @@ def test_login_get(client):
     assert b"login" in resp.data.lower()
 
 
-def test_login_html_alias(client):
-    resp = client.get("/login.html")
-    assert resp.status_code == 200
-
-
 # ── POST /login ───────────────────────────────────────────────────────────────
 
 

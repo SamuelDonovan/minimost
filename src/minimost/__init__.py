@@ -27,7 +27,6 @@ _APP_VERSION : str
     ``{{ app_version }}``.
 """
 
-import re
 import secrets
 import threading
 import time
@@ -48,32 +47,25 @@ _PROJECT_ROOT = _HERE.parent.parent
 
 
 def _read_version() -> str:
-    """Return the installed package version string.
+    """Return the package version string.
 
-    The version is resolved in two stages:
+    The version lives in :mod:`minimost._version`, which ships inside the
+    package and is therefore importable from an installed wheel and on every
+    supported Python version (unlike ``importlib.metadata``, which is 3.8+).
+    The same module is the build-time source of truth via the dynamic-version
+    config in ``pyproject.toml``.
 
-    1. **importlib.metadata** — works when the package has been installed via
-       ``pip install`` (editable or otherwise).
-    2. **pyproject.toml parsing** — fallback for environments where the package
-       metadata is not available (e.g. running directly from the source tree
-       without installing).
-
-    If both stages fail the string ``"unknown"`` is returned so the application
-    always has a displayable value.
+    If the module cannot be imported for any reason, the string ``"unknown"``
+    is returned so the application always has a displayable value.
 
     :returns: The version string, for example ``"0.1.0"``, or ``"unknown"``
               if the version cannot be determined.
     :rtype: str
     """
     with suppress(Exception):
-        from importlib.metadata import version
+        from ._version import __version__
 
-        return version("minimost")
-    with suppress(Exception):
-        toml = (_PROJECT_ROOT / "pyproject.toml").read_text()
-        m = re.search(r'^version\s*=\s*"([^"]+)"', toml, re.MULTILINE)
-        if m:
-            return m.group(1)
+        return __version__
     return "unknown"
 
 
