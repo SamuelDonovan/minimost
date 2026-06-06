@@ -1051,7 +1051,7 @@ function makeAvatarWrap(username, size = 28, channelKey = null, showDot = true) 
 
     const inner = document.createElement("div");
     inner.className = "avatar";
-    if (usersWithAvatars.has(username)) {
+    if (window.usersWithAvatars.has(username)) {
         const img = document.createElement("img");
         img.className = "avatar-img";
         img.src = `/avatar/${username}`;
@@ -1132,7 +1132,7 @@ function _refreshUserAvatar(username) {
         if (!inner) return;
         const size = wrap.offsetWidth || 28;
         inner.innerHTML = "";
-        if (usersWithAvatars.has(username)) {
+        if (window.usersWithAvatars.has(username)) {
             const img = document.createElement("img");
             img.className = "avatar-img";
             img.src = `/avatar/${username}?v=${Date.now()}`;

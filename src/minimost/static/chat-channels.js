@@ -16,7 +16,7 @@ let pcCurrentSuggestions = [];
 let addMemberSuggIndex = -1;
 let addMemberCurrentSuggestions = [];
 
-// `allUsers` / `usersLoaded` are declared globally in chat-dm.js (loaded first)
+// `window.allUsers` / `window.usersLoaded` are declared globally in chat-dm.js (loaded first)
 // and shared across the member-picker suggestions here.
 
 const MAX_CHANNEL_NAME_LEN = 80;
@@ -27,8 +27,8 @@ function openCreatePrivateChannel() {
     privateChMembersInput.value = "";
     privateChSuggestions.style.display = "none";
     document.getElementById("private-ch-name-error").textContent = "";
-    if (!usersLoaded) {
-        fetch("/users").then(r => r.json()).then(u => { allUsers = u; usersLoaded = true; });
+    if (!window.usersLoaded) {
+        fetch("/users").then(r => r.json()).then(u => { window.allUsers = u; window.usersLoaded = true; });
     }
     privateChNameInput.focus();
 }
@@ -71,14 +71,14 @@ document.getElementById("private-ch-create-btn").onclick = async () => {
 };
 
 privateChMembersInput.addEventListener("input", () => {
-    if (!usersLoaded) return;
+    if (!window.usersLoaded) return;
     const raw = privateChMembersInput.value;
     const parts = raw.split(",").map(p => p.trim());
     const lastPart = parts[parts.length - 1].toLowerCase();
     pcSuggestionIndex = -1;
     if (!lastPart) { privateChSuggestions.style.display = "none"; return; }
     const already = parts.slice(0, -1);
-    const matches = allUsers
+    const matches = window.allUsers
         .filter(u => !already.includes(u))
         .map(u => ({ user: u, result: fuzzySearch(lastPart, u) }))
         .filter(({ result }) => result !== null)
@@ -202,8 +202,8 @@ function openChannelMembers() {
         "Members: " + (privateChannelMap[channel] || channel);
     document.getElementById("add-member-input").value = "";
     addMemberSuggestions.style.display = "none";
-    if (!usersLoaded) {
-        fetch("/users").then(r => r.json()).then(u => { allUsers = u; usersLoaded = true; });
+    if (!window.usersLoaded) {
+        fetch("/users").then(r => r.json()).then(u => { window.allUsers = u; window.usersLoaded = true; });
     }
     loadChannelMembers(channelId);
 }
@@ -254,11 +254,11 @@ async function leaveChannel() {
 
 
 addMemberInput.addEventListener("input", () => {
-    if (!usersLoaded) return;
+    if (!window.usersLoaded) return;
     const q = addMemberInput.value.trim().toLowerCase();
     addMemberSuggIndex = -1;
     if (!q) { addMemberSuggestions.style.display = "none"; return; }
-    const matches = allUsers
+    const matches = window.allUsers
         .map(u => ({ user: u, result: fuzzySearch(q, u) }))
         .filter(({ result }) => result !== null)
         .sort((a, b) => b.result.score - a.result.score);

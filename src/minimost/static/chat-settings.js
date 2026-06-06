@@ -228,14 +228,14 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
         fd.append("avatar", _pendingAvatarBlob, "avatar.jpg");
         const r = await fetch("/avatar", { method: "POST", body: fd });
         if (r.ok) {
-            usersWithAvatars.add(CURRENT_USER);
+            window.usersWithAvatars.add(CURRENT_USER);
             _refreshUserAvatar(CURRENT_USER);
         }
         _pendingAvatarBlob = null;
     } else if (_removeAvatar) {
         const r = await fetch("/avatar", { method: "DELETE" });
         if (r.ok) {
-            usersWithAvatars.delete(CURRENT_USER);
+            window.usersWithAvatars.delete(CURRENT_USER);
             _refreshUserAvatar(CURRENT_USER);
         }
         _removeAvatar = false;

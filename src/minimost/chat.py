@@ -123,6 +123,7 @@ def _max_avatar_size_bytes() -> int:
 
 _WAL = "PRAGMA journal_mode=WAL"
 _SQL_AVATAR = "SELECT avatar_file FROM user_settings WHERE username = ?"
+_SQL_ENSURE_SETTINGS = "INSERT OR IGNORE INTO user_settings (username) VALUES (?)"
 _MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
 _INSERT_MSG_SQL = (
     "INSERT INTO messages (channel, sender, content, content_type, ts, read)"
@@ -717,7 +718,7 @@ def save_settings():
     # SQLite that ships with some Python 3.6 systems.  INSERT OR IGNORE creates
     # the row if absent; the UPDATE then sets only these columns, preserving any
     # others (e.g. avatar_file).
-    db.execute("INSERT OR IGNORE INTO user_settings (username) VALUES (?)", (user,))
+    db.execute(_SQL_ENSURE_SETTINGS, (user,))
     db.execute(
         "UPDATE user_settings SET name_color = ?, bio = ? WHERE username = ?",
         (name_color, bio, user),
@@ -823,7 +824,7 @@ def upload_avatar():
             (AVATAR_DIR / row[0]).unlink()
         except FileNotFoundError:
             pass
-    db.execute("INSERT OR IGNORE INTO user_settings (username) VALUES (?)", (user,))
+    db.execute(_SQL_ENSURE_SETTINGS, (user,))
     db.execute(
         "UPDATE user_settings SET avatar_file = ? WHERE username = ?",
         (filename, user),
@@ -852,7 +853,7 @@ def delete_avatar():
             (AVATAR_DIR / row[0]).unlink()
         except FileNotFoundError:
             pass
-    db.execute("INSERT OR IGNORE INTO user_settings (username) VALUES (?)", (user,))
+    db.execute(_SQL_ENSURE_SETTINGS, (user,))
     db.execute(
         "UPDATE user_settings SET avatar_file = NULL WHERE username = ?",
         (user,),

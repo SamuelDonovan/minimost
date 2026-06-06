@@ -226,7 +226,7 @@ msgBox.addEventListener(
         } else if (e.key === "Enter" || e.key === "Tab") {
             e.preventDefault();
             e.stopPropagation();
-            acceptMention(mentionIndex < 0 ? 0 : mentionIndex);
+            acceptMention(Math.max(mentionIndex, 0));
         } else if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();

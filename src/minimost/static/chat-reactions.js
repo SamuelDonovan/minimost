@@ -706,9 +706,9 @@ function closeEmojiPicker() {
 document.addEventListener("click", function(e) {
     const picker = document.getElementById("emoji-picker");
     const btn = document.getElementById("emoji-btn");
-    if (picker && picker.style.display === "block"
+    if (picker?.style.display === "block"
         && !picker.contains(e.target)
-        && !(btn && btn.contains(e.target))) {
+        && !btn?.contains(e.target)) {
         closeEmojiPicker();
     }
 });

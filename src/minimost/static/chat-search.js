@@ -72,7 +72,7 @@ let searchSelectedIndex = -1;
 // private-channel id → its friendly label). Falls back to the raw id.
 function _searchChannelLabel(ch) {
     const item = document.querySelector(
-        `#sidebar-dynamic .sidebar-item[data-channel="${(ch || '').replaceAll('"', '\\"')}"]`
+        `#sidebar-dynamic .sidebar-item[data-channel="${(ch || '').replaceAll('"', String.raw`\"`)}"]`
     );
     return item?.querySelector(".label")?.textContent || ch;
 }
@@ -92,19 +92,19 @@ function populateSearchChannels() {
 }
 
 // ── "From" user fuzzy finder ──────────────────────────────────────────────────
-// Reuses the shared allUsers/usersLoaded cache (populated by the DM modal) and
+// Reuses the shared window.allUsers/window.usersLoaded cache (populated by the DM modal) and
 // the same fuzzySearch/highlight helpers as the @mention and DM autocompletes.
 
 let searchFromMatches = [];
 let searchFromIndex = -1;
 
 async function ensureSearchUsersLoaded() {
-    if (usersLoaded) return;
+    if (window.usersLoaded) return;
     try {
         const resp = await fetch("/users");
         if (resp.ok) {
-            allUsers = await resp.json();
-            usersLoaded = true;
+            window.allUsers = await resp.json();
+            window.usersLoaded = true;
         }
     } catch { /* offline — finder stays empty, typed text still filters */ }
 }
@@ -266,7 +266,7 @@ function strikethrough(text) {
 // modifier, or ZWJ-joined sequence (families, professions, etc.).
 const _EMOJI_BASE = String.raw`\p{Extended_Pictographic}|\p{Regional_Indicator}`;
 const _EMOJI_SEQ = new RegExp(
-    `(?:${_EMOJI_BASE})(?:\\uFE0F|[\\u{1F3FB}-\\u{1F3FF}]|\\u200D(?:${_EMOJI_BASE}))*`,
+    String.raw`(?:${_EMOJI_BASE})(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}]|\u200D(?:${_EMOJI_BASE}))*`,
     "gu"
 );
 
@@ -1329,7 +1329,7 @@ async function attachPreview(msgEl) {
     } catch { return; }
     // Fold the standalone download chip into the preview's header so the same
     // file isn't shown as two separate cards (chip + preview).
-    if (data && data.type === "code") data._fileChip = fileLink;
+    if (data?.type === "code") data._fileChip = fileLink;
     _attachPreviewEl(msgEl, data);
 }
 

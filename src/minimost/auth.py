@@ -63,6 +63,7 @@ _RESERVED_USERNAMES = {"minimost", "everyone", "deleteduser"}
 _WAL = "PRAGMA journal_mode=WAL"
 _RESET_PW_TEMPLATE = "reset_password.html"
 _SIGNUP_TEMPLATE = "signup.html"
+_LOGIN_TEMPLATE = "login.html"
 
 # settings.json is bundled inside the package (src/minimost/); _HERE is the
 # package directory.
@@ -267,7 +268,7 @@ def login():
     :returns: A rendered ``login.html`` template.
     :rtype: flask.Response
     """
-    return render_template("login.html")
+    return render_template(_LOGIN_TEMPLATE)
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -316,7 +317,7 @@ def login_post():
     if len(password) > _MAX_PASSWORD_LEN:
         time.sleep(3)
         return render_template(
-            "login.html", error="Invalid credentials", username=username
+            _LOGIN_TEMPLATE, error="Invalid credentials", username=username
         )
 
     max_attempts, lockout_seconds = _lockout_settings()
@@ -341,7 +342,7 @@ def login_post():
         time.sleep(3)
         remaining = int((row[3] - now) // 60) + 1
         return render_template(
-            "login.html", error=_lockout_message(remaining), username=username
+            _LOGIN_TEMPLATE, error=_lockout_message(remaining), username=username
         )
 
     if not row or not check_password_hash(row[1], password):
@@ -359,7 +360,7 @@ def login_post():
                 db.close()
                 time.sleep(3)
                 return render_template(
-                    "login.html",
+                    _LOGIN_TEMPLATE,
                     error=_lockout_message(lockout_seconds // 60),
                     username=username,
                 )
@@ -372,7 +373,7 @@ def login_post():
         # Delay to prevent users from brute forcing others passwords
         time.sleep(3)
         return render_template(
-            "login.html", error="Invalid credentials", username=username
+            _LOGIN_TEMPLATE, error="Invalid credentials", username=username
         )
 
     # Success — clear any recorded failed-attempt / lockout state.

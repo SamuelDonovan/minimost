@@ -1,5 +1,7 @@
 let userColorOverrides = {};
-let usersWithAvatars = new Set();
+// Shared with chat-settings.js and chat.html (its `.has()` reads live there);
+// kept on `window` so the cross-file global is referenced explicitly.
+window.usersWithAvatars = new Set();
 let presenceMapCache = {};
 let hasUnreadChannels = false;
 let privateChannelUnreadCount = 0;
@@ -19,7 +21,7 @@ async function loadSidebar() {
     ]);
     {
         userColorOverrides = colors;
-        usersWithAvatars = new Set(avatars);
+        window.usersWithAvatars = new Set(avatars);
         presenceMapCache = onlineUsers;
 
         // Public channels

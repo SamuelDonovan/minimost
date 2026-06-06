@@ -201,7 +201,7 @@ def create_app():
             "stun_port": _stun,
         }
 
-    @app.route("/sw.js")
+    @app.route("/sw.js", methods=["GET"])
     def service_worker():
         """Serve the PWA service worker from the root scope.
 
@@ -218,7 +218,7 @@ def create_app():
             },
         )
 
-    @app.route("/ca.pem")
+    @app.route("/ca.pem", methods=["GET"])
     def download_ca_cert():
         """Serve the local CA certificate so clients can trust this server.
 

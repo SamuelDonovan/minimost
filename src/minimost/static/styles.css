@@ -574,7 +574,7 @@ body {
 }
 #send-btn.inactive {
     background: #3a3a3a;
-    color: #888;
+    color: #aaa;
     cursor: default;
 }
 #send-btn.inactive:hover {
@@ -887,10 +887,7 @@ body {
 .autocomplete-suggestion:hover {
     background: #444;
 }
-/* @mention autocomplete: anchored above the composer box */
-#input-main {
-    position: relative;
-}
+/* @mention autocomplete: anchored above the composer box (see #input-main) */
 #mention-suggestions {
     bottom: calc(100% + 4px);
     max-height: 200px;
@@ -908,7 +905,8 @@ body {
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: rgba(247, 201, 72, 0.25);
+    /* opaque equivalent of rgba(247, 201, 72, 0.25) over the #1e1e1e chat bg */
+    background: #544929;
     color: #f7c948;
     font-weight: 700;
     flex-shrink: 0;
@@ -920,14 +918,16 @@ body {
 }
 /* @mention pills inside rendered messages */
 .mention {
-    background: rgba(126, 184, 247, 0.18);
+    /* opaque equivalent of rgba(126, 184, 247, 0.18) over the #1e1e1e chat bg */
+    background: #2f3a45;
     color: #7eb8f7;
     border-radius: 3px;
     padding: 0 3px;
     font-weight: 600;
 }
 .mention-me {
-    background: rgba(247, 201, 72, 0.22);
+    /* opaque equivalent of rgba(247, 201, 72, 0.22) over the #1e1e1e chat bg */
+    background: #4e4427;
     color: #f7c948;
 }
 /* Whole-message highlight shown to a mentioned user */
@@ -1070,6 +1070,8 @@ button, input, textarea{
     padding: 8px 10px;
 }
 #input-main {
+    /* position: relative anchors the @mention autocomplete popup above the box */
+    position: relative;
     display: flex;
     flex-direction: column;
     border: 1px solid #444;
@@ -1940,9 +1942,9 @@ a { color: #9cdcfe; }
 #screenshare-viewer-video {
     flex: 1;
     width: 100%;
-    /* min-height: 0 lets this flex item shrink below the video's intrinsic
+    /* A zero min-height lets this flex item shrink below the video's intrinsic
        resolution; without it a tall shared screen overflows the column and the
-       bottom is clipped off-screen (object-fit: contain then can't letterbox). */
+       bottom is clipped off-screen (contain object-fit then can't letterbox). */
     min-height: 0;
     object-fit: contain;
     background: #111;

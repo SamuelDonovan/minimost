@@ -4,13 +4,21 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.6+](https://img.shields.io/badge/python-3.6%20%7C%203.7%20%7C%203.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
+[![Built with Flask](https://img.shields.io/badge/built%20with-Flask-000000.svg?logo=flask)](https://flask.palletsprojects.com/)
+[![Database: SQLite](https://img.shields.io/badge/database-SQLite%20only-003b57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![PWA](https://img.shields.io/badge/PWA-installable-5a0fc8.svg)](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Build](https://github.com/SamuelDonovan/minimost/actions/workflows/build.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/build.yml)
 [![Bandit](https://github.com/SamuelDonovan/minimost/actions/workflows/bandit.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/bandit.yml)
 [![Semgrep](https://github.com/SamuelDonovan/minimost/actions/workflows/semgrep.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/semgrep.yml)
 [![pip-audit](https://github.com/SamuelDonovan/minimost/actions/workflows/pip-audit.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/pip-audit.yml)
 [![CodeQL](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml)
 [![Documentation Status](https://readthedocs.org/projects/minimost/badge/?version=latest)](https://minimost.readthedocs.io/en/latest/)
-[![SonarQube](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=alert_status)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=alert_status)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=coverage)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
+[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=sqale_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
+[![Reliability](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=reliability_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=security_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
 
 **MiniMost** is a lightweight, self-hosted chat platform built for private networks. It runs entirely on Python and SQLite — no external database, no root access, no infrastructure required. Just Flask and a browser.
 

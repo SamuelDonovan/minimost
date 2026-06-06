@@ -8,13 +8,13 @@
     "use strict";
 
     // Keep this character class in sync with minimost.auth._validate_password.
-    var SPECIAL = /[!@#$%^&*()\-_=+[\]{};':"\\|,.<>/?`~]/;
-    var MIN_LENGTH = 8;
+    const SPECIAL = /[!@#$%^&*()\-_=+[\]{};':"\\|,.<>/?`~]/;
+    const MIN_LENGTH = 8;
 
     function setReq(id, met, active) {
-        var el = document.getElementById(id);
+        const el = document.getElementById(id);
         if (!el) return;
-        var icon;
+        let icon;
         if (met) icon = "✓"; // ✓
         else if (active) icon = "✗"; // ✗
         else icon = "•"; // •
@@ -26,21 +26,21 @@
 
     function makeChecker(password, confirm, message, button, reqs) {
         return function check() {
-            var pw = password.value;
-            var active = pw.length > 0;
+            const pw = password.value;
+            const active = pw.length > 0;
             reqs.hidden = !active;
 
-            var hasLength = pw.length >= MIN_LENGTH;
-            var hasUpper = /[A-Z]/.test(pw);
-            var hasNumber = /\d/.test(pw);
-            var hasSpecial = SPECIAL.test(pw);
+            const hasLength = pw.length >= MIN_LENGTH;
+            const hasUpper = /[A-Z]/.test(pw);
+            const hasNumber = /\d/.test(pw);
+            const hasSpecial = SPECIAL.test(pw);
 
             setReq("req-length", hasLength, active);
             setReq("req-upper", hasUpper, active);
             setReq("req-number", hasNumber, active);
             setReq("req-special", hasSpecial, active);
 
-            var requirementsMet = hasLength && hasUpper && hasNumber && hasSpecial;
+            const requirementsMet = hasLength && hasUpper && hasNumber && hasSpecial;
 
             if (!active && !confirm.value) {
                 message.textContent = "";
@@ -49,7 +49,7 @@
                 return false;
             }
 
-            var passwordsMatch = confirm.value.length > 0 && pw === confirm.value;
+            const passwordsMatch = confirm.value.length > 0 && pw === confirm.value;
 
             if (confirm.value.length > 0) {
                 message.textContent = passwordsMatch
@@ -67,16 +67,16 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
-        var password = document.getElementById("password");
-        var confirm = document.getElementById("confirm_password");
-        var message = document.getElementById("password-message");
-        var reqs = document.getElementById("password-requirements");
+        const password = document.getElementById("password");
+        const confirm = document.getElementById("confirm_password");
+        const message = document.getElementById("password-message");
+        const reqs = document.getElementById("password-requirements");
         if (!password || !confirm || !message || !reqs) return; // not this page
-        var form = password.closest("form");
-        var button = form ? form.querySelector('button[type="submit"]') : null;
+        const form = password.closest("form");
+        const button = form ? form.querySelector('button[type="submit"]') : null;
         if (!form || !button) return;
 
-        var check = makeChecker(password, confirm, message, button, reqs);
+        const check = makeChecker(password, confirm, message, button, reqs);
         password.addEventListener("input", check);
         confirm.addEventListener("input", check);
         form.addEventListener("submit", function (event) {

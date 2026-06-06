@@ -74,8 +74,11 @@ function updateActiveSuggestion() {
     });
 }
 
-let allUsers = [];
-let usersLoaded = false;
+// Shared across chat-dm.js, chat-channels.js, and chat-search.js (classic
+// scripts on the same page); kept on `window` so every file references the same
+// binding explicitly rather than relying on an implicit global.
+window.allUsers = [];
+window.usersLoaded = false;
 let suggestionIndex = -1;
 
 function resetDmSuggestions() { suggestionIndex = -1; }
@@ -86,12 +89,12 @@ async function openDmModal() {
     dmUsersInput.focus();
 
     // Fetch users once (or remove this guard if you want to refresh every time)
-    if (!usersLoaded) {
+    if (!window.usersLoaded) {
         try {
             const resp = await fetch("/users");
             if (resp.ok) {
-                allUsers = await resp.json();
-                usersLoaded = true;
+                window.allUsers = await resp.json();
+                window.usersLoaded = true;
             } else {
                 console.error("Failed to fetch users");
             }
@@ -113,7 +116,7 @@ document.getElementById("new-dm-btn").onclick = async () => {
 };
 
 function updateSuggestions() {
-    if (!usersLoaded) return;
+    if (!window.usersLoaded) return;
 
     const raw = dmUsersInput.value;
     const parts = raw.split(",").map(p => p.trim());
@@ -127,7 +130,7 @@ function updateSuggestions() {
     }
 
     const alreadyAdded = parts.slice(0, -1);
-    const matches = allUsers
+    const matches = window.allUsers
         .filter(u => !alreadyAdded.includes(u))
         .map(u => ({ user: u, result: fuzzySearch(lastPart, u) }))
         .filter(({ result }) => result !== null)

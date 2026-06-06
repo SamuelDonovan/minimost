@@ -6,7 +6,7 @@
     "use strict";
 
     function addReveal(wrap, input) {
-        var reveal = document.createElement("button");
+        const reveal = document.createElement("button");
         reveal.type = "button";
         reveal.className = "pw-reveal";
         reveal.textContent = "Show";
@@ -15,7 +15,7 @@
         wrap.appendChild(reveal);
 
         reveal.addEventListener("click", function () {
-            var hidden = input.type === "password";
+            const hidden = input.type === "password";
             input.type = hidden ? "text" : "password";
             reveal.textContent = hidden ? "Hide" : "Show";
             reveal.setAttribute(
@@ -28,17 +28,17 @@
     }
 
     function addCapsWarning(wrap, input) {
-        var warning = document.createElement("div");
+        const warning = document.createElement("div");
         warning.className = "caps-warning";
         warning.setAttribute("role", "alert");
         warning.hidden = true;
         warning.textContent = "Caps Lock is on";
-        wrap.insertAdjacentElement("afterend", warning);
+        wrap.after(warning);
 
         function refresh(event) {
             // getModifierState lives on KeyboardEvent; a FocusEvent lacks it, so
             // the state is resolved as soon as the user presses a key.
-            var on =
+            const on =
                 typeof event.getModifierState === "function" &&
                 event.getModifierState("CapsLock");
             warning.hidden = !(on && document.activeElement === input);
@@ -57,7 +57,7 @@
 
         // Wrap the input so the reveal button can sit inside the field and the
         // caps warning can be placed directly beneath it.
-        var wrap = document.createElement("div");
+        const wrap = document.createElement("div");
         wrap.className = "pw-wrap";
         input.parentNode.insertBefore(wrap, input);
         wrap.appendChild(input);
@@ -67,7 +67,7 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
-        var fields = document.querySelectorAll('input[type="password"]');
+        const fields = document.querySelectorAll('input[type="password"]');
         Array.prototype.forEach.call(fields, enhance);
     });
 })();
