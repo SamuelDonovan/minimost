@@ -450,12 +450,8 @@ def _validate_signup(username: str, password: str, confirm: str):
         return f'"{username}" is a protected username'
     if not _USERNAME_RE.fullmatch(username):
         return "Username may only contain letters, numbers, hyphens, and underscores (1–32 characters)"
-    password_error = _validate_password(password)
-    if password_error:
-        return password_error
-    if password != confirm:
-        return "Passwords do not match"
-    return None
+    # New-password rules + confirmation match are identical to reset/change.
+    return _validate_password_reset(password, confirm)
 
 
 @auth_bp.route("/forgot-password", methods=["GET"])

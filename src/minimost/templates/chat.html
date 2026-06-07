@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% from "_password_fields.html" import password_fields %}
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -281,26 +282,7 @@
                         autocomplete="current-password"
                         maxlength="1024"
                     >
-                    <input
-                        id="password"
-                        type="password"
-                        placeholder="New password"
-                        autocomplete="new-password"
-                        maxlength="1024"
-                    >
-                    <ul id="password-requirements" class="pw-reqs" hidden>
-                        <li id="req-length"><span class="req-icon">•</span> 8+ characters</li>
-                        <li id="req-upper"><span class="req-icon">•</span> One uppercase letter</li>
-                        <li id="req-number"><span class="req-icon">•</span> One number</li>
-                        <li id="req-special"><span class="req-icon">•</span> One special character</li>
-                    </ul>
-                    <input
-                        id="confirm_password"
-                        type="password"
-                        placeholder="Confirm new password"
-                        autocomplete="new-password"
-                        maxlength="1024"
-                    >
+                    {{ password_fields("New password", "Confirm new password", with_names=False) }}
                 </div>
 
                 <p id="password-message" aria-live="polite"></p>
