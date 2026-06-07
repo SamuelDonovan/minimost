@@ -356,6 +356,87 @@ async function confirmDelete() {
     }
 }
 
+// ── Change password ─────────────────────────────────────────────────────────
+// The new-password / confirm fields reuse the signup page's live requirement
+// checker (auth-password-rules.js) and Show/Hide toggle (auth-password-field.js),
+// both loaded on the chat page.  Those scripts enable #change-password-submit
+// only once the new password is valid and the two fields match; here we add the
+// current-password check and the fetch that actually applies the change.
+
+function showChangePassword() {
+    const form = document.getElementById("change-password-form");
+    form.reset();
+    document.getElementById("change-password-status").style.display = "none";
+    // Reset the live requirement UI for the cleared fields and re-disable submit.
+    document.getElementById("password").dispatchEvent(new Event("input"));
+    document.getElementById("account-main-view").style.display = "none";
+    document.getElementById("account-password-view").style.display = "block";
+    document.getElementById("change-current-password").focus();
+}
+
+function cancelChangePassword() {
+    document.getElementById("account-password-view").style.display = "none";
+    document.getElementById("account-main-view").style.display = "block";
+}
+
+document.getElementById("change-password-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const submitBtn = document.getElementById("change-password-submit");
+    const statusEl = document.getElementById("change-password-status");
+    statusEl.style.display = "none";
+
+    // auth-password-rules.js keeps the button disabled until the new password is
+    // valid and matches; bail out if it is not satisfied.
+    if (submitBtn.disabled) return;
+
+    const current = document.getElementById("change-current-password").value;
+    if (!current) {
+        statusEl.textContent = "Please enter your current password.";
+        statusEl.style.color = "";
+        statusEl.style.display = "block";
+        return;
+    }
+
+    const origLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Changing…";
+    try {
+        const body = new URLSearchParams({
+            csrf_token: CSRF_TOKEN,
+            current_password: current,
+            new_password: document.getElementById("password").value,
+            confirm_password: document.getElementById("confirm_password").value,
+        });
+        const resp = await fetch("/change-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body,
+        });
+        if (resp.ok) {
+            statusEl.textContent = "Password changed.";
+            statusEl.style.color = "#6cf";
+            statusEl.style.display = "block";
+            document.getElementById("change-password-form").reset();
+            document.getElementById("password").dispatchEvent(new Event("input"));
+            submitBtn.textContent = origLabel;
+            // Submit stays disabled (fields are now empty) until the user types.
+        } else {
+            const data = await resp.json().catch(() => ({}));
+            statusEl.textContent = data.error || "Could not change password.";
+            statusEl.style.color = "";
+            statusEl.style.display = "block";
+            submitBtn.disabled = false;
+            submitBtn.textContent = origLabel;
+        }
+    } catch {
+        statusEl.textContent = "Network error. Please try again.";
+        statusEl.style.color = "";
+        statusEl.style.display = "block";
+        submitBtn.disabled = false;
+        submitBtn.textContent = origLabel;
+    }
+});
+
 // ── Users Modal ───────────────────────────────────────────────────────────────
 
 const usersModal = document.getElementById("users-modal");

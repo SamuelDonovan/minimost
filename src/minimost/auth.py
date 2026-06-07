@@ -584,6 +584,57 @@ def _validate_password_reset(password: str, confirm: str):
     return None
 
 
+@auth_bp.route("/change-password", methods=["POST"])
+@login_required
+def change_password_post():
+    """Change the logged-in user's password from the account modal.
+
+    Reads ``current_password``, ``new_password``, and ``confirm_password`` from
+    the submitted form.  The current password is verified against the stored
+    hash before the new password is applied; the new password is held to the
+    same strength rules as signup and reset (see :func:`_validate_password`).
+
+    Unlike the HTML form routes, this endpoint is called via ``fetch`` from the
+    chat UI and responds with JSON so the modal can show inline feedback without
+    a page reload.  CSRF is still enforced (auth blueprint) so the request must
+    include the ``csrf_token`` form field.
+
+    Route: ``POST /change-password``
+
+    :returns: ``{"ok": True}`` on success, or ``{"error": <message>}`` with a
+        ``400`` status when the current password is wrong or the new password
+        fails validation.
+    :rtype: tuple[dict, int] or dict
+    """
+    username = session["user"]
+    current = request.form.get("current_password", "")
+    password = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+
+    db = sqlite3.connect(AUTH_DB)
+    db.execute(_WAL)
+    row = db.execute(
+        "SELECT password_hash FROM users WHERE username = ?", (username,)
+    ).fetchone()
+
+    if not row or not check_password_hash(row[0], current):
+        db.close()
+        return {"error": "Current password is incorrect"}, 400
+
+    error = _validate_password_reset(password, confirm)
+    if error:
+        db.close()
+        return {"error": error}, 400
+
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE username = ?",
+        (hash_password(password), username),
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}
+
+
 @auth_bp.route("/reset-password/<token>", methods=["GET"])
 def reset_password_form(token):
     """Render the password reset form if the token is valid and unexpired.

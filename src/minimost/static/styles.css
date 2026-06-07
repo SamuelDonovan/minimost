@@ -2440,3 +2440,112 @@ a { color: #9cdcfe; }
     font-size: 12px;
     margin-top: 6px;
 }
+
+/* ── Change-password view ────────────────────────────────────────────────────
+   The new-password fields reuse the signup/reset password widgets, whose styles
+   normally live in auth.css.  Mirror the bits we need here so the requirement
+   list, match message, Show/Hide reveal, and Caps-Lock warning render on the
+   chat page too. */
+#account-password-view .auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+#change-password-submit {
+    background: #007acc;
+    color: #fff;
+    border: 1px solid #007acc;
+}
+#change-password-submit:hover:not(:disabled) {
+    background: #1a8ce0;
+    border-color: #1a8ce0;
+}
+#change-password-submit:disabled {
+    background: #3a3a3a;
+    color: #aaa;
+    border-color: #3a3a3a;
+    cursor: not-allowed;
+}
+
+/* Wrapper added by auth-password-field.js so the Show/Hide button can sit
+   inside the password field. */
+.pw-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.pw-wrap > input {
+    flex: 1;
+    padding-right: 56px; /* leave room for the reveal button */
+}
+.pw-reveal {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #9cdcfe;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+.pw-reveal:hover {
+    color: #6cf;
+    background: #333;
+}
+
+/* Caps Lock warning shown beneath a focused password field. */
+.caps-warning {
+    font-size: 12px;
+    color: #f0c674;
+    margin-top: -2px;
+}
+.caps-warning:not([hidden]) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.caps-warning::before {
+    content: "\26A0"; /* ⚠ warning sign */
+}
+
+#password-message {
+    font-size: 13px;
+    min-height: 1.2em;
+    margin: 8px 0 0 0;
+}
+#password-message.match {
+    color: #6cf;
+}
+#password-message.no-match {
+    color: #f88;
+}
+
+.pw-reqs {
+    list-style: none;
+    margin: 0;
+    padding: 6px 8px;
+    background: #252525;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.pw-reqs li {
+    color: #666;
+}
+.pw-reqs li.req-met {
+    color: #6cf;
+}
+.pw-reqs li.req-unmet {
+    color: #f88;
+}
+.pw-reqs .req-icon {
+    display: inline-block;
+    width: 12px;
+    text-align: center;
+}

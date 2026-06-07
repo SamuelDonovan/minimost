@@ -18,6 +18,7 @@
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
     const MAX_AVATAR_MB = {{ max_avatar_mb }};
     const STUN_PORT = {{ stun_port }};
+    const CSRF_TOKEN = "{{ csrf_token() }}";
 </script>
 
 <button id="sidebar-backdrop" aria-label="Close sidebar" onclick="closeSidebar()"></button>
@@ -235,6 +236,11 @@
                 <button id="account-signout-btn" onclick="window.location='/logout'">Sign out</button>
             </div>
 
+            <p class="settings-section-title">Password</p>
+            <div class="settings-row">
+                <button type="button" class="icon-btn" id="change-password-btn" onclick="showChangePassword()">Change Password</button>
+            </div>
+
             <div class="settings-danger-zone">
                 <p class="settings-section-title settings-danger-title">Danger Zone</p>
                 <div class="settings-danger-btns">
@@ -261,6 +267,50 @@
                 <button id="settings-delete-confirm-btn" class="settings-danger-btn settings-danger-btn-confirm" onclick="confirmDelete()">Delete My Account</button>
                 <button onclick="cancelDeleteConfirm()">Cancel</button>
             </div>
+        </div>
+
+        <!-- Change password view -->
+        <div id="account-password-view" style="display:none">
+            <h3 style="margin-top:0">Change password</h3>
+            <form id="change-password-form" autocomplete="off">
+                <div class="auth-field">
+                    <input
+                        id="change-current-password"
+                        type="password"
+                        placeholder="Current password"
+                        autocomplete="current-password"
+                        maxlength="1024"
+                    >
+                    <input
+                        id="password"
+                        type="password"
+                        placeholder="New password"
+                        autocomplete="new-password"
+                        maxlength="1024"
+                    >
+                    <ul id="password-requirements" class="pw-reqs" hidden>
+                        <li id="req-length"><span class="req-icon">•</span> 8+ characters</li>
+                        <li id="req-upper"><span class="req-icon">•</span> One uppercase letter</li>
+                        <li id="req-number"><span class="req-icon">•</span> One number</li>
+                        <li id="req-special"><span class="req-icon">•</span> One special character</li>
+                    </ul>
+                    <input
+                        id="confirm_password"
+                        type="password"
+                        placeholder="Confirm new password"
+                        autocomplete="new-password"
+                        maxlength="1024"
+                    >
+                </div>
+
+                <p id="password-message" aria-live="polite"></p>
+                <div id="change-password-status" class="settings-delete-error" style="display:none"></div>
+
+                <div class="modal-actions" style="margin-top:16px">
+                    <button id="change-password-submit" type="submit" disabled>Change password</button>
+                    <button type="button" onclick="cancelChangePassword()">Cancel</button>
+                </div>
+            </form>
         </div>
 
     </div>
@@ -1124,6 +1174,7 @@ const accountModal = document.getElementById("account-modal");
 
 async function openAccount() {
     cancelDeleteConfirm();
+    cancelChangePassword();
     document.getElementById("account-modal-avatar").innerHTML = "";
     document.getElementById("account-modal-avatar").appendChild(makeAvatarWrap(CURRENT_USER, 48));
 
@@ -1170,6 +1221,7 @@ function setPresenceOverride(value) {
 accountModal.addEventListener("click", e => {
     if (e.target === accountModal) {
         cancelDeleteConfirm();
+        cancelChangePassword();
         accountModal.style.display = "none";
     }
 });
@@ -1839,6 +1891,8 @@ function scrollToMsg(msgId) {
 <script src="/static/chat-search.js?v={{ app_version }}"></script>
 <script src="/static/chat-mentions.js?v={{ app_version }}"></script>
 <script src="/static/chat-calls.js?v={{ app_version }}"></script>
+<script src="/static/auth-password-rules.js?v={{ app_version }}"></script>
+<script src="/static/auth-password-field.js?v={{ app_version }}"></script>
 <div id="pc-member-tooltip"></div>
     <script>
       if ('serviceWorker' in navigator) {
