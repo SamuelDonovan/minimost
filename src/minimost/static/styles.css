@@ -711,14 +711,6 @@ body {
     gap: 4px;
     margin-left: 8px;
 }
-#members-list {
-    max-height: 200px;
-    overflow-y: auto;
-}
-.members-list-item {
-    padding: 4px 0;
-    color: #ccc;
-}
 #pc-member-tooltip {
     display: none;
     position: fixed;

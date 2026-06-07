@@ -375,23 +375,86 @@ async function confirmDelete() {
 const usersModal = document.getElementById("users-modal");
 let _usersModalRows = []; // { username, nameEl, row } — populated after fetch
 
+// Resolve the members of the *current* channel, with the current user first.
+//   public channel → every registered user
+//   private:<id>   → the channel's members
+//   dm:a:b[:…]     → the conversation participants
+async function membersForChannel(ch) {
+    let names;
+    if (ch.startsWith("dm:")) {
+        names = ch.split(":").slice(1);
+    } else if (ch.startsWith("private:")) {
+        const id = ch.split(":")[1];
+        const members = await fetch(`/private_channels/${id}/members`).then(r => r.json());
+        names = members.map(m => m.username);
+    } else {
+        const others = await fetch("/users").then(r => r.json());
+        names = [CURRENT_USER, ...others];
+    }
+    // Current user first, then everyone else, de-duplicated.
+    return [CURRENT_USER, ...names.filter(u => u !== CURRENT_USER)];
+}
+
+// Update the count badge on the top-bar members icon for the current channel.
+async function updateMembersCount() {
+    const badge = document.getElementById("members-count");
+    if (!badge) return;
+    const forChannel = channel;
+    let count = 0;
+    try {
+        if (forChannel.startsWith("dm:")) {
+            count = forChannel.split(":").slice(1).length;
+        } else if (forChannel.startsWith("private:")) {
+            const id = forChannel.split(":")[1];
+            const members = await fetch(`/private_channels/${id}/members`).then(r => r.json());
+            count = members.length;
+        } else {
+            const others = await fetch("/users").then(r => r.json());
+            count = others.length + 1; // include self
+        }
+    } catch {
+        count = 0;
+    }
+    if (channel !== forChannel) return; // channel changed while fetching — ignore
+    badge.textContent = count > 0 ? String(count) : "";
+}
+
 async function openUsersModal() {
     usersModal.style.display = "block";
     const searchEl = document.getElementById("users-modal-search");
     searchEl.value = "";
+
+    // The "Add Member" controls only make sense for private channels.
+    const isPrivate = channel.startsWith("private:");
+    document.getElementById("users-modal-add").style.display = isPrivate ? "block" : "none";
+    document.getElementById("users-modal-title").textContent =
+        isPrivate ? "Members: " + (privateChannelMap[channel] || "channel") : "Members";
+    if (isPrivate) {
+        document.getElementById("add-member-input").value = "";
+        document.getElementById("add-member-suggestions").style.display = "none";
+        if (!window.usersLoaded) {
+            fetch("/users").then(r => r.json()).then(u => { window.allUsers = u; window.usersLoaded = true; });
+        }
+    }
+
+    await renderMembersList();
+    searchEl.focus();
+}
+
+// (Re-)render the member rows for the current channel into the modal list.
+async function renderMembersList() {
     const list = document.getElementById("users-list");
+    const forChannel = channel;
     list.innerHTML = '<div class="users-list-loading">Loading…</div>';
 
-    let others;
+    let allUsernames;
     try {
-        const r = await fetch("/users");
-        others = await r.json();
+        allUsernames = await membersForChannel(forChannel);
     } catch {
         list.innerHTML = '<div class="users-list-loading">Failed to load members.</div>';
         return;
     }
-
-    const allUsernames = [CURRENT_USER, ...others];
+    if (channel !== forChannel) return; // channel changed while fetching
 
     const profiles = await Promise.all(allUsernames.map(u => {
         if (profileCache[u]) return Promise.resolve(profileCache[u]);
@@ -400,6 +463,7 @@ async function openUsersModal() {
             .then(d => { if (d) { profileCache[u] = d; } return d; })
             .catch(() => null);
     }));
+    if (channel !== forChannel) return;
 
     list.innerHTML = "";
     _usersModalRows = [];
@@ -465,7 +529,8 @@ async function openUsersModal() {
 
         list.appendChild(row);
     });
-    document.getElementById("users-modal-search").focus();
+    // Preserve any active search filter across re-renders (e.g. after adding a member).
+    filterUsersModal(document.getElementById("users-modal-search").value);
 }
 
 function filterUsersModal(query) {

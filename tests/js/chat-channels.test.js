@@ -63,7 +63,6 @@ beforeEach(() => {
     // Reset modal visibility
     document.getElementById('create-private-ch-modal').style.display = 'none';
     document.getElementById('rename-private-ch-modal').style.display = 'none';
-    document.getElementById('private-ch-members-modal').style.display = 'none';
     document.getElementById('private-ch-name').value = '';
     document.getElementById('private-ch-members-input').value = '';
     document.getElementById('private-ch-suggestions').style.display = 'none';
@@ -240,35 +239,6 @@ describe('rename-ch-submit-btn', () => {
     });
 });
 
-// ── openChannelMembers ────────────────────────────────────────────────────────
-describe('openChannelMembers()', () => {
-    beforeEach(() => {
-        if (!document.getElementById('members-list')) {
-            const el = document.createElement('div');
-            el.id = 'members-list';
-            document.body.appendChild(el);
-        }
-        global.fetch.mockImplementation((url) => {
-            if (url.includes('/members')) {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve([{ username: 'alice' }, { username: 'bob' }]) });
-            }
-            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-        });
-    });
-
-    test('shows members modal for private channel', () => {
-        global.channel = 'private:1';
-        openChannelMembers();
-        expect(document.getElementById('private-ch-members-modal').style.display).toBe('block');
-    });
-
-    test('does nothing when channel is not private', () => {
-        global.channel = 'general';
-        openChannelMembers();
-        expect(document.getElementById('private-ch-members-modal').style.display).toBe('none');
-    });
-});
-
 // ── leaveChannel ──────────────────────────────────────────────────────────────
 describe('leaveChannel()', () => {
     beforeEach(() => {
@@ -424,17 +394,5 @@ describe('channel modal openers', () => {
         global.privateChannelMap = { 'private:3': 'oldname' };
         openRenameChannel();
         expect(document.getElementById('rename-private-ch-modal').style.display).toBe('block');
-    });
-});
-
-// ── loadChannelMembers ────────────────────────────────────────────────────────
-describe('loadChannelMembers()', () => {
-    test('fetches members from correct endpoint', () => {
-        global.fetch.mockResolvedValue({
-            ok: true,
-            json: () => Promise.resolve([{ username: 'alice' }, { username: 'bob' }]),
-        });
-        loadChannelMembers(5);
-        expect(global.fetch).toHaveBeenCalledWith('/private_channels/5/members');
     });
 });

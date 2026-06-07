@@ -3,7 +3,6 @@
 
 const createPrivateChModal = document.getElementById("create-private-ch-modal");
 const renamePrivateChModal = document.getElementById("rename-private-ch-modal");
-const privateMembersModal  = document.getElementById("private-ch-members-modal");
 
 const privateChNameInput    = document.getElementById("private-ch-name");
 const privateChMembersInput = document.getElementById("private-ch-members-input");
@@ -193,46 +192,6 @@ document.getElementById("rename-ch-input").addEventListener("keydown", e => {
     if (e.key === "Escape") renamePrivateChModal.style.display = "none";
 });
 
-// Members modal
-function openChannelMembers() {
-    if (!channel.startsWith("private:")) return;
-    privateMembersModal.style.display = "block";
-    const channelId = channel.split(":")[1];
-    document.getElementById("members-modal-title").textContent =
-        "Members: " + (privateChannelMap[channel] || channel);
-    document.getElementById("add-member-input").value = "";
-    addMemberSuggestions.style.display = "none";
-    if (!window.usersLoaded) {
-        fetch("/users").then(r => r.json()).then(u => { window.allUsers = u; window.usersLoaded = true; });
-    }
-    loadChannelMembers(channelId);
-}
-
-function loadChannelMembers(channelId) {
-    fetch(`/private_channels/${channelId}/members`)
-        .then(r => r.json())
-        .then(members => {
-            const list = document.getElementById("members-list");
-            list.innerHTML = "";
-            members.forEach(m => {
-                const div = document.createElement("div");
-                div.className = "members-list-item";
-                div.style.display = "flex";
-                div.style.alignItems = "center";
-                div.style.gap = "8px";
-                div.appendChild(makeAvatarWrap(m.username, 28));
-                const label = document.createElement("span");
-                label.textContent = m.username + (m.username === CURRENT_USER ? " (you)" : "");
-                div.appendChild(label);
-                list.appendChild(div);
-            });
-        });
-}
-
-document.getElementById("members-modal-close-btn").onclick = () => {
-    privateMembersModal.style.display = "none";
-};
-
 async function leaveChannel() {
     if (!channel.startsWith("private:")) return;
     const name = privateChannelMap[channel] || channel;
@@ -245,7 +204,7 @@ async function leaveChannel() {
         return;
     }
 
-    privateMembersModal.style.display = "none";
+    closeUsersModal();
     delete privateChannelMap[channel];
     delete privateChannelMembers[channel];
     switchChannel("general");
@@ -345,6 +304,7 @@ document.getElementById("add-member-submit-btn").onclick = async () => {
     }
 
     addMemberInput.value = "";
-    loadChannelMembers(channelId);
+    renderMembersList();
+    updateMembersCount();
 };
 

@@ -228,12 +228,12 @@ const IDS = [
     'msg-search-from', 'msg-search-from-suggestions', 'msg-search-channel',
     'msg-search-start', 'msg-search-end',
     // Private channels
-    'create-private-ch-modal', 'rename-private-ch-modal', 'private-ch-members-modal',
+    'create-private-ch-modal', 'rename-private-ch-modal',
     'private-ch-name', 'private-ch-name-error', 'private-ch-members-input', 'private-ch-suggestions',
     'add-member-input', 'add-member-suggestions', 'pc-member-list',
     'private-ch-create-cancel', 'private-ch-create-btn',
     'rename-ch-cancel-btn', 'rename-ch-submit-btn', 'rename-ch-input', 'rename-ch-name-error',
-    'members-modal-close-btn', 'members-modal-title', 'members-list', 'add-member-submit-btn',
+    'add-member-submit-btn',
     // Settings
     'settings-modal', 'settings-name-color', 'settings-notif-sounds', 'settings-native-notif',
     'settings-enter-key', 'settings-save-btn', 'settings-color-preview', 'settings-bio',
@@ -246,8 +246,9 @@ const IDS = [
     'settings-color-preview-name', 'color-swatches',
     'settings-delete-confirm-btn',
     'notif-bell-slash', 'native-bell-slash',
-    // Users modal
+    // Members (users) modal + top-bar icon
     'users-modal', 'users-list', 'users-search', 'users-modal-search',
+    'users-modal-title', 'users-modal-add', 'members-btn', 'members-count',
     // Reactions
     'reaction-picker', 'reaction-picker-grid', 'reaction-search', 'reaction-grid',
     // Sidebar

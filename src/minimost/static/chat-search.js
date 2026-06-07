@@ -526,7 +526,7 @@ function closeAllModalsAndFocusChat() {
     // Close private channel modals
     if (createPrivateChModal) createPrivateChModal.style.display = "none";
     if (renamePrivateChModal) renamePrivateChModal.style.display = "none";
-    if (privateMembersModal)  privateMembersModal.style.display  = "none";
+    if (usersModal)           usersModal.style.display           = "none";
 
     closeHelp();
 
@@ -685,6 +685,7 @@ document.addEventListener("DOMContentLoaded", () => {
     loadSidebar();
     document.getElementById("chan").innerText = channel;
     switchChannel(channel);
+    updateMembersCount();
     // Announce presence immediately on load rather than waiting for the first input event.
     sendPresence(document.visibilityState === "visible" ? "active" : "hidden");
 

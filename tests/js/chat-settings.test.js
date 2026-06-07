@@ -276,6 +276,70 @@ describe('closeUsersModal()', () => {
     });
 });
 
+// ── context-aware members modal ────────────────────────────────────────────────
+describe('openUsersModal() context awareness', () => {
+    afterEach(() => { global.channel = 'general'; });
+
+    function memberFetch() {
+        global.fetch.mockImplementation((url) => {
+            if (url === '/users') return Promise.resolve({ ok: true, json: () => Promise.resolve(['bob']) });
+            if (url.endsWith('/members')) return Promise.resolve({ ok: true, json: () => Promise.resolve([{ username: 'alice' }, { username: 'bob' }]) });
+            if (url.startsWith('/profile/')) return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+        });
+    }
+
+    test('shows the Add Member section for private channels', async () => {
+        memberFetch();
+        global.channel = 'private:1';
+        global.privateChannelMap = { 'private:1': 'My Channel' };
+        await openUsersModal();
+        expect(document.getElementById('users-modal-add').style.display).toBe('block');
+        expect(document.getElementById('users-modal-title').textContent).toContain('My Channel');
+    });
+
+    test('hides the Add Member section for public channels', async () => {
+        memberFetch();
+        global.channel = 'general';
+        await openUsersModal();
+        expect(document.getElementById('users-modal-add').style.display).toBe('none');
+    });
+
+    test('hides the Add Member section for DMs', async () => {
+        memberFetch();
+        global.channel = 'dm:alice:bob';
+        await openUsersModal();
+        expect(document.getElementById('users-modal-add').style.display).toBe('none');
+    });
+});
+
+// ── updateMembersCount ─────────────────────────────────────────────────────────
+describe('updateMembersCount()', () => {
+    afterEach(() => { global.channel = 'general'; });
+
+    test('public channel counts all users plus self', async () => {
+        global.channel = 'general';
+        global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(['bob', 'charlie']) });
+        await updateMembersCount();
+        expect(document.getElementById('members-count').textContent).toBe('3');
+    });
+
+    test('DM counts participants without fetching', async () => {
+        global.channel = 'dm:alice:bob:carol';
+        global.fetch.mockClear();
+        await updateMembersCount();
+        expect(document.getElementById('members-count').textContent).toBe('3');
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('private channel counts its members', async () => {
+        global.channel = 'private:1';
+        global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([{ username: 'alice' }, { username: 'bob' }]) });
+        await updateMembersCount();
+        expect(document.getElementById('members-count').textContent).toBe('2');
+    });
+});
+
 // ── settings-save-btn ─────────────────────────────────────────────────────────
 describe('settings-save-btn', () => {
     test('calls /settings POST with color and bio', async () => {
