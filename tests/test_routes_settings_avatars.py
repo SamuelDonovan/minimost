@@ -257,7 +257,7 @@ def test_get_avatar_null_file(alice):
 
 def test_get_avatar_returns_image(alice, tmp_path, monkeypatch):
     avatar_dir = tmp_path / "avatars"
-    avatar_dir.mkdir()
+    avatar_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatar_dir)
 
     fname = "test_avatar.jpg"
@@ -266,6 +266,7 @@ def test_get_avatar_returns_image(alice, tmp_path, monkeypatch):
 
     resp = alice.get("/avatar/alice")
     assert resp.status_code == 200
+    resp.close()  # release the send_file handle so it isn't GC'd as a ResourceWarning
 
 
 # ── POST /avatar ──────────────────────────────────────────────────────────────
@@ -283,7 +284,7 @@ def test_upload_avatar_no_file(alice):
 
 def test_upload_avatar_success(alice, tmp_path, monkeypatch):
     avatar_dir = tmp_path / "avatars"
-    avatar_dir.mkdir()
+    avatar_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatar_dir)
 
     img = io.BytesIO(b"\xff\xd8\xff" + b"\x00" * 10)
@@ -298,7 +299,7 @@ def test_upload_avatar_success(alice, tmp_path, monkeypatch):
 
 def test_upload_avatar_stores_filename_in_db(alice, tmp_path, monkeypatch):
     avatar_dir = tmp_path / "avatars"
-    avatar_dir.mkdir()
+    avatar_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatar_dir)
 
     img = io.BytesIO(b"\xff\xd8\xff" + b"\x00" * 10)
@@ -312,7 +313,7 @@ def test_upload_avatar_stores_filename_in_db(alice, tmp_path, monkeypatch):
 
 def test_upload_avatar_replaces_old_file(alice, tmp_path, monkeypatch):
     avatar_dir = tmp_path / "avatars"
-    avatar_dir.mkdir()
+    avatar_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatar_dir)
 
     # Create old avatar file and record it
@@ -337,7 +338,7 @@ def test_upload_avatar_replaces_old_file(alice, tmp_path, monkeypatch):
 def test_upload_avatar_old_file_missing_no_crash(alice, tmp_path, monkeypatch):
     """FileNotFoundError when deleting old avatar is handled gracefully."""
     avatar_dir = tmp_path / "avatars"
-    avatar_dir.mkdir()
+    avatar_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatar_dir)
 
     # Record a filename that doesn't exist on disk
@@ -368,7 +369,7 @@ def test_delete_avatar_no_avatar_set(alice):
 
 def test_delete_avatar_clears_db(alice, tmp_path, monkeypatch):
     avatar_dir = tmp_path / "avatars"
-    avatar_dir.mkdir()
+    avatar_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatar_dir)
 
     fname = "to_delete.jpg"
@@ -384,7 +385,7 @@ def test_delete_avatar_clears_db(alice, tmp_path, monkeypatch):
 def test_delete_avatar_file_missing_no_crash(alice, tmp_path, monkeypatch):
     """FileNotFoundError when deleting avatar file is handled gracefully."""
     avatar_dir = tmp_path / "avatars"
-    avatar_dir.mkdir()
+    avatar_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatar_dir)
 
     _set_avatar_file("alice", "ghost.jpg")

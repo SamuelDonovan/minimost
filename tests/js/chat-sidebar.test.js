@@ -384,6 +384,16 @@ describe('visibilitychange event handler', () => {
 
     test('sends active state when tab becomes visible', () => {
         global.currentPresence = 'hidden';
+        // Becoming visible runs reconcileOnActive(), which fans out to
+        // refreshChannels/refreshPrivateChannels/refreshTotalUnreadCount. Those
+        // list endpoints return arrays in production, so mock them realistically
+        // — the default {} mock makes refreshPrivateChannels' .forEach throw an
+        // unhandled rejection that crashes the Jest worker.
+        global.fetch.mockImplementation((url) => {
+            if (url === '/private_channels') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+            if (url === '/channel_unreads')  return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+        });
         Object.defineProperty(document, 'visibilityState', {
             value: 'visible', writable: true, configurable: true,
         });

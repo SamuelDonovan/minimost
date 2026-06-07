@@ -10,15 +10,24 @@ def isolated_dbs(tmp_path, monkeypatch):
     import minimost.presence as presence_mod
     import minimost.common as common_mod
     import minimost.preview as preview_mod
+    import minimost.chat as chat_mod
 
     auth_db = str(tmp_path / "auth.db")
     presence_db = str(tmp_path / "presence.db")
     users_dir = tmp_path / "users"
+    uploads_dir = tmp_path / "uploads"
+    avatars_dir = tmp_path / "avatars"
     users_dir.mkdir()
+    uploads_dir.mkdir()
+    avatars_dir.mkdir()
 
     monkeypatch.setattr(auth_mod, "AUTH_DB", auth_db)
     monkeypatch.setattr(presence_mod, "PRESENCE_DB", presence_db)
     monkeypatch.setattr(common_mod, "DB_DIR", users_dir)
+    # Confine file I/O — including the startup cleanup daemon — to the temp dir
+    # so tests never read, write, or delete real uploads/avatars.
+    monkeypatch.setattr(chat_mod, "UPLOAD_DIR", uploads_dir)
+    monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatars_dir)
 
     preview_mod._CACHE.clear()
 

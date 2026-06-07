@@ -115,24 +115,29 @@ def delete_messages_older_than(users_dir: str, days: int, dry_run: bool = False)
 
 
 def _clean_user_db(db_file: Path, cutoff: float, dry_run: bool) -> None:
+    # try/finally guarantees the connection is closed even when a query raises
+    # (e.g. a locked DB or a VACUUM error). The caller swallows the exception,
+    # so without this the connection would leak and surface as a ResourceWarning.
     conn = sqlite3.connect(str(db_file))
-    conn.execute("PRAGMA journal_mode=WAL")
-    if dry_run:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM messages WHERE ts < ?", (cutoff,)
-        ).fetchone()
-        count = row[0] if row else 0
-        if count > 0:
-            print(f"[DRY RUN] Would delete {count} messages from {db_file.name}")
-    else:
-        cur = conn.execute("DELETE FROM messages WHERE ts < ?", (cutoff,))
-        if cur.rowcount > 0:
-            print(f"Deleted {cur.rowcount} messages from {db_file.name}")
-        conn.commit()
-        if conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 0:
-            conn.execute("PRAGMA auto_vacuum = FULL")
-            conn.execute("VACUUM")
-    conn.close()
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        if dry_run:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE ts < ?", (cutoff,)
+            ).fetchone()
+            count = row[0] if row else 0
+            if count > 0:
+                print(f"[DRY RUN] Would delete {count} messages from {db_file.name}")
+        else:
+            cur = conn.execute("DELETE FROM messages WHERE ts < ?", (cutoff,))
+            if cur.rowcount > 0:
+                print(f"Deleted {cur.rowcount} messages from {db_file.name}")
+            conn.commit()
+            if conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 0:
+                conn.execute("PRAGMA auto_vacuum = FULL")
+                conn.execute("VACUUM")
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

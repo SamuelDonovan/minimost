@@ -382,6 +382,7 @@ def test_files_serves_file(alice):
     (chat_mod.UPLOAD_DIR / fname).write_bytes(b"\xff\xd8\xff")
     resp = alice.get(f"/files/{fname}")
     assert resp.status_code == 200
+    resp.close()  # release the send_file handle so it isn't GC'd as a ResourceWarning
     (chat_mod.UPLOAD_DIR / fname).unlink()
 
 
@@ -836,6 +837,7 @@ def test_files_attachment_content_disposition(alice):
     (chat_mod.UPLOAD_DIR / fname).write_bytes(b"%PDF")
     resp = alice.get(f"/files/{fname}?download=1")
     assert resp.status_code == 200
+    resp.close()  # release the send_file handle so it isn't GC'd as a ResourceWarning
     (chat_mod.UPLOAD_DIR / fname).unlink()
 
 

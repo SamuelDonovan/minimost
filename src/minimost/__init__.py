@@ -36,6 +36,7 @@ from pathlib import Path
 from flask import Flask, abort, request, send_file, session
 
 from . import calls as calls_mod
+from . import chat as chat_mod
 from . import common, database, presence
 from .auth import auth_bp
 from .calls import calls_bp
@@ -258,7 +259,10 @@ def create_app():
 
 
 def _start_cleanup_scheduler(
-    interval_hours: int = 24, days: int = 30, message_days: int = 770
+    interval_hours: int = 24,
+    days: int = 30,
+    message_days: int = 770,
+    initial_delay_seconds: int = 5,
 ) -> None:
     """Start a daemon thread that periodically purges old upload files.
 
@@ -279,9 +283,18 @@ def _start_cleanup_scheduler(
     :param interval_hours: Hours between cleanup runs.  Defaults to ``24``.
     :param days: Fallback retention period in days if ``settings.json`` does
         not specify ``"image_retention_days"``.  Defaults to ``30``.
+    :param message_days: Fallback retention period in days for messages if
+        ``settings.json`` does not specify ``"message_retention_days"``.
+    :param initial_delay_seconds: Seconds to wait after startup before the first
+        cleanup run, giving the server time to finish booting.  Defaults to
+        ``5``.
     """
-    upload_dir = _PROJECT_ROOT / "uploads"
-    users_dir = _PROJECT_ROOT / "users"
+    # Resolve the data directories from the live module attributes (rather than
+    # ``_PROJECT_ROOT``) so the worker honours any monkeypatched paths — this is
+    # what keeps the test suite's cleanup runs confined to their temp dirs
+    # instead of touching the real ``users/`` and ``uploads/`` directories.
+    upload_dir = chat_mod.UPLOAD_DIR
+    users_dir = common.DB_DIR
     settings_file = _HERE / "settings.json"
 
     def _read_retention() -> tuple:
@@ -299,7 +312,7 @@ def _start_cleanup_scheduler(
         return days, days, message_days
 
     def _loop() -> None:
-        time.sleep(300)  # short initial delay — let the server finish starting
+        time.sleep(initial_delay_seconds)  # let the server finish starting
         while True:
             try:
                 from .clean import delete_files_older_than, delete_messages_older_than
