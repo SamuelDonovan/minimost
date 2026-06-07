@@ -8,6 +8,7 @@
 [![Database: SQLite](https://img.shields.io/badge/database-SQLite%20only-003b57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![PWA](https://img.shields.io/badge/PWA-installable-5a0fc8.svg)](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Code style: prettier](https://img.shields.io/badge/code%20style-prettier-ff69b4.svg)](https://github.com/prettier/prettier)
 [![Build](https://github.com/SamuelDonovan/minimost/actions/workflows/build.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/build.yml)
 [![Bandit](https://github.com/SamuelDonovan/minimost/actions/workflows/bandit.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/bandit.yml)
 [![Semgrep](https://github.com/SamuelDonovan/minimost/actions/workflows/semgrep.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/semgrep.yml)
@@ -27,13 +28,13 @@
 ## Screenshots
 
 ![Login page](docs/_static/screenshot-login.png)
-*The login page — clean, minimal, and version-tagged.*
+_The login page — clean, minimal, and version-tagged._
 
 ![Chat interface](docs/_static/screenshot-chat.png)
-*The main chat interface — channel list, direct messages, inline image attachments, and real-time typing indicators.*
+_The main chat interface — channel list, direct messages, inline image attachments, and real-time typing indicators._
 
 ![Message search](docs/_static/screenshot-message-search.png)
-*Full-text message search with highlighted results.*
+_Full-text message search with highlighted results._
 
 ---
 
@@ -134,11 +135,11 @@ To reach the server from another machine, navigate to `https://<server-ip>:<port
 
 ### Ports & firewall
 
-| Port | Protocol | Open on | Required for | Notes |
-|------|----------|---------|--------------|-------|
-| `6767` (Gunicorn) / `5000` (dev) | TCP | Server (inbound) | Everything — web UI, chat, file uploads, call signaling | The only port needed for text chat. Set via `--port` or `gunicorn.conf.py`. |
-| `3478` | UDP | Server (inbound) | Voice/video calls & screen sharing | Bundled STUN server. Set via `stun_port` in `settings.json`. |
-| Ephemeral UDP (Linux `32768`–`60999`) | UDP | Between clients | WebRTC media (audio/video/screen) | Peer-to-peer, browser-chosen; only matters if clients run host firewalls or sit on segmented LANs. |
+| Port                                  | Protocol | Open on          | Required for                                            | Notes                                                                                              |
+| ------------------------------------- | -------- | ---------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `6767` (Gunicorn) / `5000` (dev)      | TCP      | Server (inbound) | Everything — web UI, chat, file uploads, call signaling | The only port needed for text chat. Set via `--port` or `gunicorn.conf.py`.                        |
+| `3478`                                | UDP      | Server (inbound) | Voice/video calls & screen sharing                      | Bundled STUN server. Set via `stun_port` in `settings.json`.                                       |
+| Ephemeral UDP (Linux `32768`–`60999`) | UDP      | Between clients  | WebRTC media (audio/video/screen)                       | Peer-to-peer, browser-chosen; only matters if clients run host firewalls or sit on segmented LANs. |
 
 No outbound internet access is required (no external database, no public STUN/TURN) — MiniMost runs fully air-gapped. There is **no TURN relay**, so peers must be on the same LAN/subnet, and SQLite is file-based so there is no database port. See the [deployment docs](docs/deployment.rst) for an administrator setup checklist plus `firewalld` / `ufw` examples.
 
@@ -165,29 +166,29 @@ Edit `settings.json` (bundled with the package at `src/minimost/settings.json`) 
 
 ```json
 {
-    "channels": ["general", "software", "firmware", "systems", "off-topic"],
-    "image_retention_days": 30,
-    "file_retention_days": 30,
-    "message_retention_days": 770,
-    "max_upload_size_mb": 25,
-    "max_avatar_size_mb": 5,
-    "stun_port": 3478,
-    "max_login_attempts": 5,
-    "lockout_duration_minutes": 15
+  "channels": ["general", "software", "firmware", "systems", "off-topic"],
+  "image_retention_days": 30,
+  "file_retention_days": 30,
+  "message_retention_days": 770,
+  "max_upload_size_mb": 25,
+  "max_avatar_size_mb": 5,
+  "stun_port": 3478,
+  "max_login_attempts": 5,
+  "lockout_duration_minutes": 15
 }
 ```
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `channels` | `["general"]` | Public channel names shown in the sidebar. Restart required. |
-| `image_retention_days` | `30` | Days before image attachments are auto-deleted. No restart needed. |
-| `file_retention_days` | `30` | Days before non-image attachments are auto-deleted. No restart needed. |
-| `message_retention_days` | `770` | Days before messages are permanently deleted from the database. No restart needed. |
-| `max_upload_size_mb` | `25` | Maximum size in MB for a single file attachment. Restart required. |
-| `max_avatar_size_mb` | `5` | Maximum size in MB for a profile avatar upload. Restart required. |
-| `stun_port` | `3478` | UDP port for the bundled STUN server used by WebRTC calls/screen share. Must be `1`–`65535`. Restart required. |
-| `max_login_attempts` | `5` | Consecutive failed logins before an account is locked. Set to `0` to disable lockout. No restart needed. |
-| `lockout_duration_minutes` | `15` | How long an account stays locked after too many failed logins. No restart needed. |
+| Key                        | Default       | Description                                                                                                    |
+| -------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `channels`                 | `["general"]` | Public channel names shown in the sidebar. Restart required.                                                   |
+| `image_retention_days`     | `30`          | Days before image attachments are auto-deleted. No restart needed.                                             |
+| `file_retention_days`      | `30`          | Days before non-image attachments are auto-deleted. No restart needed.                                         |
+| `message_retention_days`   | `770`         | Days before messages are permanently deleted from the database. No restart needed.                             |
+| `max_upload_size_mb`       | `25`          | Maximum size in MB for a single file attachment. Restart required.                                             |
+| `max_avatar_size_mb`       | `5`           | Maximum size in MB for a profile avatar upload. Restart required.                                              |
+| `stun_port`                | `3478`        | UDP port for the bundled STUN server used by WebRTC calls/screen share. Must be `1`–`65535`. Restart required. |
+| `max_login_attempts`       | `5`           | Consecutive failed logins before an account is locked. Set to `0` to disable lockout. No restart needed.       |
+| `lockout_duration_minutes` | `15`          | How long an account stays locked after too many failed logins. No restart needed.                              |
 
 ---
 
@@ -195,50 +196,50 @@ Edit `settings.json` (bundled with the package at `src/minimost/settings.json`) 
 
 ### Messaging
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Send message |
-| `Shift + Enter` | New line |
-| `@` | Open the mention dropdown (`↑`/`↓` navigate, `Enter`/`Tab` accept) |
-| `Esc` | Unfocus input / close menus |
+| Key             | Action                                                             |
+| --------------- | ------------------------------------------------------------------ |
+| `Enter`         | Send message                                                       |
+| `Shift + Enter` | New line                                                           |
+| `@`             | Open the mention dropdown (`↑`/`↓` navigate, `Enter`/`Tab` accept) |
+| `Esc`           | Unfocus input / close menus                                        |
 
 ### Navigation
 
-| Key | Action |
-|-----|--------|
-| `i` | Focus message input |
-| `o` | Start a new DM |
-| `/` or `f` | Search messages |
-| `j` / `k` | Scroll down / up |
-| `d` / `u` | Scroll down / up (2×) |
-| `G` | Jump to bottom |
-| `g` | Jump to top |
+| Key                     | Action                  |
+| ----------------------- | ----------------------- |
+| `i`                     | Focus message input     |
+| `o`                     | Start a new DM          |
+| `/` or `f`              | Search messages         |
+| `j` / `k`               | Scroll down / up        |
+| `d` / `u`               | Scroll down / up (2×)   |
+| `G`                     | Jump to bottom          |
+| `g`                     | Jump to top             |
 | `Ctrl + J` / `Ctrl + K` | Next / previous channel |
-| `?` | Open help menu |
+| `?`                     | Open help menu          |
 
 ### Visual Mode
 
 Press `v` in normal mode (input unfocused) to enter visual mode, which highlights a single message for direct keyboard actions. The topbar shows `-- visual --` while active.
 
-| Key | Action |
-|-----|--------|
-| `v` | Enter visual mode (selects most recent message) |
-| `j` / `↓` | Move selection to next (newer) message |
-| `k` / `↑` | Move selection to previous (older) message |
-| `d` | Delete highlighted message |
-| `c` | Edit highlighted message |
-| `o` | Reply to highlighted message |
-| `y` | Copy highlighted message text to clipboard |
-| `e` | React to highlighted message with emoji |
-| `Esc` | Exit visual mode |
+| Key       | Action                                          |
+| --------- | ----------------------------------------------- |
+| `v`       | Enter visual mode (selects most recent message) |
+| `j` / `↓` | Move selection to next (newer) message          |
+| `k` / `↑` | Move selection to previous (older) message      |
+| `d`       | Delete highlighted message                      |
+| `c`       | Edit highlighted message                        |
+| `o`       | Reply to highlighted message                    |
+| `y`       | Copy highlighted message text to clipboard      |
+| `e`       | React to highlighted message with emoji         |
+| `Esc`     | Exit visual mode                                |
 
 ### Text Formatting
 
-| Key | Action |
-|-----|--------|
-| `Ctrl + B` | **Bold** |
-| `Ctrl + I` | *Italic* |
-| `Ctrl + U` | Underline |
+| Key        | Action            |
+| ---------- | ----------------- |
+| `Ctrl + B` | **Bold**          |
+| `Ctrl + I` | _Italic_          |
+| `Ctrl + U` | Underline         |
 | `Ctrl + S` | ~~Strikethrough~~ |
 
 All formatting uses Markdown syntax (underline uses `__text__`). Shortcuts work on selected text or toggle the format on/off while typing.

@@ -4,5 +4,16 @@ repos:
       - id: black
         name: black
         entry: black
-        language: system
+        # Use a pre-commit-managed venv with a pinned black rather than
+        # `language: system`, which runs whatever black happens to be on PATH
+        # when git invokes the hook (often a different version than the venv,
+        # producing formatting that disagrees with CI/local). Keep this version
+        # in sync with build.yml and the pyproject `dev` extra.
+        language: python
+        additional_dependencies: ["black==26.3.1"]
         types: [python]
+      - id: prettier
+        name: prettier
+        entry: npx prettier --write --ignore-unknown
+        language: system
+        types_or: [javascript, css, json, markdown, yaml]

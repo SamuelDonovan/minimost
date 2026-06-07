@@ -4,11 +4,11 @@
 // a response without .json(), which would crash the process before Jest can
 // print the coverage report.
 afterEach(() => {
-    global.fetch.mockImplementation(() =>
-        Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({}),
-            text: () => Promise.resolve(''),
-        })
-    );
+  global.fetch.mockImplementation(() =>
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({}),
+      text: () => Promise.resolve(""),
+    }),
+  );
 });

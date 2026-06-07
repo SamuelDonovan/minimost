@@ -1,6 +1,6 @@
-const vm   = require('vm');
-const fs   = require('fs');
-const path = require('path');
+const vm = require("vm");
+const fs = require("fs");
+const path = require("path");
 
 /**
  * Load a browser script into Jest's jsdom window context so that:
@@ -28,11 +28,18 @@ const path = require('path');
 // let/const declarations stay in script scope (not accessible from tests),
 // so we post-process them into var declarations to expose them globally.
 const _ctx = vm.createContext(
-    new Proxy(globalThis, {
-        has() { return true; },
-        get(t, p) { return t[p]; },
-        set(t, p, v) { t[p] = v; return true; },
-    })
+  new Proxy(globalThis, {
+    has() {
+      return true;
+    },
+    get(t, p) {
+      return t[p];
+    },
+    set(t, p, v) {
+      t[p] = v;
+      return true;
+    },
+  }),
 );
 
 /**
@@ -48,23 +55,27 @@ const _ctx = vm.createContext(
  * is fine for top-level script declarations.
  */
 function _promoteDeclarations(code) {
-    // Replace top-level `const ` and `let ` with `var `
-    // We avoid replacing inside strings/comments by only matching at the start
-    // of a line (possibly preceded by whitespace).
-    return code.replace(/^(\s*)(const|let)(\s)/gm, '$1var$3');
+  // Replace top-level `const ` and `let ` with `var `
+  // We avoid replacing inside strings/comments by only matching at the start
+  // of a line (possibly preceded by whitespace).
+  return code.replace(/^(\s*)(const|let)(\s)/gm, "$1var$3");
 }
 
 function loadScript(filename) {
-    const fullPath = path.resolve(__dirname, '../../src/minimost/static', filename);
-    let code = fs.readFileSync(fullPath, 'utf8');
+  const fullPath = path.resolve(
+    __dirname,
+    "../../src/minimost/static",
+    filename,
+  );
+  let code = fs.readFileSync(fullPath, "utf8");
 
-    code = _promoteDeclarations(code);
+  code = _promoteDeclarations(code);
 
-    const script = new vm.Script(code, {
-        filename: fullPath,
-        displayErrors: true,
-    });
-    script.runInContext(_ctx);
+  const script = new vm.Script(code, {
+    filename: fullPath,
+    displayErrors: true,
+  });
+  script.runInContext(_ctx);
 }
 
 module.exports = { loadScript };

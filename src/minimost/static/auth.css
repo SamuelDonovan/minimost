@@ -1,215 +1,217 @@
-*, *::before, *::after {
-    box-sizing: border-box;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
-    font-family: sans-serif;
-    background: #1e1e1e;
-    color: #ddd;
-    margin: 0;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+  font-family: sans-serif;
+  background: #1e1e1e;
+  color: #ddd;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .auth-brand {
-    font-size: 1.6em;
-    font-weight: 700;
-    color: #ddd;
-    margin-bottom: 16px;
-    letter-spacing: 0.5px;
+  font-size: 1.6em;
+  font-weight: 700;
+  color: #ddd;
+  margin-bottom: 16px;
+  letter-spacing: 0.5px;
 }
 
 .auth-card {
-    background: #2d2d2d;
-    border: 1px solid #444;
-    border-radius: 8px;
-    padding: 28px 32px;
-    width: 320px;
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 28px 32px;
+  width: 320px;
 }
 
 .auth-card h2 {
-    margin: 0 0 20px 0;
-    font-size: 1.1em;
-    font-weight: 600;
-    color: #ddd;
+  margin: 0 0 20px 0;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #ddd;
 }
 
 .auth-field {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 input {
-    width: 100%;
-    padding: 8px 10px;
-    background: #1e1e1e;
-    color: #ddd;
-    border: 1px solid #444;
-    border-radius: 4px;
-    font-size: 14px;
+  width: 100%;
+  padding: 8px 10px;
+  background: #1e1e1e;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
 input:focus {
-    outline: none;
-    border-color: #007acc;
+  outline: none;
+  border-color: #007acc;
 }
 
 button[type="submit"] {
-    width: 100%;
-    padding: 8px;
-    margin-top: 16px;
-    background: #007acc;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: background 0.2s;
+  width: 100%;
+  padding: 8px;
+  margin-top: 16px;
+  background: #007acc;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
 }
 
 button[type="submit"]:hover:not(:disabled) {
-    background: #005f9e;
+  background: #005f9e;
 }
 
 button[type="submit"]:disabled {
-    background: #3a3a3a;
-    color: #aaa;
-    cursor: not-allowed;
+  background: #3a3a3a;
+  color: #aaa;
+  cursor: not-allowed;
 }
 
 .auth-error {
-    background: rgba(200, 50, 50, 0.15);
-    border: 1px solid #c83232;
-    border-radius: 4px;
-    padding: 8px 10px;
-    font-size: 13px;
-    color: #f88; /* NOSONAR — dark-theme app; effective contrast on dark bg exceeds 4.9:1 */
-    margin-bottom: 16px;
+  background: rgba(200, 50, 50, 0.15);
+  border: 1px solid #c83232;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #f88; /* NOSONAR — dark-theme app; effective contrast on dark bg exceeds 4.9:1 */
+  margin-bottom: 16px;
 }
 
 /* Caps Lock warning shown beneath a focused password field.  The base rule sets
    no `display`, so the UA `[hidden] { display: none }` still hides it; the
    `:not([hidden])` rule restores the flex layout only when shown. */
 .caps-warning {
-    font-size: 12px;
-    color: #f0c674; /* NOSONAR — amber warning; contrast on dark bg exceeds 4.5:1 */
-    margin-top: -2px;
+  font-size: 12px;
+  color: #f0c674; /* NOSONAR — amber warning; contrast on dark bg exceeds 4.5:1 */
+  margin-top: -2px;
 }
 .caps-warning:not([hidden]) {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .caps-warning::before {
-    content: "\26A0"; /* ⚠ warning sign */
+  content: "\26A0"; /* ⚠ warning sign */
 }
 
 /* Wrapper added by auth-password-field.js so the Show/Hide button can sit
    inside the password field. */
 .pw-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
+  position: relative;
+  display: flex;
+  align-items: center;
 }
 .pw-wrap > input {
-    flex: 1;
-    padding-right: 56px; /* leave room for the reveal button */
+  flex: 1;
+  padding-right: 56px; /* leave room for the reveal button */
 }
 .pw-reveal {
-    position: absolute;
-    right: 6px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: none;
-    border: none;
-    color: #9cdcfe; /* NOSONAR — link-blue accent; contrast on dark bg exceeds 4.5:1 */
-    font-size: 12px;
-    cursor: pointer;
-    padding: 4px 6px;
-    border-radius: 4px;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #9cdcfe; /* NOSONAR — link-blue accent; contrast on dark bg exceeds 4.5:1 */
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
 }
 .pw-reveal:hover {
-    color: #6cf;
-    background: #333;
+  color: #6cf;
+  background: #333;
 }
 
 .auth-footer {
-    margin-top: 16px;
-    font-size: 13px;
-    color: #888;
-    text-align: center;
+  margin-top: 16px;
+  font-size: 13px;
+  color: #888;
+  text-align: center;
 }
 
 .auth-footer a {
-    color: #9cdcfe;
+  color: #9cdcfe;
 }
 
 .auth-hint {
-    font-size: 12px;
-    color: #777;
-    margin: 10px 0 0 0;
+  font-size: 12px;
+  color: #777;
+  margin: 10px 0 0 0;
 }
 
 #password-message {
-    font-size: 13px;
-    min-height: 1.2em;
-    margin: 8px 0 0 0;
+  font-size: 13px;
+  min-height: 1.2em;
+  margin: 8px 0 0 0;
 }
 
 #password-message.match {
-    color: #6cf;
+  color: #6cf;
 }
 
 #password-message.no-match {
-    color: #f88;
+  color: #f88;
 }
 
 .pw-reqs {
-    list-style: none;
-    margin: 0;
-    padding: 6px 8px;
-    background: #252525;
-    border: 1px solid #3a3a3a;
-    border-radius: 4px;
-    font-size: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 6px 8px;
+  background: #252525;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .pw-reqs li {
-    color: #666;
+  color: #666;
 }
 
 .pw-reqs li.req-met {
-    color: #6cf;
+  color: #6cf;
 }
 
 .pw-reqs li.req-unmet {
-    color: #f88;
+  color: #f88;
 }
 
 .pw-reqs .req-icon {
-    display: inline-block;
-    width: 12px;
-    text-align: center;
+  display: inline-block;
+  width: 12px;
+  text-align: center;
 }
 
 .version-tag {
-    position: fixed;
-    bottom: 14px;
-    right: 18px;
-    font-family: monospace;
-    font-size: 12px;
-    color: #6A9955;
+  position: fixed;
+  bottom: 14px;
+  right: 18px;
+  font-family: monospace;
+  font-size: 12px;
+  color: #6a9955;
 }
 
 @media (max-width: 360px) {
-    .auth-card {
-        width: calc(100% - 32px);
-    }
+  .auth-card {
+    width: calc(100% - 32px);
+  }
 }

@@ -1,0 +1,29 @@
+# Dependencies / generated
+node_modules/
+package-lock.json
+
+# Claude Code worktrees / local agent state (copies of the repo)
+.claude/
+
+# Jinja2 templates — prettier is not template-aware and can reflow whitespace
+# around {% %}/{{ }} in ways that change rendering.
+src/minimost/templates/
+
+# Build / docs output
+build/
+docs/_build/
+
+# Coverage + reports
+coverage/
+coverage.xml
+.coverage
+
+# Runtime data and binary assets
+*.db
+uploads/
+avatars/
+users/
+secret.key
+*.pem
+*.key
+*.srl
