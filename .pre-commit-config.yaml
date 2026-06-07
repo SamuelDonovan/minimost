@@ -17,3 +17,19 @@ repos:
         entry: npx prettier --write --ignore-unknown
         language: system
         types_or: [javascript, css, json, markdown, yaml]
+      # Test suites run via `language: system` (they need the real project
+      # environment — the installed package + flask, and node_modules — not an
+      # isolated venv). `pass_filenames: false` runs the whole suite instead of
+      # passing only the staged files to the runner.
+      - id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: jest
+        name: jest
+        entry: npx jest
+        language: system
+        types_or: [javascript]
+        pass_filenames: false
