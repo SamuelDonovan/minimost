@@ -16,7 +16,6 @@
 [![CodeQL](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/codeql.yml)
 [![Documentation Status](https://readthedocs.org/projects/minimost/badge/?version=latest)](https://minimost.readthedocs.io/en/latest/)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=alert_status)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=coverage)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=sqale_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
 [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=reliability_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=security_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
