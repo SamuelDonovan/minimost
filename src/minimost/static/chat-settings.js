@@ -131,25 +131,7 @@ function _updateColorPreview(color) {
     preview.style.color = color;
 }
 
-async function openSettings() {
-    const resp = await fetch("/settings");
-    const cfg = await resp.json();
-    const currentColor = cfg.name_color || defaultUserColor(CURRENT_USER);
-
-    _settingsUseDefault = !cfg.name_color;
-    _pendingAvatarBlob = null;
-    _removeAvatar = false;
-    document.getElementById("settings-name-color").value =
-        cfg.name_color || defaultUserColor(CURRENT_USER);
-    _updateColorPreview(currentColor);
-    _buildColorSwatches(cfg.name_color);
-    _populateAvatarPreview(null);
-
-    const bio = cfg.bio || "";
-    const bioEl = document.getElementById("settings-bio");
-    bioEl.value = bio;
-    document.getElementById("settings-bio-count").textContent = bio.length;
-
+function openSettings() {
     const fontSize = Number.parseFloat(localStorage.getItem("chatFontSize")) || CHAT_FONT_DEFAULT;
     const fontSlider = document.getElementById("settings-font-size");
     fontSlider.value = Math.round(Math.min(CHAT_FONT_MAX, Math.max(CHAT_FONT_MIN, fontSize)));
@@ -221,7 +203,35 @@ document.getElementById("settings-cancel-btn").addEventListener("click", () => {
     settingsModal.style.display = "none";
 });
 
-document.getElementById("settings-save-btn").addEventListener("click", async () => {
+document.getElementById("settings-save-btn").addEventListener("click", () => {
+    // Font size
+    const fontSize = Number(document.getElementById("settings-font-size").value);
+    localStorage.setItem("chatFontSize", fontSize);
+    applyChatFontSize(fontSize);
+
+    // Enter key behavior
+    const enterToSend = document.getElementById("settings-enter-key").value === "send";
+    localStorage.setItem("enterToSend", enterToSend);
+
+    // Notification sounds mute
+    notifMuted = !document.getElementById("settings-notif-sounds").checked;
+    localStorage.setItem("notifMuted", notifMuted);
+
+    // Native OS notifications
+    nativeNotifEnabled = document.getElementById("settings-native-notif").checked;
+    localStorage.setItem("nativeNotifEnabled", nativeNotifEnabled);
+
+    settingsModal.style.display = "none";
+});
+
+settingsModal.addEventListener("click", e => {
+    if (e.target === settingsModal) settingsModal.style.display = "none";
+});
+
+// ── Account profile (avatar / bio / name colour) ───────────────────────────────
+// These live in the account modal; loading happens in openAccount() (chat.html).
+
+document.getElementById("account-save-btn").addEventListener("click", async () => {
     // Avatar
     if (_pendingAvatarBlob) {
         const fd = new FormData();
@@ -241,23 +251,6 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
         _removeAvatar = false;
     }
 
-    // Font size
-    const fontSize = Number(document.getElementById("settings-font-size").value);
-    localStorage.setItem("chatFontSize", fontSize);
-    applyChatFontSize(fontSize);
-
-    // Enter key behavior
-    const enterToSend = document.getElementById("settings-enter-key").value === "send";
-    localStorage.setItem("enterToSend", enterToSend);
-
-    // Notification sounds mute
-    notifMuted = !document.getElementById("settings-notif-sounds").checked;
-    localStorage.setItem("notifMuted", notifMuted);
-
-    // Native OS notifications
-    nativeNotifEnabled = document.getElementById("settings-native-notif").checked;
-    localStorage.setItem("nativeNotifEnabled", nativeNotifEnabled);
-
     // Name color + bio
     const color = _settingsUseDefault ? null : document.getElementById("settings-name-color").value;
     const bio = document.getElementById("settings-bio").value.trim().slice(0, 160) || null;
@@ -268,7 +261,7 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
     });
 
     if (!resp.ok) {
-        alert("Failed to save settings.");
+        alert("Failed to save account.");
         return;
     }
 
@@ -285,14 +278,7 @@ document.getElementById("settings-save-btn").addEventListener("click", async () 
         if (el.textContent === CURRENT_USER) el.style.color = applied;
     });
 
-    settingsModal.style.display = "none";
-});
-
-settingsModal.addEventListener("click", e => {
-    if (e.target === settingsModal) {
-        cancelDeleteConfirm();
-        settingsModal.style.display = "none";
-    }
+    document.getElementById("account-modal").style.display = "none";
 });
 
 // ── Account deletion ──────────────────────────────────────────────────────────
@@ -325,15 +311,15 @@ function showDeleteConfirm(type) {
     document.getElementById("settings-delete-confirm-btn").textContent = info.btnLabel;
     document.getElementById("settings-delete-password").value = "";
     document.getElementById("settings-delete-error").style.display = "none";
-    document.getElementById("settings-main-view").style.display = "none";
-    document.getElementById("settings-delete-view").style.display = "block";
+    document.getElementById("account-main-view").style.display = "none";
+    document.getElementById("account-delete-view").style.display = "block";
     document.getElementById("settings-delete-password").focus();
 }
 
 function cancelDeleteConfirm() {
     _deleteType = null;
-    document.getElementById("settings-delete-view").style.display = "none";
-    document.getElementById("settings-main-view").style.display = "block";
+    document.getElementById("account-delete-view").style.display = "none";
+    document.getElementById("account-main-view").style.display = "block";
 }
 
 async function confirmDelete() {

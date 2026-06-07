@@ -77,33 +77,19 @@ describe('localStorage initialization', () => {
 });
 
 // ── openSettings ───────────────────────────────────────────────────────────────
+// Profile fields (avatar / bio / name colour) moved to the account modal, so
+// openSettings() now only handles display/behaviour prefs (font, enter, notifs).
 describe('openSettings()', () => {
-    beforeEach(() => {
-        global.fetch.mockResolvedValue({
-            ok: true,
-            json: () => Promise.resolve({ name_color: '#ff0000', bio: 'Hello' }),
-        });
-        global.defaultUserColor.mockReturnValue('hsl(0,60%,60%)');
-    });
-
-    test('shows settings modal', async () => {
-        await openSettings();
+    test('shows settings modal', () => {
+        openSettings();
         expect(document.getElementById('settings-modal').style.display).toBe('flex');
     });
 
-    test('populates color input with server value', async () => {
-        await openSettings();
-        expect(document.getElementById('settings-name-color').value).toBe('#ff0000');
-    });
-
-    test('populates bio field with server value', async () => {
-        await openSettings();
-        expect(document.getElementById('settings-bio').value).toBe('Hello');
-    });
-
-    test('populates bio count', async () => {
-        await openSettings();
-        expect(document.getElementById('settings-bio-count').textContent).toBe('5');
+    test('populates font size slider and label from localStorage', () => {
+        localStorage.setItem('chatFontSize', '18');
+        openSettings();
+        expect(document.getElementById('settings-font-size').value).toBe('18');
+        expect(document.getElementById('settings-font-size-label').textContent).toBe('(18px)');
     });
 });
 
@@ -120,8 +106,8 @@ describe('settings-cancel-btn', () => {
 describe('showDeleteConfirm() / cancelDeleteConfirm()', () => {
     test('showDeleteConfirm shows delete view for "soft"', () => {
         showDeleteConfirm('soft');
-        expect(document.getElementById('settings-delete-view').style.display).toBe('block');
-        expect(document.getElementById('settings-main-view').style.display).toBe('none');
+        expect(document.getElementById('account-delete-view').style.display).toBe('block');
+        expect(document.getElementById('account-main-view').style.display).toBe('none');
     });
 
     test('showDeleteConfirm sets title for "hard"', () => {
@@ -132,8 +118,8 @@ describe('showDeleteConfirm() / cancelDeleteConfirm()', () => {
     test('cancelDeleteConfirm shows main view', () => {
         showDeleteConfirm('soft');
         cancelDeleteConfirm();
-        expect(document.getElementById('settings-main-view').style.display).toBe('block');
-        expect(document.getElementById('settings-delete-view').style.display).toBe('none');
+        expect(document.getElementById('account-main-view').style.display).toBe('block');
+        expect(document.getElementById('account-delete-view').style.display).toBe('none');
     });
 });
 
@@ -342,20 +328,40 @@ describe('updateMembersCount()', () => {
 
 // ── settings-save-btn ─────────────────────────────────────────────────────────
 describe('settings-save-btn', () => {
-    test('calls /settings POST with color and bio', async () => {
-        global.fetch.mockResolvedValue({
-            ok: true,
-            json: () => Promise.resolve({ name_color: null, bio: '' }),
-        });
-        await openSettings();
-        document.getElementById('settings-notif-sounds').checked = true;
-        document.getElementById('settings-native-notif').checked = false;
-        global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+    test('persists prefs to localStorage and closes the modal', () => {
+        document.getElementById('settings-font-size').value = '17';
+        document.getElementById('settings-modal').style.display = 'flex';
         document.getElementById('settings-save-btn').click();
+        expect(localStorage.getItem('chatFontSize')).toBe('17');
+        expect(document.getElementById('settings-modal').style.display).toBe('none');
+    });
+
+    test('does not POST to /settings (profile save moved to the account modal)', () => {
+        document.getElementById('settings-save-btn').click();
+        const calls = global.fetch.mock.calls.map(c => c[0]);
+        expect(calls.some(u => u === '/settings')).toBe(false);
+    });
+});
+
+// ── account-save-btn ──────────────────────────────────────────────────────────
+describe('account-save-btn', () => {
+    test('calls /settings POST with color and bio', async () => {
+        global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        document.getElementById('settings-bio').value = 'Hello';
+        document.getElementById('account-save-btn').click();
         await Promise.resolve();
         await Promise.resolve();
         const calls = global.fetch.mock.calls.map(c => c[0]);
         expect(calls.some(u => u === '/settings')).toBe(true);
+    });
+
+    test('closes the account modal after saving', async () => {
+        global.fetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+        document.getElementById('account-modal').style.display = 'flex';
+        document.getElementById('account-save-btn').click();
+        // Drain all pending microtasks (the handler awaits one or more fetches).
+        await new Promise(r => setTimeout(r, 0));
+        expect(document.getElementById('account-modal').style.display).toBe('none');
     });
 });
 
@@ -481,11 +487,11 @@ describe('filterUsersModal()', () => {
 describe('showDeleteConfirm() / cancelDeleteConfirm()', () => {
     test('showDeleteConfirm switches to delete view', () => {
         showDeleteConfirm('soft');
-        expect(document.getElementById('settings-delete-view').style.display).not.toBe('none');
+        expect(document.getElementById('account-delete-view').style.display).not.toBe('none');
     });
     test('cancelDeleteConfirm returns to main view', () => {
         showDeleteConfirm('soft');
         cancelDeleteConfirm();
-        expect(document.getElementById('settings-main-view').style.display).not.toBe('none');
+        expect(document.getElementById('account-main-view').style.display).not.toBe('none');
     });
 });

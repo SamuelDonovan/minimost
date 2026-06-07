@@ -173,29 +173,96 @@
 <!-- DM Modal -->
 <!-- Account Modal -->
 <div id="account-modal" class="modal">
-    <div class="modal-content" style="max-width:300px">
-        <div id="account-modal-header">
-            <div id="account-modal-avatar"></div>
-            <div id="account-modal-name">{{ session["user"] }}</div>
+    <div class="modal-content" style="max-width:420px">
+
+        <!-- Main account view -->
+        <div id="account-main-view">
+            <div id="account-modal-header">
+                <div id="account-modal-avatar"></div>
+                <div id="account-modal-name">{{ session["user"] }}</div>
+            </div>
+
+            <div class="account-section-label">Set yourself as</div>
+            <div id="account-presence-options">
+                <button type="button" class="account-presence-btn" data-override="auto" onclick="setPresenceOverride('auto')">
+                    <span class="account-presence-dot auto"></span>Automatic
+                </button>
+                <button type="button" class="account-presence-btn" data-override="active" onclick="setPresenceOverride('active')">
+                    <span class="account-presence-dot active"></span>Online
+                </button>
+                <button type="button" class="account-presence-btn" data-override="idle" onclick="setPresenceOverride('idle')">
+                    <span class="account-presence-dot idle"></span>Away
+                </button>
+                <button type="button" class="account-presence-btn" data-override="offline" onclick="setPresenceOverride('offline')">
+                    <span class="account-presence-dot offline"></span>Offline
+                </button>
+            </div>
+
+            <p class="settings-section-title">Avatar</p>
+            <div class="settings-row" style="display:flex;align-items:center;gap:16px">
+                <div id="settings-avatar-preview" style="flex-shrink:0"></div>
+                <div>
+                    <input type="file" id="settings-avatar-file" accept="image/*" hidden>
+                    <button type="button" class="icon-btn" id="settings-avatar-btn">Upload Image</button>
+                    <div style="margin-top:6px">
+                        <button type="button" class="settings-reset-btn" id="settings-avatar-remove">Remove avatar</button>
+                    </div>
+                </div>
+            </div>
+
+            <p class="settings-section-title">Profile</p>
+            <div class="settings-row">
+                <label for="settings-bio">Bio</label>
+                <textarea id="settings-bio" maxlength="160" rows="3" placeholder="Tell people a little about yourself…"></textarea>
+                <div class="settings-bio-counter"><span id="settings-bio-count">0</span>/160</div>
+            </div>
+
+            <p class="settings-section-title">Appearance</p>
+            <div class="settings-row">
+                <label for="settings-name-color">Name Color</label>
+                <div class="settings-color-preview">
+                    <span id="settings-color-preview-name"></span>
+                </div>
+                <div class="settings-color-controls">
+                    <input type="color" id="settings-name-color">
+                    <button class="settings-reset-btn" id="settings-color-reset">Reset to default</button>
+                </div>
+                <div class="color-swatches" id="color-swatches"></div>
+            </div>
+
+            <div class="modal-actions">
+                <button id="account-save-btn">Save</button>
+                <button id="account-signout-btn" onclick="window.location='/logout'">Sign out</button>
+            </div>
+
+            <div class="settings-danger-zone">
+                <p class="settings-section-title settings-danger-title">Danger Zone</p>
+                <div class="settings-danger-btns">
+                    <button class="settings-danger-btn" onclick="showDeleteConfirm('soft')">
+                        Soft Delete Account
+                    </button>
+                    <button class="settings-danger-btn settings-danger-btn-hard" onclick="showDeleteConfirm('hard')">
+                        Hard Delete Account
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <div class="account-section-label">Set yourself as</div>
-        <div id="account-presence-options">
-            <button type="button" class="account-presence-btn" data-override="auto" onclick="setPresenceOverride('auto')">
-                <span class="account-presence-dot auto"></span>Automatic
-            </button>
-            <button type="button" class="account-presence-btn" data-override="active" onclick="setPresenceOverride('active')">
-                <span class="account-presence-dot active"></span>Online
-            </button>
-            <button type="button" class="account-presence-btn" data-override="idle" onclick="setPresenceOverride('idle')">
-                <span class="account-presence-dot idle"></span>Away
-            </button>
-            <button type="button" class="account-presence-btn" data-override="offline" onclick="setPresenceOverride('offline')">
-                <span class="account-presence-dot offline"></span>Offline
-            </button>
+        <!-- Delete confirmation view -->
+        <div id="account-delete-view" style="display:none">
+            <h3 id="settings-delete-title" style="margin-top:0">Delete account</h3>
+            <div id="settings-delete-warning" class="settings-delete-warning"></div>
+            <div class="settings-row" style="margin-top:16px">
+                <label for="settings-delete-password">Confirm your password</label>
+                <input type="password" id="settings-delete-password" placeholder="Password" autocomplete="current-password">
+                <div id="settings-delete-error" class="settings-delete-error" style="display:none"></div>
+            </div>
+            <div class="modal-actions" style="margin-top:16px">
+                <button id="settings-delete-confirm-btn" class="settings-danger-btn settings-danger-btn-confirm" onclick="confirmDelete()">Delete My Account</button>
+                <button onclick="cancelDeleteConfirm()">Cancel</button>
+            </div>
         </div>
 
-        <button id="account-signout-btn" onclick="window.location='/logout'">Sign out</button>
     </div>
 </div>
 
@@ -254,43 +321,10 @@
 <div id="settings-modal" class="modal">
     <div class="modal-content" style="max-width:420px">
 
-        <!-- Main settings view -->
         <div id="settings-main-view">
             <h3 style="margin-top:0">Settings</h3>
 
-            <p class="settings-section-title">Avatar</p>
-            <div class="settings-row" style="display:flex;align-items:center;gap:16px">
-                <div id="settings-avatar-preview" style="flex-shrink:0"></div>
-                <div>
-                    <input type="file" id="settings-avatar-file" accept="image/*" hidden>
-                    <button type="button" class="icon-btn" id="settings-avatar-btn">Upload Image</button>
-                    <div style="margin-top:6px">
-                        <button type="button" class="settings-reset-btn" id="settings-avatar-remove">Remove avatar</button>
-                    </div>
-                </div>
-            </div>
-
-            <p class="settings-section-title">Profile</p>
-
-            <div class="settings-row">
-                <label for="settings-bio">Bio</label>
-                <textarea id="settings-bio" maxlength="160" rows="3" placeholder="Tell people a little about yourself…"></textarea>
-                <div class="settings-bio-counter"><span id="settings-bio-count">0</span>/160</div>
-            </div>
-
             <p class="settings-section-title">Appearance</p>
-
-            <div class="settings-row">
-                <label for="settings-name-color">Name Color</label>
-                <div class="settings-color-preview">
-                    <span id="settings-color-preview-name"></span>
-                </div>
-                <div class="settings-color-controls">
-                    <input type="color" id="settings-name-color">
-                    <button class="settings-reset-btn" id="settings-color-reset">Reset to default</button>
-                </div>
-                <div class="color-swatches" id="color-swatches"></div>
-            </div>
 
             <div class="settings-row">
                 <label for="settings-font-size">Font Size <span id="settings-font-size-label"></span></label>
@@ -343,33 +377,6 @@
             <div class="modal-actions">
                 <button id="settings-save-btn">Save</button>
                 <button id="settings-cancel-btn">Cancel</button>
-            </div>
-
-            <div class="settings-danger-zone">
-                <p class="settings-section-title settings-danger-title">Danger Zone</p>
-                <div class="settings-danger-btns">
-                    <button class="settings-danger-btn" onclick="showDeleteConfirm('soft')">
-                        Soft Delete Account
-                    </button>
-                    <button class="settings-danger-btn settings-danger-btn-hard" onclick="showDeleteConfirm('hard')">
-                        Hard Delete Account
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Delete confirmation view -->
-        <div id="settings-delete-view" style="display:none">
-            <h3 id="settings-delete-title" style="margin-top:0">Delete account</h3>
-            <div id="settings-delete-warning" class="settings-delete-warning"></div>
-            <div class="settings-row" style="margin-top:16px">
-                <label for="settings-delete-password">Confirm your password</label>
-                <input type="password" id="settings-delete-password" placeholder="Password" autocomplete="current-password">
-                <div id="settings-delete-error" class="settings-delete-error" style="display:none"></div>
-            </div>
-            <div class="modal-actions" style="margin-top:16px">
-                <button id="settings-delete-confirm-btn" class="settings-danger-btn settings-danger-btn-confirm" onclick="confirmDelete()">Delete My Account</button>
-                <button onclick="cancelDeleteConfirm()">Cancel</button>
             </div>
         </div>
 
@@ -538,11 +545,12 @@
             <li>Pinch or <kbd>Ctrl + Scroll</kbd> to adjust font size</li>
         </ul>
 
-        <h3 class="help-section">Settings</h3>
+        <h3 class="help-section">Account &amp; Settings</h3>
         <ul>
-            <li>Click your username in the header to open Settings</li>
+            <li>Click your avatar in the header to open your Account — set your status, edit your profile, or sign out</li>
             <li>Choose a display name colour from the palette</li>
             <li>Upload or remove a profile avatar (max {{ max_avatar_mb }} MB)</li>
+            <li>Click the gear icon in the header for Settings (font size, Enter key, notifications)</li>
             <li>Click the bell icon in the header to mute or unmute notification sounds</li>
         </ul>
 
@@ -1114,7 +1122,8 @@ function renderAccountAvatar() {
 
 const accountModal = document.getElementById("account-modal");
 
-function openAccount() {
+async function openAccount() {
+    cancelDeleteConfirm();
     document.getElementById("account-modal-avatar").innerHTML = "";
     document.getElementById("account-modal-avatar").appendChild(makeAvatarWrap(CURRENT_USER, 48));
 
@@ -1126,6 +1135,21 @@ function openAccount() {
         .catch(() => {});
 
     accountModal.style.display = "flex";
+
+    // Profile editing (avatar / bio / name colour) — load saved values.
+    const cfg = await fetch("/settings").then(r => r.json()).catch(() => ({}));
+    const currentColor = cfg.name_color || defaultUserColor(CURRENT_USER);
+    _settingsUseDefault = !cfg.name_color;
+    _pendingAvatarBlob = null;
+    _removeAvatar = false;
+    document.getElementById("settings-name-color").value = currentColor;
+    _updateColorPreview(currentColor);
+    _buildColorSwatches(cfg.name_color);
+    _populateAvatarPreview(null);
+
+    const bio = cfg.bio || "";
+    document.getElementById("settings-bio").value = bio;
+    document.getElementById("settings-bio-count").textContent = bio.length;
 }
 
 function _highlightOverride(value) {
@@ -1141,11 +1165,13 @@ function setPresenceOverride(value) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ override: value })
     }).then(() => refreshPresence()).catch(() => {});
-    accountModal.style.display = "none";
 }
 
 accountModal.addEventListener("click", e => {
-    if (e.target === accountModal) accountModal.style.display = "none";
+    if (e.target === accountModal) {
+        cancelDeleteConfirm();
+        accountModal.style.display = "none";
+    }
 });
 
 function _showDmHoverCard(el, username) {

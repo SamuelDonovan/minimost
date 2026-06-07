@@ -238,7 +238,7 @@ const IDS = [
     'settings-modal', 'settings-name-color', 'settings-notif-sounds', 'settings-native-notif',
     'settings-enter-key', 'settings-save-btn', 'settings-color-preview', 'settings-bio',
     'settings-avatar-img', 'settings-avatar-input', 'settings-delete-password', 'settings-delete-error',
-    'settings-delete-warning', 'settings-delete-title', 'settings-delete-view', 'settings-main-view',
+    'settings-delete-warning', 'settings-delete-title', 'account-delete-view', 'account-main-view',
     'settings-enter-to-send', 'native-notif-hint',
     'settings-cancel-btn', 'settings-color-reset',
     'settings-bio-count', 'settings-font-size', 'settings-font-size-label',
@@ -248,7 +248,7 @@ const IDS = [
     'notif-bell-slash', 'native-bell-slash',
     // Members (users) modal + top-bar icon
     'users-modal', 'users-list', 'users-search', 'users-modal-search',
-    'users-modal-title', 'users-modal-add', 'members-btn', 'members-count',
+    'users-modal-title', 'users-modal-add', 'users-modal-leave', 'members-btn', 'members-count',
     // Reactions
     'reaction-picker', 'reaction-picker-grid', 'reaction-search', 'reaction-grid',
     // Sidebar
@@ -268,6 +268,7 @@ const IDS = [
     'private-ch-sidebar-header', 'private-ch-controls', 'private-ch-name-bar',
     // Account
     'account-btn', 'account-avatar', 'account-modal', 'account-modal-avatar',
+    'account-save-btn', 'account-signout-btn', 'account-presence-options',
     // Typing indicator (used in applyChatFontSize)
     'typing-indicator',
     // Help
