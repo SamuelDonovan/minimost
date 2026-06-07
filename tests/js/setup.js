@@ -260,11 +260,10 @@ const IDS = [
   "dm-cancel",
   "new-dm-btn",
   // Search
-  "msg-search-modal",
+  "topbar-search",
+  "msg-search-panel",
   "msg-search-input",
   "msg-search-results",
-  "msg-search-btn",
-  "msg-search-close",
   "msg-search-from",
   "msg-search-from-suggestions",
   "msg-search-channel",
@@ -434,8 +433,7 @@ IDS.forEach((id) => {
       id.endsWith("-btn") ||
       id.endsWith("-cancel") ||
       id.endsWith("-start") ||
-      id === "new-dm-btn" ||
-      id === "msg-search-close"
+      id === "new-dm-btn"
     ) {
       const btn = document.createElement("button");
       btn.id = id;
@@ -477,6 +475,26 @@ IDS.forEach((id) => {
     document.body.appendChild(inp);
   }
 });
+
+// ── Assemble the top-bar search component as the nested tree chat-search.js
+//    expects: #topbar-search wraps the input and the drop-down #msg-search-panel,
+//    which in turn holds the filters and results. This lets the focus handlers
+//    and the outside-click `searchWrap.contains()` check behave as in the app.
+{
+  const searchWrap = document.getElementById("topbar-search");
+  const searchPanel = document.getElementById("msg-search-panel");
+  ["msg-search-input", "msg-search-panel"].forEach((id) =>
+    searchWrap.appendChild(document.getElementById(id)),
+  );
+  [
+    "msg-search-from",
+    "msg-search-from-suggestions",
+    "msg-search-channel",
+    "msg-search-start",
+    "msg-search-end",
+    "msg-search-results",
+  ].forEach((id) => searchPanel.appendChild(document.getElementById(id)));
+}
 
 // ── Stub functions that the loaded scripts call into other files ───────────────
 global.switchChannel = jest.fn();

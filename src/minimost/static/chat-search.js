@@ -200,17 +200,31 @@ function _onSearchFromKeydown(e) {
   }
 }
 
+// Reveal the dropdown panel beneath the topbar search box, refreshing the
+// channel list and user suggestions each time it opens.
+function openSearchPanel() {
+  if (searchWrap.classList.contains("open")) return;
+  searchWrap.classList.add("open");
+  populateSearchChannels();
+  ensureSearchUsersLoaded();
+}
+
+function closeSearchPanel() {
+  searchWrap.classList.remove("open");
+  hideSearchFromSuggestions();
+  searchSelectedIndex = -1;
+}
+
+// Entry point for the keyboard shortcut: clear any previous query and open a
+// fresh search with the box focused.
 function startSearch() {
-  searchModal.style.display = "block";
   searchInput.value = "";
   searchFrom.value = "";
   searchStart.value = "";
   searchEnd.value = "";
-  populateSearchChannels();
-  searchChannel.value = "";
-  hideSearchFromSuggestions();
-  ensureSearchUsersLoaded();
   searchResults.innerHTML = "";
+  openSearchPanel();
+  searchChannel.value = "";
   searchInput.focus();
 }
 
@@ -223,7 +237,8 @@ function updateSearchHighlight() {
 }
 
 // Message search
-const searchModal = document.getElementById("msg-search-modal");
+const searchWrap = document.getElementById("topbar-search");
+const searchPanel = document.getElementById("msg-search-panel");
 const searchInput = document.getElementById("msg-search-input");
 const searchResults = document.getElementById("msg-search-results");
 const searchFrom = document.getElementById("msg-search-from");
@@ -234,17 +249,13 @@ const searchChannel = document.getElementById("msg-search-channel");
 const searchStart = document.getElementById("msg-search-start");
 const searchEnd = document.getElementById("msg-search-end");
 
-document.getElementById("msg-search-btn").onclick = () => {
-  startSearch();
-};
+// Open the dropdown as soon as the user engages either search field.
+searchInput.addEventListener("focus", openSearchPanel);
+searchFrom.addEventListener("focus", openSearchPanel);
 
-document.getElementById("msg-search-close").onclick = () => {
-  searchModal.style.display = "none";
-};
-
-// Close modal on outside click
+// Close the dropdown on any click outside the search component.
 globalThis.onclick = (e) => {
-  if (e.target === searchModal) searchModal.style.display = "none";
+  if (!searchWrap.contains(e.target)) closeSearchPanel();
   if (e.target === dmModal) dmModal.style.display = "none";
 };
 
@@ -596,10 +607,8 @@ function closeAllModalsAndFocusChat() {
     resetDmSuggestions();
   }
 
-  // Close other modals if you have them
-  if (searchModal?.style.display === "block") {
-    searchModal.style.display = "none";
-  }
+  // Close the search dropdown if it's open
+  closeSearchPanel();
 
   // Close private channel modals
   if (createPrivateChModal) createPrivateChModal.style.display = "none";
@@ -634,7 +643,8 @@ function scrollIntoViewIfNeeded(el) {
 }
 
 function _goToSearchResult(msgChannel, msgId) {
-  searchModal.style.display = "none";
+  closeSearchPanel();
+  searchInput.blur();
   switchChannel(msgChannel);
   setTimeout(() => {
     const el = document.getElementById(`msg-${msgId}`);
@@ -753,8 +763,8 @@ searchInput.addEventListener("keydown", (e) => {
       items[searchSelectedIndex].click();
     }
   } else if (e.key === "Escape") {
-    searchModal.style.display = "none";
-    searchSelectedIndex = -1;
+    closeSearchPanel();
+    searchInput.blur();
   }
 });
 

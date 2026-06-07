@@ -64,11 +64,38 @@
                     <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
                 </svg>
             </button>
-            <button id="msg-search-btn" class="icon-btn" title="Search messages">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <div id="topbar-search">
+                <svg class="topbar-search-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242 1.106a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
                 </svg>
-            </button>
+                <input type="text" id="msg-search-input" placeholder="Search messages…" autocomplete="off">
+                <div id="msg-search-panel">
+                    <div class="search-filters">
+                        <label class="search-filter">
+                            <span>From</span>
+                            <div class="input-suggest-wrap search-from-wrap">
+                                <input type="text" id="msg-search-from" placeholder="anyone" autocomplete="off">
+                                <div id="msg-search-from-suggestions" class="autocomplete-suggestions"></div>
+                            </div>
+                        </label>
+                        <label class="search-filter">
+                            <span>Channel</span>
+                            <select id="msg-search-channel">
+                                <option value="">All channels</option>
+                            </select>
+                        </label>
+                        <label class="search-filter">
+                            <span>After</span>
+                            <input type="date" id="msg-search-start">
+                        </label>
+                        <label class="search-filter">
+                            <span>Before</span>
+                            <input type="date" id="msg-search-end">
+                        </label>
+                    </div>
+                    <div id="msg-search-results"></div>
+                </div>
+            </div>
         </div>
 
         <div id="topbar-channel">
@@ -445,46 +472,6 @@
             <hr>
             <button id="leave-channel-btn" class="settings-danger-btn settings-danger-btn-confirm" style="width:100%" onclick="leaveChannel()">Leave channel</button>
         </div>
-    </div>
-</div>
-
-<!-- Search Modal -->
-<div id="msg-search-modal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 style="margin:0">Search messages</h3>
-            <button class="modal-close-x" id="msg-search-close" title="Close">&#x2715;</button>
-        </div>
-        <div class="search-input-wrap">
-            <svg class="search-input-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/>
-            </svg>
-            <input type="text" id="msg-search-input" placeholder="Search messages…" autocomplete="off">
-        </div>
-        <div class="search-filters">
-            <label class="search-filter">
-                <span>From</span>
-                <div class="input-suggest-wrap search-from-wrap">
-                    <input type="text" id="msg-search-from" placeholder="anyone" autocomplete="off">
-                    <div id="msg-search-from-suggestions" class="autocomplete-suggestions"></div>
-                </div>
-            </label>
-            <label class="search-filter">
-                <span>Channel</span>
-                <select id="msg-search-channel">
-                    <option value="">All channels</option>
-                </select>
-            </label>
-            <label class="search-filter">
-                <span>After</span>
-                <input type="date" id="msg-search-start">
-            </label>
-            <label class="search-filter">
-                <span>Before</span>
-                <input type="date" id="msg-search-end">
-            </label>
-        </div>
-        <div id="msg-search-results"></div>
     </div>
 </div>
 

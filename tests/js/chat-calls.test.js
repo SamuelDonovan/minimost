@@ -44,7 +44,6 @@ beforeAll(() => {
   global.dmModal = document.getElementById("dm-modal");
   global.dmSuggestions = document.getElementById("dm-suggestions");
   global.dmUsersInput = document.getElementById("dm-users");
-  global.searchModal = document.getElementById("msg-search-modal");
   global.searchInput = document.getElementById("msg-search-input");
   global.searchResults = document.getElementById("msg-search-results");
   global.createPrivateChModal = document.getElementById(

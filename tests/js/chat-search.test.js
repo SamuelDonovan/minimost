@@ -10,7 +10,6 @@ beforeAll(() => {
   global.dmModal = document.getElementById("dm-modal");
   global.dmSuggestions = document.getElementById("dm-suggestions");
   global.dmUsersInput = document.getElementById("dm-users");
-  global.searchModal = document.getElementById("msg-search-modal");
   global.searchInput = document.getElementById("msg-search-input");
   global.searchResults = document.getElementById("msg-search-results");
   global.createPrivateChModal = document.getElementById(
@@ -45,7 +44,7 @@ beforeAll(() => {
 beforeEach(() => {
   jest.clearAllMocks();
   // Reset DOM state
-  document.getElementById("msg-search-modal").style.display = "none";
+  document.getElementById("topbar-search").classList.remove("open");
   document.getElementById("vim-mode-indicator").classList.remove("active");
   document.getElementById("chat").innerHTML = "";
 });
@@ -340,11 +339,11 @@ describe("_syntaxHighlight()", () => {
 
 // ── startSearch / visual mode ─────────────────────────────────────────────────
 describe("startSearch()", () => {
-  test("shows the search modal", () => {
+  test("opens the search panel", () => {
     startSearch();
-    expect(document.getElementById("msg-search-modal").style.display).toBe(
-      "block",
-    );
+    expect(
+      document.getElementById("topbar-search").classList.contains("open"),
+    ).toBe(true);
   });
 });
 
@@ -398,7 +397,7 @@ describe("enterVisualMode() / exitVisualMode()", () => {
 describe("userInput()", () => {
   beforeEach(() => {
     document.getElementById("dm-modal").style.display = "none";
-    document.getElementById("msg-search-modal").style.display = "none";
+    document.getElementById("topbar-search").classList.remove("open");
   });
 
   function makeEvent(key, opts = {}) {
@@ -569,12 +568,12 @@ describe("closeAllModalsAndFocusChat()", () => {
     expect(document.getElementById("dm-modal").style.display).toBe("none");
   });
 
-  test("closes search modal", () => {
-    document.getElementById("msg-search-modal").style.display = "block";
+  test("closes the search panel", () => {
+    document.getElementById("topbar-search").classList.add("open");
     closeAllModalsAndFocusChat();
-    expect(document.getElementById("msg-search-modal").style.display).toBe(
-      "none",
-    );
+    expect(
+      document.getElementById("topbar-search").classList.contains("open"),
+    ).toBe(false);
   });
 
   test("closes create private channel modal", () => {
@@ -648,13 +647,13 @@ describe("search input keyboard navigation", () => {
     expect(items[2].classList.contains("active")).toBe(true);
   });
 
-  test("Escape hides modal", () => {
+  test("Escape closes the panel", () => {
     document
       .getElementById("msg-search-input")
       .dispatchEvent(makeKeyEvent("Escape"));
-    expect(document.getElementById("msg-search-modal").style.display).toBe(
-      "none",
-    );
+    expect(
+      document.getElementById("topbar-search").classList.contains("open"),
+    ).toBe(false);
   });
 
   test("no key navigation when no results", () => {
@@ -904,12 +903,19 @@ describe("global onclick handler", () => {
   test("handler is registered on globalThis", () => {
     expect(typeof globalThis.onclick).toBe("function");
   });
-  test("does not hide modal when target is unrelated element", () => {
-    const modal = document.getElementById("msg-search-modal");
-    modal.style.display = "block";
+  // These assert against the script's own `searchWrap`/`searchInput` globals
+  // (not getElementById) so they stay correct even after another test rebuilds
+  // document.body, which would detach the nodes the handler closes over.
+  test("closes the panel when the click is outside the search box", () => {
+    searchWrap.classList.add("open");
     const other = document.createElement("div");
     globalThis.onclick({ target: other });
-    expect(modal.style.display).toBe("block");
+    expect(searchWrap.classList.contains("open")).toBe(false);
+  });
+  test("keeps the panel open when the click is inside the search box", () => {
+    searchWrap.classList.add("open");
+    globalThis.onclick({ target: searchInput });
+    expect(searchWrap.classList.contains("open")).toBe(true);
   });
 });
 
