@@ -39,15 +39,8 @@
 <div id="main">
     <div id="topbar">
         <div id="topbar-user">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4zm-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.029 10 8 10c-2.029 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664h10z"/>
-            </svg>
-            <span id="topbar-username">{{ session["user"] }}</span>
-            <button class="icon-btn" title="Log out" onclick="window.location='/logout'">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                    <path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0v2z"/>
-                    <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
-                </svg>
+            <button id="account-btn" class="icon-btn" title="Account" aria-label="Account" onclick="openAccount()">
+                <span id="account-avatar"></span>
             </button>
             <button id="help-btn" class="icon-btn" title="Help menu" aria-label="Help">?</button>
             <button class="icon-btn" title="Settings" onclick="openSettings()">
@@ -177,6 +170,34 @@
 </div>
 
 <!-- DM Modal -->
+<!-- Account Modal -->
+<div id="account-modal" class="modal">
+    <div class="modal-content" style="max-width:300px">
+        <div id="account-modal-header">
+            <div id="account-modal-avatar"></div>
+            <div id="account-modal-name">{{ session["user"] }}</div>
+        </div>
+
+        <div class="account-section-label">Set yourself as</div>
+        <div id="account-presence-options">
+            <button type="button" class="account-presence-btn" data-override="auto" onclick="setPresenceOverride('auto')">
+                <span class="account-presence-dot auto"></span>Automatic
+            </button>
+            <button type="button" class="account-presence-btn" data-override="active" onclick="setPresenceOverride('active')">
+                <span class="account-presence-dot active"></span>Online
+            </button>
+            <button type="button" class="account-presence-btn" data-override="idle" onclick="setPresenceOverride('idle')">
+                <span class="account-presence-dot idle"></span>Away
+            </button>
+            <button type="button" class="account-presence-btn" data-override="offline" onclick="setPresenceOverride('offline')">
+                <span class="account-presence-dot offline"></span>Offline
+            </button>
+        </div>
+
+        <button id="account-signout-btn" onclick="window.location='/logout'">Sign out</button>
+    </div>
+</div>
+
 <div id="dm-modal" class="modal">
     <div class="modal-content">
         <h3>Start Direct Message</h3>
@@ -1071,6 +1092,54 @@ function makeAvatarWrap(username, size = 28, channelKey = null, showDot = true) 
 
     return wrap;
 }
+
+// ---- Account / presence-override ----------------------------------------
+
+// Renders the current user's avatar (with live presence dot) into the topbar
+// account button.  Called after each sidebar load so it picks up the freshly
+// fetched avatar list and presence cache.
+function renderAccountAvatar() {
+    const slot = document.getElementById("account-avatar");
+    if (!slot) return;
+    slot.innerHTML = "";
+    slot.appendChild(makeAvatarWrap(CURRENT_USER, 26));
+}
+
+const accountModal = document.getElementById("account-modal");
+
+function openAccount() {
+    document.getElementById("account-modal-avatar").innerHTML = "";
+    document.getElementById("account-modal-avatar").appendChild(makeAvatarWrap(CURRENT_USER, 48));
+
+    // Default to "auto" highlight until the server tells us the saved override.
+    _highlightOverride("auto");
+    fetch("/presence/override")
+        .then(r => r.json())
+        .then(data => _highlightOverride(data.override || "auto"))
+        .catch(() => {});
+
+    accountModal.style.display = "flex";
+}
+
+function _highlightOverride(value) {
+    document.querySelectorAll("#account-presence-options .account-presence-btn").forEach(btn => {
+        btn.classList.toggle("selected", btn.dataset.override === value);
+    });
+}
+
+function setPresenceOverride(value) {
+    _highlightOverride(value);
+    fetch("/presence/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ override: value })
+    }).then(() => refreshPresence()).catch(() => {});
+    accountModal.style.display = "none";
+}
+
+accountModal.addEventListener("click", e => {
+    if (e.target === accountModal) accountModal.style.display = "none";
+});
 
 function _showDmHoverCard(el, username) {
     const card    = document.getElementById("dm-hover-card");

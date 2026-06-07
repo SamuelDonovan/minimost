@@ -81,6 +81,9 @@ async function loadSidebar() {
 
         // ensure highlight is correct after rebuild
         updateSidebarActive();
+
+        // Build the topbar account avatar now that avatars + presence are known.
+        renderAccountAvatar();
     }
 }
 

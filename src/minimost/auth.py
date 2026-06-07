@@ -398,8 +398,8 @@ def logout():
     """Log the current user out and redirect to the login page.
 
     Sets the user's presence state to ``"offline"`` in ``presence.db`` via
-    :func:`minimost.presence.update_presence`, then clears the Flask session
-    and redirects to ``/login``.
+    :func:`minimost.presence.update_presence` and clears any manual presence
+    override, then clears the Flask session and redirects to ``/login``.
 
     Route: ``GET /logout``
 
@@ -408,6 +408,7 @@ def logout():
     """
     user = session["user"]
     presence.update_presence(user, "offline")
+    presence.set_override(user, None)
     session.clear()
     return redirect("/login")
 

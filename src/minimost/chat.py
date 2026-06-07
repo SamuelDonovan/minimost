@@ -1005,13 +1005,17 @@ def online_users():
     db.row_factory = sqlite3.Row
 
     rows = db.execute(
-        "SELECT user, state FROM presence WHERE last_seen >= ?",
+        "SELECT user, state, override FROM presence WHERE last_seen >= ?",
         (cutoff,),
     ).fetchall()
 
     db.close()
 
-    return jsonify({row["user"]: row["state"].lower() for row in rows})
+    # A manual override (set in the account modal) wins over the live,
+    # activity-derived state; otherwise fall back to the real state.
+    return jsonify(
+        {row["user"]: (row["override"] or row["state"]).lower() for row in rows}
+    )
 
 
 @chat_bp.route("/messages/<channel>", methods=["GET"])

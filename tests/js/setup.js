@@ -266,7 +266,8 @@ const IDS = [
     'vim-mode-indicator', 'chan', 'chat', 'topbar-channel',
     'msg', 'input', 'fileInput', 'image-preview',
     'private-ch-sidebar-header', 'private-ch-controls', 'private-ch-name-bar',
-    'topbar-username',
+    // Account
+    'account-btn', 'account-avatar', 'account-modal', 'account-modal-avatar',
     // Typing indicator (used in applyChatFontSize)
     'typing-indicator',
     // Help
@@ -360,6 +361,7 @@ global.makeAvatarWrap           = jest.fn((username, size) => {
     return wrap;
 });
 global.applyPresenceDot = jest.fn();
+global.renderAccountAvatar = jest.fn();
 global._setInitials     = jest.fn();
 global._showDmHoverCard = jest.fn();
 global._hideDmHoverCard = jest.fn();

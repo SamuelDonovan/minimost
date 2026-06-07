@@ -26,13 +26,6 @@ body {
     grid-column: 3;
     grid-row: 1;
 }
-#topbar-user > svg {
-    opacity: 0.5;
-    flex-shrink: 0;
-}
-#topbar-username {
-    font-weight: 600;
-}
 #topbar-actions {
     display: flex;
     align-items: center;
@@ -1672,6 +1665,101 @@ a { color: #9cdcfe; }
 .avatar-presence.active { background: #6cf; }
 .avatar-presence.idle   { background: #fc6; }
 #settings-avatar-preview .avatar-wrap { cursor: default; }
+
+/* Topbar account button */
+#account-btn {
+    opacity: 1;
+    height: auto;
+    padding: 0;
+}
+#account-btn:hover { transform: scale(1.08); }
+#account-avatar .avatar-wrap {
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+}
+/* The presence dot reads against the topbar background, not the modal's */
+#account-avatar .avatar-presence { border-color: #2d2d2d; }
+
+/* Account modal */
+#account-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+#account-modal-avatar .avatar-wrap {
+    width: 48px;
+    height: 48px;
+    cursor: default;
+}
+#account-modal-name {
+    font-weight: 600;
+    font-size: 16px;
+    color: #eee;
+    word-break: break-word;
+}
+.account-section-label {
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #888;
+    margin-bottom: 6px;
+}
+#account-presence-options {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 16px;
+}
+.account-presence-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: #ddd;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.account-presence-btn:hover { background: #2a2a2a; }
+.account-presence-btn.selected { background: #333; font-weight: 600; }
+.account-presence-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #555;
+}
+.account-presence-dot.active { background: #6cf; }
+.account-presence-dot.idle   { background: #fc6; }
+.account-presence-dot.offline { background: #555; }
+.account-presence-dot.auto {
+    background: transparent;
+    border: 2px solid #888;
+    box-sizing: border-box;
+}
+#account-signout-btn {
+    width: 100%;
+    padding: 8px;
+    background: none;
+    border: 1px solid #555;
+    border-radius: 6px;
+    color: #ddd;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+#account-signout-btn:hover {
+    background: var(--danger, #e53e3e);
+    border-color: var(--danger, #e53e3e);
+    color: #fff;
+}
 
 /* Settings modal */
 #settings-modal {

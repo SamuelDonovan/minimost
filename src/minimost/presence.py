@@ -68,6 +68,11 @@ from flask import session, request, Blueprint
 presence_bp = Blueprint("presence", __name__)
 
 _VALID_STATES = {"active", "idle", "hidden", "offline"}
+# Manual presence overrides a user can pick in the account modal.  These map to
+# the visible dot states: active -> "Online", idle -> "Away", offline ->
+# "Offline".  ``None`` (Automatic) clears the override and falls back to the
+# live, activity-derived state.
+_VALID_OVERRIDES = {"active", "idle", "offline"}
 _WAL = "PRAGMA journal_mode=WAL"
 
 _HERE = Path(__file__).resolve().parent
@@ -103,9 +108,16 @@ def _init_tables():
         CREATE TABLE IF NOT EXISTS presence (
             user TEXT PRIMARY KEY,
             last_seen INTEGER NOT NULL,
-            state TEXT NOT NULL
+            state TEXT NOT NULL,
+            override TEXT
         )
     """)
+    # Migration: add the manual presence override column for databases that
+    # predate the account modal's "appear online/away/offline" feature.
+    try:
+        db.execute("ALTER TABLE presence ADD COLUMN override TEXT")
+    except sqlite3.OperationalError:
+        pass
     db.execute("""
         CREATE TABLE IF NOT EXISTS typing (
             user    TEXT NOT NULL,
@@ -344,18 +356,72 @@ def presence():
     return "", 204
 
 
+@presence_bp.route("/presence/override", methods=["POST"])
+def presence_override():
+    """Set or clear the current user's manual presence override.
+
+    Route: ``POST /presence/override``
+
+    The account modal lets a user pin how they appear to others regardless of
+    their real activity.  Accepts a JSON body with an ``override`` key:
+
+    * ``"active"`` / ``"idle"`` / ``"offline"`` — appear Online / Away /
+      Offline.
+    * ``null``, ``""`` or ``"auto"`` — clear the override (Automatic), so the
+      live activity-derived state is shown again.
+
+    Silently returns ``204`` if the session is missing or the value is invalid.
+
+    :returns: Empty body with HTTP 204 No Content.
+    :rtype: flask.Response
+    """
+    user = session.get("user")
+    if user:
+        data = request.get_json(silent=True) or {}
+        override = data.get("override")
+        if override in ("", "auto", None):
+            override = None
+        set_override(user, override)
+    return "", 204
+
+
+@presence_bp.route("/presence/override", methods=["GET"])
+def presence_override_get():
+    """Return the current user's manual presence override.
+
+    Route: ``GET /presence/override``
+
+    Lets the account modal pre-select the active choice after a reload, since
+    overrides persist server-side in ``presence.db``.
+
+    :returns: JSON object ``{"override": <state-or-null>}`` where the value is
+        ``"active"``, ``"idle"``, ``"offline"`` or ``null`` (Automatic).
+    :rtype: flask.Response (application/json)
+    """
+    user = session.get("user")
+    if not user:
+        return {"override": None}
+    db = sqlite3.connect(PRESENCE_DB)
+    db.execute(_WAL)
+    row = db.execute("SELECT override FROM presence WHERE user = ?", (user,)).fetchone()
+    db.close()
+    return {"override": row[0] if row else None}
+
+
 def reset_all_offline() -> None:
-    """Set every user's presence state to ``"offline"`` in ``presence.db``.
+    """Reset every user's presence to ``"offline"`` and clear manual overrides.
 
     Called once at application startup so that stale presence records from a
     previous server run (e.g. users who were ``"active"`` or ``"hidden"`` when
-    the server was stopped) do not mislead other users.
+    the server was stopped) do not mislead other users.  Any manual presence
+    overrides are cleared too, so a stale "appear online" override can't keep a
+    logged-out user looking active across a restart.
 
     :returns: None
     """
     db = sqlite3.connect(PRESENCE_DB)
     db.execute(_WAL)
-    db.execute("UPDATE presence SET state = 'offline'")
+    db.execute("UPDATE presence SET state = 'offline', override = NULL")
     db.commit()
     db.close()
 
@@ -384,8 +450,46 @@ def update_presence(user: str, state) -> None:
     db = sqlite3.connect(PRESENCE_DB)
     db.execute(_WAL)
     db.execute(
-        "INSERT OR REPLACE INTO presence (user, last_seen, state) VALUES (?, ?, ?)",
+        "INSERT INTO presence (user, last_seen, state) VALUES (?, ?, ?) "
+        "ON CONFLICT(user) DO UPDATE SET last_seen = excluded.last_seen, "
+        "state = excluded.state",
         (user, now, state),
+    )
+    db.commit()
+    db.close()
+
+
+def set_override(user: str, override) -> None:
+    """Set or clear a user's manual presence override in ``presence.db``.
+
+    Used by the ``/presence/override`` route and by
+    :func:`minimost.auth.logout` (which clears the override on sign-out so a
+    logged-out user can't keep an "appear online" override).
+
+    Unlike :func:`update_presence`, this only touches the ``override`` column
+    (and ``last_seen``); the live activity-derived ``state`` is left intact so
+    that clearing the override falls straight back to the real state.
+
+    If *override* is neither ``None`` nor a member of :data:`_VALID_OVERRIDES`
+    the function returns immediately without writing anything.
+
+    :param user: The username whose override should be updated.
+    :type user: str
+    :param override: ``"active"``, ``"idle"``, ``"offline"`` or ``None`` to
+        clear the override (Automatic).
+    :returns: None
+    """
+    if override is not None and override not in _VALID_OVERRIDES:
+        return
+    now = int(time.time())
+    db = sqlite3.connect(PRESENCE_DB)
+    db.execute(_WAL)
+    db.execute(
+        "INSERT INTO presence (user, last_seen, state, override) "
+        "VALUES (?, ?, 'offline', ?) "
+        "ON CONFLICT(user) DO UPDATE SET override = excluded.override, "
+        "last_seen = excluded.last_seen",
+        (user, now, override),
     )
     db.commit()
     db.close()
