@@ -248,6 +248,7 @@ def create_app():
     presence.reset_all_offline()
     calls_mod.reset_all_calls_ended()
     calls_mod.reset_all_screenshares_ended()
+    _migrate_search_indexes()
 
     from .stun import start_stun_server
 
@@ -256,6 +257,23 @@ def create_app():
     _start_cleanup_scheduler()
 
     return app
+
+
+def _migrate_search_indexes() -> None:
+    """Backfill the trigram search index onto pre-existing user databases.
+
+    :func:`~minimost.common.init_user_db` adds the FTS5 search index, but it
+    only runs when an account is created. Databases that predate the index need
+    it built once. ``init_user_db`` is idempotent and builds (then rebuilds) the
+    index on first sight, so re-running it over every existing ``users/*.db`` is
+    a cheap no-op after the first start. Runs once per worker at boot.
+    """
+    users_dir = common.DB_DIR
+    if not users_dir.exists():
+        return
+    for path in users_dir.glob("*.db"):
+        with suppress(Exception):
+            common.init_user_db(path.stem)
 
 
 def _start_cleanup_scheduler(

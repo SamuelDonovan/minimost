@@ -58,6 +58,76 @@ def user_db_path(username: str) -> Path:
     return DB_DIR / f"{secure_filename(username)}.db"
 
 
+# Length of the substrings indexed by the FTS5 trigram tokenizer. Search queries
+# shorter than this can't use the index, so chat.search_messages falls back to a
+# plain LIKE scan for them (rare, and cheap on the small result a 1–2 char query
+# would over-match anyway).
+SEARCH_MIN_TOKEN = 3
+
+
+def _ensure_search_index(cur) -> None:
+    """Create the trigram full-text index over ``messages.content``.
+
+    Message search is a case-insensitive substring match. A plain
+    ``content LIKE '%q%'`` cannot use an index (leading wildcard) and so scans
+    the whole ``messages`` table on every keystroke — cost grows linearly with
+    history. An FTS5 virtual table with the **trigram** tokenizer indexes every
+    3-character substring, so the identical substring query is answered from the
+    index in well under a millisecond no matter how large the history grows.
+
+    The table is *external-content* (``content='messages'``): it stores only the
+    trigram postings, not a second copy of the message text, and is kept in sync
+    with ``messages`` by the three triggers created here. ``tokenize='trigram'``
+    needs SQLite ≥ 3.34 (2020), which ships with every supported CPython.
+
+    Idempotent — safe to call from every :func:`init_user_db`. The first time it
+    runs on a database that already holds messages, it indexes the existing rows
+    with a one-off ``'rebuild'``.
+    """
+    # Exact-name lookup (the FTS5 shadow tables are messages_fts_data, _idx, …).
+    already_indexed = cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE name = 'messages_fts'"
+    ).fetchone()
+
+    # columnsize=0 drops the per-row token-count store that only powers bm25
+    # relevance ranking; results are ordered by rowid and re-ranked client-side,
+    # so it is unused weight. Trims the index with no behaviour change.
+    cur.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts "
+        "USING fts5(content, content='messages', content_rowid='id', "
+        "tokenize='trigram', columnsize=0)"
+    )
+
+    # Mirror every content change into the index. The UPDATE trigger fires on the
+    # content column alone — it is always in the SET clause of an edit, while a
+    # soft-delete touches `deleted`, not `content` (deleted rows are excluded at
+    # query time instead). The external-content 'delete' command needs the old
+    # text to know which trigrams to remove, hence old.content in the args.
+    cur.executescript("""
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ai
+        AFTER INSERT ON messages BEGIN
+            INSERT INTO messages_fts(rowid, content)
+            VALUES (new.id, new.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_fts_ad
+        AFTER DELETE ON messages BEGIN
+            INSERT INTO messages_fts(messages_fts, rowid, content)
+            VALUES ('delete', old.id, old.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS messages_fts_au
+        AFTER UPDATE OF content ON messages BEGIN
+            INSERT INTO messages_fts(messages_fts, rowid, content)
+            VALUES ('delete', old.id, old.content);
+            INSERT INTO messages_fts(rowid, content)
+            VALUES (new.id, new.content);
+        END;
+        """)
+
+    if not already_indexed:
+        # Brand-new index on a possibly-populated table: index existing rows once.
+        cur.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
+
+
 def init_user_db(username: str):
     """Create the per-user SQLite database and ensure the schema is current.
 
@@ -206,6 +276,8 @@ def init_user_db(username: str):
         FOREIGN KEY (reply_to_id) REFERENCES messages(id)
     )
     """)
+
+    _ensure_search_index(cur)
 
     db.commit()
     db.close()

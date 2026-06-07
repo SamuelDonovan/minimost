@@ -457,6 +457,42 @@ def test_search_ignores_invalid_date(alice):
     assert len(data) == 1
 
 
+def test_search_matches_mid_word_substring(alice):
+    """The trigram index keeps substring (not just whole-word) matching."""
+    _insert_message("alice", "general", "hello world")
+    data = alice.get("/search_messages?q=ell").get_json()
+    assert [m["content"] for m in data] == ["hello world"]
+
+
+def test_search_short_query_falls_back_to_like(alice):
+    """Queries shorter than the trigram width still match via the LIKE scan."""
+    _insert_message("alice", "general", "hi there")
+    data = alice.get("/search_messages?q=hi").get_json()
+    assert [m["content"] for m in data] == ["hi there"]
+
+
+def test_search_index_reflects_edits(alice):
+    """Editing a message re-indexes it: new text matches, old text does not."""
+    msg_id, _ = _insert_message("alice", "general", "original wording")
+    alice.post(f"/edit/{msg_id}", data={"text": "replacement wording"})
+    assert alice.get("/search_messages?q=replacement").get_json()
+    assert alice.get("/search_messages?q=original").get_json() == []
+
+
+def test_search_index_reflects_hard_delete(alice):
+    """A hard-deleted row leaves the search index (via the delete trigger)."""
+    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, ts, read) VALUES "
+        "('general', 'alice', 'ephemeral note', 1.0, 0)"
+    )
+    db.commit()
+    db.execute("DELETE FROM messages WHERE content = 'ephemeral note'")
+    db.commit()
+    db.close()
+    assert alice.get("/search_messages?q=ephemeral").get_json() == []
+
+
 # ── POST /edit/<id> ───────────────────────────────────────────────────────────
 
 

@@ -1425,8 +1425,12 @@ def search_messages():
     Route: ``GET /search_messages?q=<query>``
 
     Requires authentication.  Performs a case-insensitive substring search
-    (SQLite ``LIKE %query%``) across the ``content`` column of the current
-    user's ``messages`` table, excluding deleted messages.
+    across the ``content`` column of the current user's ``messages`` table,
+    excluding deleted messages.  The keyword match is served by the trigram
+    FTS5 index (:func:`~minimost.common._ensure_search_index`) so it stays
+    sub-millisecond regardless of history size; queries shorter than
+    :data:`~minimost.common.SEARCH_MIN_TOKEN` characters, which the trigram
+    index cannot serve, fall back to a plain ``LIKE`` scan.
 
     Results are returned in descending timestamp order (newest first) and
     limited to 50 rows to keep responses fast.  The search scope is the
@@ -1456,45 +1460,60 @@ def search_messages():
     """
     user = session["user"]
 
-    clauses = ["deleted = 0"]
-    params = []
-
     query = request.args.get("q", "").strip()
-    if query:
-        clauses.append("content LIKE ?")
-        params.append(f"%{query}%")
-
     sender = request.args.get("from", "").strip()
-    if sender:
-        clauses.append("sender = ? COLLATE NOCASE")
-        params.append(sender)
-
     channel = request.args.get("channel", "").strip()
-    if channel:
-        clauses.append("channel = ?")
-        params.append(channel)
-
     start_ts = _opt_float(request.args.get("start"))
-    if start_ts is not None:
-        clauses.append("ts >= ?")
-        params.append(start_ts)
-
     end_ts = _opt_float(request.args.get("end"))
-    if end_ts is not None:
-        clauses.append("ts < ?")
-        params.append(end_ts)
 
-    # Only the constant "deleted = 0" clause means no real filter was given.
-    if len(clauses) == 1:
+    # An empty search box must never dump the whole history.
+    if not (query or sender or channel or start_ts is not None or end_ts is not None):
         return jsonify([])
 
-    # Only constant clause strings are joined in; every user value is bound
-    # via a ? placeholder in `params`, so this is not an injection vector.
-    sql = (
-        "SELECT id, channel, sender, content, ts FROM messages WHERE "  # nosec B608
-        + " AND ".join(clauses)
-        + " ORDER BY ts DESC LIMIT 50"
-    )
+    # Filters on the base table. The `m.` alias matches both query shapes below.
+    clauses = ["m.deleted = 0"]
+    params = []
+    if sender:
+        clauses.append("m.sender = ? COLLATE NOCASE")
+        params.append(sender)
+    if channel:
+        clauses.append("m.channel = ?")
+        params.append(channel)
+    if start_ts is not None:
+        clauses.append("m.ts >= ?")
+        params.append(start_ts)
+    if end_ts is not None:
+        clauses.append("m.ts < ?")
+        params.append(end_ts)
+
+    if query and len(query) >= common.SEARCH_MIN_TOKEN:
+        # Trigram-indexed substring match: the MATCH is served from messages_fts
+        # in sub-millisecond time however large the history is. Wrapping the query
+        # in a quoted FTS5 phrase (doubling any embedded quote) makes it a literal
+        # substring with no special-character handling, matching LIKE semantics.
+        # `id` is AUTOINCREMENT and so monotonic with `ts`, so ordering by the FTS
+        # rowid descending is newest-first and lets FTS5 stop after 50 rows
+        # instead of sorting the full match set.
+        match = '"' + query.replace('"', '""') + '"'
+        sql = (
+            "SELECT m.id, m.channel, m.sender, m.content, m.ts "  # nosec B608
+            "FROM messages_fts f JOIN messages m ON m.id = f.rowid "
+            "WHERE f.content MATCH ? AND " + " AND ".join(clauses) + " "
+            "ORDER BY f.rowid DESC LIMIT 50"
+        )
+        params = [match, *params]
+    else:
+        # No keyword, or one too short for the trigram index (< 3 chars): a plain
+        # scan. Only constant clause strings are concatenated; every user value is
+        # bound via a ? placeholder, so this is not an injection vector.
+        if query:
+            clauses.append("m.content LIKE ?")
+            params.append(f"%{query}%")
+        sql = (
+            "SELECT m.id, m.channel, m.sender, m.content, m.ts FROM messages m "  # nosec B608
+            "WHERE " + " AND ".join(clauses) + " ORDER BY m.ts DESC LIMIT 50"
+        )
+
     db = get_db(user)
     cur = db.execute(sql, params)
     results = [dict(r) for r in cur.fetchall()]
