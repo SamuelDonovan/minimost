@@ -691,6 +691,7 @@ body {
 #private-ch-name-bar {
     align-items: center;
     justify-content: center;
+    gap: 6px;
     padding: 5px 12px;
     background: #252526;
     border-bottom: 1px solid #333;
@@ -698,11 +699,13 @@ body {
     font-weight: 600;
     color: #aaa;
 }
-#private-ch-controls {
-    display: none;
-    align-items: center;
-    gap: 4px;
-    margin-left: 8px;
+#private-ch-rename-btn {
+    padding: 2px;
+    color: #888;
+    line-height: 0;
+}
+#private-ch-rename-btn:hover {
+    color: #ddd;
 }
 #pc-member-tooltip {
     display: none;
@@ -846,6 +849,18 @@ body {
 .input-suggest-wrap {
     position: relative;
     width: 90%;
+}
+#add-member-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#add-member-row .input-suggest-wrap {
+    flex: 1;
+    width: auto;
+}
+#add-member-row #add-member-submit-btn {
+    flex-shrink: 0;
 }
 .input-suggest-wrap input {
     width: 100%;

@@ -83,16 +83,17 @@
             </button>
             <span class="chan-hash">#</span><span id="chan"></span>
             <span id="vim-mode-indicator">-- visual --</span>
-            <div id="private-ch-controls">
-                <button class="icon-btn" onclick="openRenameChannel()" title="Rename channel">Rename</button>
-                <button class="icon-btn" onclick="leaveChannel()" title="Leave channel">Leave</button>
-            </div>
         </div>
     </div>
 
     <!-- Private channel name bar -->
     <div id="private-ch-name-bar" style="display:none;">
         <span id="private-ch-name-bar-text"></span>
+        <button id="private-ch-rename-btn" class="icon-btn" onclick="openRenameChannel()" title="Rename channel" aria-label="Rename channel">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+            </svg>
+        </button>
     </div>
 
     <!-- Shown when a channel member is sharing their screen -->
@@ -391,13 +392,19 @@
         <div id="users-modal-add" style="display:none">
             <hr>
             <h4 style="margin:8px 0">Add Member</h4>
-            <div class="input-suggest-wrap">
-                <input type="text" id="add-member-input" placeholder="Username" autocomplete="off">
-                <div id="add-member-suggestions" class="autocomplete-suggestions"></div>
-            </div>
-            <div class="modal-actions">
+            <div id="add-member-row">
+                <div class="input-suggest-wrap">
+                    <input type="text" id="add-member-input" placeholder="Username" autocomplete="off">
+                    <div id="add-member-suggestions" class="autocomplete-suggestions"></div>
+                </div>
                 <button id="add-member-submit-btn">Add</button>
             </div>
+        </div>
+
+        <!-- Shown only for private channels the user belongs to -->
+        <div id="users-modal-leave" style="display:none">
+            <hr>
+            <button id="leave-channel-btn" class="settings-danger-btn settings-danger-btn-confirm" style="width:100%" onclick="leaveChannel()">Leave channel</button>
         </div>
     </div>
 </div>
@@ -1262,8 +1269,6 @@ function switchChannel(c) {
         chanHash.style.visibility = isPrivate ? "hidden" : "visible";
         chanHash.textContent = isDM ? "@" : "#";
     }
-    const pcControls = document.getElementById("private-ch-controls");
-    if (pcControls) pcControls.style.display = isPrivate ? "flex" : "none";
     const nameBar = document.getElementById("private-ch-name-bar");
     if (nameBar) {
         nameBar.style.display = isPrivate ? "flex" : "none";

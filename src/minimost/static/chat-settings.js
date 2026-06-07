@@ -427,6 +427,7 @@ async function openUsersModal() {
     // The "Add Member" controls only make sense for private channels.
     const isPrivate = channel.startsWith("private:");
     document.getElementById("users-modal-add").style.display = isPrivate ? "block" : "none";
+    document.getElementById("users-modal-leave").style.display = isPrivate ? "block" : "none";
     document.getElementById("users-modal-title").textContent =
         isPrivate ? "Members: " + (privateChannelMap[channel] || "channel") : "Members";
     if (isPrivate) {
