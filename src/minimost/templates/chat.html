@@ -1384,6 +1384,41 @@ function _ensureDateDivider(chat, dateKey, msgDate) {
     return true;
 }
 
+// Consecutive messages from the same sender within this many seconds are
+// visually collapsed into one cluster (avatar + name shown only on the first).
+const GROUP_WINDOW_SEC = 300;
+
+// Walk the chat in order and toggle the `grouped` class on each message so
+// that runs of messages from the same sender (within GROUP_WINDOW_SEC, and not
+// broken by a date divider or a system message) render as a single cluster.
+// Messages are stored as separate rows in the backend; this is purely visual.
+function regroupMessages() {
+    const chat = document.getElementById("chat");
+    let prevSender = null;
+    let prevTs = 0;
+    for (const el of chat.children) {
+        if (!el.classList.contains("msg")) {
+            // Date dividers (and anything else) break the cluster.
+            prevSender = null;
+            prevTs = 0;
+            continue;
+        }
+        if (el.classList.contains("system-msg")) {
+            el.classList.remove("grouped");
+            prevSender = null;
+            prevTs = 0;
+            continue;
+        }
+        const sender = el.dataset.sender;
+        const ts = parseFloat(el.dataset.ts) || 0;
+        const gap = ts - prevTs;
+        const grouped = sender && sender === prevSender && gap >= 0 && gap < GROUP_WINDOW_SEC;
+        el.classList.toggle("grouped", grouped);
+        prevSender = sender;
+        prevTs = ts;
+    }
+}
+
 function _buildMsgHtml(m, time, fullTime, color) {
     const displayName = m.sender === "system" ? "MiniMost" : m.sender;
     let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}" data-username="${m.sender}">${displayName}</span>`;
@@ -1595,6 +1630,8 @@ function fetchMessages() {
                 if (m.reply_to_id) loadQuotedMsg(m.id, m.reply_to_id);
                 lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0, m.reactions_ts || 0);
             });
+
+            regroupMessages();
 
             const mentionAlert = mentionMsg && notifyArmed;
 

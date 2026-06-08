@@ -361,7 +361,9 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 6px 0;
+  /* Spacing is top-only so grouped continuations can set their own tight gap
+     without inheriting the preceding message's bottom margin. */
+  margin: 6px 0 0;
   font-family: system-ui, sans-serif;
 }
 .msg-content-col {
@@ -395,6 +397,37 @@ body {
 }
 .msg > .avatar-wrap {
   align-self: flex-start;
+}
+/* Grouped (clustered) messages: consecutive sends from the same author within
+   GROUP_WINDOW_SEC. The avatar gutter is preserved for alignment but blanked,
+   and the author name is hidden so the run reads as one cluster. Each message
+   is still its own row in the backend — this grouping is purely visual. */
+.msg.grouped {
+  margin-top: 2px;
+}
+.msg.grouped > .avatar-wrap {
+  visibility: hidden;
+}
+.msg.grouped .user {
+  display: none;
+}
+/* Take the header out of flow so the body sits flush at the top of the cluster
+   (otherwise the always-present, opacity-0 action row would leave a gap). The
+   timestamp, read receipt, and hover actions float at the top-right instead. */
+.msg.grouped .msg-content-col {
+  position: relative;
+}
+.msg.grouped .msg-header {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  margin: 0;
+}
+.msg.grouped .time {
+  display: none;
+}
+.msg.grouped:hover .time {
+  display: inline;
 }
 .msg.visual-selected {
   background: rgba(0, 122, 204, 0.18);

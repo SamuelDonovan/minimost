@@ -795,13 +795,14 @@ def test_delete_account_soft_cleans_presence(alice):
     assert row is None
 
 
-# ── Message append (send within 300 s groups messages) ───────────────────────
+# ── Message storage (each send is its own row; grouping is frontend-only) ─────
 
 
-def test_send_appends_to_recent_message(alice):
+def test_send_keeps_recent_message_separate(alice):
+    """A quick follow-up is a distinct row, not merged into the previous one."""
     import time as _time
 
-    ts = _time.time() - 10  # 10 s ago — within 300 s window
+    ts = _time.time() - 10  # 10 s ago — would have been within the old window
     db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
         "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
@@ -812,15 +813,17 @@ def test_send_appends_to_recent_message(alice):
     resp = alice.post("/send/general", data={"text": "second line"})
     assert resp.status_code == 200
     db = sqlite3.connect(str(common_mod.shared_db_path()))
-    row = db.execute("SELECT content FROM messages WHERE channel='general'").fetchone()
+    rows = db.execute(
+        "SELECT content FROM messages WHERE channel='general' ORDER BY ts"
+    ).fetchall()
     db.close()
-    assert "first line\nsecond line" == row[0]
+    assert [r[0] for r in rows] == ["first line", "second line"]
 
 
-def test_send_does_not_append_old_message(alice):
+def test_send_keeps_old_message_separate(alice):
     import time as _time
 
-    ts = _time.time() - 400  # older than 300 s
+    ts = _time.time() - 400
     db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
         "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",

@@ -1228,34 +1228,6 @@ def _insert_message(
         )
 
 
-def _try_append_message(db, channel, sender, text, ts, filenames, reply_to_id):
-    """Append text to the sender's previous message if within the 300 s window.
-
-    Returns True if appended; returns False if a new message is needed. Operates
-    on the single canonical row, so the merge is one UPDATE. Does not commit.
-    """
-    if not text or filenames or reply_to_id is not None:
-        return False
-    prev = db.execute(
-        """
-        SELECT id, ts, content FROM messages
-        WHERE channel = ? AND sender = ? AND deleted = 0
-          AND filename IS NULL AND reply_to_id IS NULL
-        ORDER BY ts DESC LIMIT 1
-        """,
-        (channel, sender),
-    ).fetchone()
-    if not prev or (ts - prev["ts"]) >= 300:
-        return False
-    combined = prev["content"] + "\n" + text
-    mentions = _mentions_json(combined, channel)
-    db.execute(
-        "UPDATE messages SET content = ?, edited_ts = ?, mentions = ? WHERE id = ?",
-        (combined, ts, mentions, prev["id"]),
-    )
-    return True
-
-
 def post_welcome_message(new_user: str) -> None:
     """Post a system welcome message greeting a new user.
 
@@ -1310,8 +1282,9 @@ def send(channel):
 
     * A text body becomes one row; each uploaded image becomes an additional
       row (``content = ''`` with ``filename`` set to the UUID-based filename).
-    * Consecutive short messages from the same sender within 300 s are merged
-      into the previous row (see :func:`_try_append_message`).
+      Each send is always its own canonical row — consecutive short messages
+      from the same sender are kept separate in the backend and only grouped
+      visually in the frontend.
     * The sender's read watermark for the channel is advanced to this message,
       so their own message never counts as unread.
 
@@ -1355,13 +1328,8 @@ def send(channel):
     ts = time()
     db = get_db()
     try:
-        if not _try_append_message(
-            db, channel, sender, text, ts, filenames, reply_to_id
-        ):
-            mentions = _mentions_json(text, channel)
-            _insert_message(
-                db, channel, sender, text, ts, reply_to_id, filenames, mentions
-            )
+        mentions = _mentions_json(text, channel)
+        _insert_message(db, channel, sender, text, ts, reply_to_id, filenames, mentions)
         # The sender has implicitly read up to their own message.
         _advance_read(db, sender, channel, ts)
         db.commit()
