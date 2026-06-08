@@ -21,12 +21,21 @@ Example (showing all available keys with their defaults)::
         "image_retention_days": 30,
         "file_retention_days": 30,
         "message_retention_days": 770,
+        "max_message_db_size_mb": 1024,
+        "max_upload_dir_size_mb": 2048,
         "max_upload_size_mb": 25,
         "max_avatar_size_mb": 5,
         "stun_port": 3478,
         "max_login_attempts": 5,
         "lockout_duration_minutes": 15
     }
+
+MiniMost limits how much disk it uses in two complementary ways. **Age-based**
+retention (``*_retention_days``) deletes content once it gets old enough.
+**Size-based** caps (``max_*_size_mb`` on the message database and the uploads
+directory) delete the oldest content once a store grows past a limit. Both run
+in the same background cleanup pass; whichever condition is hit first removes the
+content. The two are independent, so you can cap by age, by size, or both.
 
 ``channels``
     List of public channel names visible to all users. Channels are displayed
@@ -61,6 +70,41 @@ Example (showing all available keys with their defaults)::
        Messages deleted by this process are gone permanently — they cannot
        be recovered. Set this value to a period that comfortably covers how
        far back your users ever need to scroll.
+
+``max_message_db_size_mb``
+    Total **size cap**, in megabytes, for the shared message database
+    ``users/messages.db``. When the database exceeds this size, the cleanup
+    thread permanently deletes the **oldest** messages (lowest timestamp first),
+    along with their reactions and search-index entries, until it fits — then
+    compacts the file so the space is returned to disk. This complements
+    ``message_retention_days``: age-based retention bounds *how old* messages
+    get, while this bounds *how large* the database grows, regardless of age.
+    Defaults to ``1024``. Set to ``0`` (or any non-positive value) to disable
+    the size cap. Changes take effect at the next scheduled cleanup run — no
+    restart required.
+
+    .. note::
+
+       Size is measured against the database's *live* data (free pages left by
+       earlier deletes are excluded), so messages are never deleted merely
+       because space has not yet been reclaimed. As with age-based retention,
+       deletions are permanent.
+
+``max_upload_dir_size_mb``
+    Total **size cap**, in megabytes, for the ``uploads/`` attachment directory.
+    When the combined size of all stored attachments exceeds this value, the
+    cleanup thread deletes the **oldest** files (by modification time) until the
+    directory fits. This complements ``image_retention_days`` /
+    ``file_retention_days``: age-based retention bounds *how old* attachments
+    get, while this bounds the *total* footprint — useful when a burst of large
+    uploads would otherwise fill the disk before aging out. Defaults to ``2048``.
+    Set to ``0`` (or any non-positive value) to disable the size cap. Changes
+    take effect at the next scheduled cleanup run — no restart required.
+
+    .. note::
+
+       This is distinct from ``max_upload_size_mb``, which limits a *single*
+       upload. This key limits the *combined* size of everything in ``uploads/``.
 
 ``max_upload_size_mb``
     Maximum size in megabytes allowed for a single file attachment uploaded
@@ -188,7 +232,9 @@ Contains the single shared message store, ``messages.db``: the ``messages``
 table (full history), the trigram full-text search index, the ``reactions``
 table, and the per-``(user, channel)`` read-state watermarks.
 
-This file is the primary data store of MiniMost. Back it up regularly.
+This file is the primary data store of MiniMost. Back it up regularly. Its size
+is bounded by ``"message_retention_days"`` (age) and ``"max_message_db_size_mb"``
+(total size) — see the ``settings.json`` keys above and :doc:`administration`.
 
 uploads/ directory
 ------------------
@@ -204,10 +250,14 @@ Stores all message file attachments. Two naming schemes are used:
   name while still preventing collisions and path-traversal attacks.
 
 Files are automatically purged by a background thread that runs every 24 hours,
-using type-specific retention periods from ``settings.json``:
+using both age-based retention and a directory-wide size cap from
+``settings.json``:
 
 - ``"image_retention_days"`` controls how long image files are kept (default: 30).
 - ``"file_retention_days"`` controls how long non-image files are kept (default: 30).
+- ``"max_upload_dir_size_mb"`` caps the total size of the directory; once
+  exceeded, the oldest files are deleted until it fits (default: 2048, ``0``
+  disables).
 
 See :doc:`administration` for details on manual cleanup.
 

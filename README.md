@@ -57,7 +57,7 @@ _Full-text message search with highlighted results._
 - **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
 - **Close DM conversations** — hide a DM thread from the sidebar with one click; it reappears automatically if a new message arrives
 - **File attachments** — paste, drag-and-drop, or use the paperclip button to attach any file type; images are displayed inline, other files appear as a download link; uploaded files auto-delete after a configurable retention period
-- **Automatic message retention** — a background thread permanently removes messages older than a configurable threshold (default: 770 days) so database files never grow without bound; runs every 24 hours with no cron job required
+- **Automatic retention & size caps** — a background thread permanently removes messages and attachments once they exceed a configurable age (default: 770 days for messages, 30 days for files), and can also delete the oldest content once the message database or the uploads directory grows past a size cap; runs every 24 hours with no cron job required
 - **Desktop & sound notifications** — configurable per session, mutable with one click; `@mentions` alert you even when the tab is focused
 - **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing
 - **Dark theme** — easy on the eyes
@@ -169,6 +169,8 @@ Edit `settings.json` (bundled with the package at `src/minimost/settings.json`) 
   "image_retention_days": 30,
   "file_retention_days": 30,
   "message_retention_days": 770,
+  "max_message_db_size_mb": 1024,
+  "max_upload_dir_size_mb": 2048,
   "max_upload_size_mb": 25,
   "max_avatar_size_mb": 5,
   "stun_port": 3478,
@@ -177,17 +179,21 @@ Edit `settings.json` (bundled with the package at `src/minimost/settings.json`) 
 }
 ```
 
-| Key                        | Default       | Description                                                                                                    |
-| -------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------- |
-| `channels`                 | `["general"]` | Public channel names shown in the sidebar. Restart required.                                                   |
-| `image_retention_days`     | `30`          | Days before image attachments are auto-deleted. No restart needed.                                             |
-| `file_retention_days`      | `30`          | Days before non-image attachments are auto-deleted. No restart needed.                                         |
-| `message_retention_days`   | `770`         | Days before messages are permanently deleted from the database. No restart needed.                             |
-| `max_upload_size_mb`       | `25`          | Maximum size in MB for a single file attachment. Restart required.                                             |
-| `max_avatar_size_mb`       | `5`           | Maximum size in MB for a profile avatar upload. Restart required.                                              |
-| `stun_port`                | `3478`        | UDP port for the bundled STUN server used by WebRTC calls/screen share. Must be `1`–`65535`. Restart required. |
-| `max_login_attempts`       | `5`           | Consecutive failed logins before an account is locked. Set to `0` to disable lockout. No restart needed.       |
-| `lockout_duration_minutes` | `15`          | How long an account stays locked after too many failed logins. No restart needed.                              |
+MiniMost bounds disk usage two complementary ways: **age-based** retention deletes content once it gets old enough, and **size-based** caps delete the oldest content once a store grows past a limit (whichever triggers first). Note the difference between the two upload settings: `max_upload_size_mb` is a per-file ceiling enforced at upload time, while `max_upload_dir_size_mb` caps the _total_ size of all stored attachments.
+
+| Key                        | Default       | Description                                                                                                                                   |
+| -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `channels`                 | `["general"]` | Public channel names shown in the sidebar. Restart required.                                                                                  |
+| `image_retention_days`     | `30`          | Days before image attachments are auto-deleted. No restart needed.                                                                            |
+| `file_retention_days`      | `30`          | Days before non-image attachments are auto-deleted. No restart needed.                                                                        |
+| `message_retention_days`   | `770`         | Days before messages are permanently deleted from the database. No restart needed.                                                            |
+| `max_message_db_size_mb`   | `1024`        | Total size cap (MB) for the message database `users/messages.db`; oldest messages are deleted when exceeded. `0` disables. No restart needed. |
+| `max_upload_dir_size_mb`   | `2048`        | Total size cap (MB) for the `uploads/` attachment directory; oldest files are deleted when exceeded. `0` disables. No restart needed.         |
+| `max_upload_size_mb`       | `25`          | Maximum size in MB for a **single** file attachment, rejected at upload time. Restart required.                                               |
+| `max_avatar_size_mb`       | `5`           | Maximum size in MB for a profile avatar upload. Restart required.                                                                             |
+| `stun_port`                | `3478`        | UDP port for the bundled STUN server used by WebRTC calls/screen share. Must be `1`–`65535`. Restart required.                                |
+| `max_login_attempts`       | `5`           | Consecutive failed logins before an account is locked. Set to `0` to disable lockout. No restart needed.                                      |
+| `lockout_duration_minutes` | `15`          | How long an account stays locked after too many failed logins. No restart needed.                                                             |
 
 ---
 

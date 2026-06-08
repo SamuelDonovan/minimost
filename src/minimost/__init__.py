@@ -289,6 +289,12 @@ def _start_cleanup_scheduler(
     next scheduled cleanup without restarting the server.  If the key is
     absent or the file cannot be read, *days* is used as the fallback.
 
+    Two optional size caps are also honoured each run: ``"max_upload_dir_size_mb"``
+    bounds the total size of ``uploads/`` (oldest files deleted first), and
+    ``"max_message_db_size_mb"`` bounds the shared ``messages.db`` (oldest
+    messages deleted first).  Either is disabled when its key is absent or
+    non-positive.
+
     Multiple Gunicorn workers each start their own thread; concurrent runs are
     safe because :func:`~minimost.clean.delete_files_older_than` tolerates
     ``FileNotFoundError`` on files already removed by another worker.
@@ -318,25 +324,50 @@ def _start_cleanup_scheduler(
             img = data.get("image_retention_days")
             fil = data.get("file_retention_days")
             msg = data.get("message_retention_days")
+            upload_mb = data.get("max_upload_dir_size_mb")
+            db_mb = data.get("max_message_db_size_mb")
             img = img if isinstance(img, int) and img > 0 else days
             fil = fil if isinstance(fil, int) and fil > 0 else days
             msg = msg if isinstance(msg, int) and msg > 0 else message_days
-            return img, fil, msg
-        return days, days, message_days
+
+            # A size cap of 0 / absent / invalid disables that cap (None).
+            def _cap(value):
+                return value if isinstance(value, (int, float)) and value > 0 else None
+
+            return img, fil, msg, _cap(upload_mb), _cap(db_mb)
+        return days, days, message_days, None, None
 
     def _loop() -> None:
         time.sleep(initial_delay_seconds)  # let the server finish starting
         while True:
             try:
-                from .clean import delete_files_older_than, delete_messages_older_than
+                from .clean import (
+                    delete_files_older_than,
+                    delete_files_over_size,
+                    delete_messages_older_than,
+                    delete_messages_over_size,
+                )
 
-                image_days, file_days, msg_days = _read_retention()
+                (
+                    image_days,
+                    file_days,
+                    msg_days,
+                    max_upload_mb,
+                    max_db_mb,
+                ) = _read_retention()
+                # Age-based cleanup first, then trim by size whatever remains.
                 delete_files_older_than(
                     str(upload_dir),
                     image_days=image_days,
                     file_days=file_days,
                 )
+                if max_upload_mb:
+                    delete_files_over_size(str(upload_dir), max_size_mb=max_upload_mb)
                 delete_messages_older_than(str(users_dir), days=msg_days)
+                if max_db_mb:
+                    delete_messages_over_size(
+                        str(common.shared_db_path()), max_size_mb=max_db_mb
+                    )
             except (
                 Exception
             ):  # nosec B110 — cleanup failure must not crash the daemon thread

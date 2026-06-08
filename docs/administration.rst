@@ -8,16 +8,20 @@ Automatic Cleanup
 -----------------
 
 MiniMost runs a background cleanup thread that starts 5 minutes after startup
-and repeats every 24 hours. No cron job or external scheduler is required. It
-performs two jobs:
+and repeats every 24 hours. No cron job or external scheduler is required. Each
+run applies two kinds of limit — **age** and **size** — to two stores:
 
-1. **File cleanup** — removes old attachments from ``uploads/``.
-2. **Message cleanup** — permanently deletes old rows from ``users/messages.db``
-   (along with their reactions and search-index entries).
+1. **File cleanup** — removes attachments from ``uploads/`` once they pass an
+   age threshold, then deletes the oldest files if the directory exceeds a total
+   size cap.
+2. **Message cleanup** — permanently deletes rows from ``users/messages.db``
+   (along with their reactions and search-index entries) once they pass an age
+   threshold, then deletes the oldest messages if the database exceeds a total
+   size cap.
 
-All retention periods are read from ``settings.json`` on each run, so changes
-take effect at the next scheduled run without restarting the server. See
-:doc:`configuration` for the full list of keys and defaults.
+All retention periods and size caps are read from ``settings.json`` on each run,
+so changes take effect at the next scheduled run without restarting the server.
+See :doc:`configuration` for the full list of keys and defaults.
 
 File Cleanup
 ~~~~~~~~~~~~
@@ -54,6 +58,19 @@ Separate retention periods apply to different file types (both default: 30 days)
    behind orphan database rows — messages referencing deleted files show a
    "File deleted" indicator rather than being removed from chat history.
 
+**Size cap (delete oldest files until the directory fits):**
+
+Independently of age, ``"max_upload_dir_size_mb"`` (default: 2048) bounds the
+total size of ``uploads/``. When exceeded, the oldest files are deleted until
+the directory is back under the cap:
+
+.. code-block:: python
+
+    from minimost.clean import delete_files_over_size
+    # Keep uploads/ under 2 GiB; preview first with dry_run=True
+    delete_files_over_size("uploads", max_size_mb=2048, dry_run=True)
+    delete_files_over_size("uploads", max_size_mb=2048)
+
 Message Cleanup
 ~~~~~~~~~~~~~~~
 
@@ -81,6 +98,19 @@ database from growing without bound. The retention period is set by
    database entirely and cannot be recovered. Ensure your ``message_retention_days``
    value is set to a period that comfortably covers how far back your users
    ever need to scroll before lowering it.
+
+**Size cap (delete oldest messages until the database fits):**
+
+Independently of age, ``"max_message_db_size_mb"`` (default: 1024) bounds the
+size of ``users/messages.db``. When exceeded, the oldest messages are deleted
+(and the file compacted) until it is back under the cap:
+
+.. code-block:: python
+
+    from minimost.clean import delete_messages_over_size
+    # Keep messages.db under 1 GiB; preview first with dry_run=True
+    delete_messages_over_size("users/messages.db", max_size_mb=1024, dry_run=True)
+    delete_messages_over_size("users/messages.db", max_size_mb=1024)
 
 User Management
 ---------------
