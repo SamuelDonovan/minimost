@@ -369,6 +369,7 @@ body {
 .msg-content-col {
   flex: 1;
   min-width: 0;
+  position: relative; /* positioning context for the top-right action buttons */
 }
 .msg-header {
   display: flex;
@@ -395,6 +396,15 @@ body {
   opacity: 1;
   pointer-events: auto;
 }
+/* Cluster heads keep their name/time header in flow, so their actions would
+   otherwise sit inline next to the timestamp (left-aligned) while grouped
+   messages — whose whole header is absolute — show them at the top-right. Float
+   the head's actions to the same top-right spot so every message is consistent. */
+.msg:not(.grouped) .msg-actions {
+  position: absolute;
+  top: 0;
+  right: 8px;
+}
 .msg > .avatar-wrap {
   align-self: flex-start;
 }
@@ -418,7 +428,6 @@ body {
    (otherwise the always-present, opacity-0 action row would leave a gap). The
    timestamp, read receipt, and hover actions float at the top-right instead. */
 .msg.grouped .msg-content-col {
-  position: relative;
   margin-left: 40px; /* avatar (32px) + .msg flex gap (8px) */
 }
 .msg.grouped .msg-header {
