@@ -405,8 +405,11 @@ body {
 .msg.grouped {
   margin-top: 2px;
 }
+/* Drop the avatar entirely (not just visibility:hidden — that would keep its
+   32px height and inflate short continuation rows) and recreate the gutter with
+   a left margin so bodies stay aligned with the cluster head's text. */
 .msg.grouped > .avatar-wrap {
-  visibility: hidden;
+  display: none;
 }
 .msg.grouped .user {
   display: none;
@@ -416,6 +419,7 @@ body {
    timestamp, read receipt, and hover actions float at the top-right instead. */
 .msg.grouped .msg-content-col {
   position: relative;
+  margin-left: 40px; /* avatar (32px) + .msg flex gap (8px) */
 }
 .msg.grouped .msg-header {
   position: absolute;
