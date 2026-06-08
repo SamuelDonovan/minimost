@@ -39,31 +39,23 @@ _Full-text message search with highlighted results._
 
 ## Features
 
-- **Channels & Direct Messages** — public channels (configurable), private channels, and one-on-one or group DMs
-- **Private channels** — invite-only rooms; members can be added or removed, the channel can be renamed, and any member can leave
-- **Message history** — persistent, searchable, and visible to new users from day one
-- **Replies & threading** — quote any message to reply in context
-- **Editing & deletion** — edit or delete your own messages; changes propagate in real time
-- **Emoji reactions** — react to any message; reactions sync across all users instantly
-- **Read receipts** — see who has read your messages
-- **@mentions** — type `@` to open a fuzzy-search dropdown of the channel's members; a mentioned user sees the message highlighted and gets a sound and desktop notification (honoring their toggles) even while the page is open. Mention `@everyone` to ping the whole channel
-- **Voice calling** — one-click calls in any DM or private channel; audio streams **peer-to-peer over WebRTC** (`RTCPeerConnection`) for low-latency, real-time voice; unanswered calls time out and cancel automatically
-- **Group calling** — any participant in an active call can invite additional registered users via the in-call "Add person" button; up to any number of callers can share the same call (a WebRTC full mesh); participants can leave individually without ending the call for others; the last person to leave ends the call
-- **Dynamic call layout** — participants appear as avatar tiles that reflow automatically: one caller fills the panel, two callers split 50/50, three or more tile in a grid; each tile has an independent speaking-ring animation driven by per-participant voice activity detection, plus a live level meter on your own mic button
-- **Screen sharing** — share your screen peer-to-peer over WebRTC, either during a call or standalone in any DM/private channel; the shared screen takes the majority of the panel while participant avatars move to a right-hand sidebar; only one participant may share at a time during a call — starting a new share automatically stops any existing one; stopping the browser capture ends the share
-- **LAN-first WebRTC** — call and screen-share media never touch the server; signaling (offer/answer/ICE) is relayed through the existing Flask backend and a small **bundled STUN server**, so there are no external/public STUN/TURN servers to configure and it works on fully air-gapped LANs
-- **Presence indicators** — active, idle, away, and offline states updated automatically; overlaid on user avatars
-- **User avatars** — default initials avatar for every account; upload a custom image via Settings; displayed in the DM sidebar, private channel tooltips, and the member list
-- **User settings** — choose a display name colour from a palette of presets; upload or remove a profile avatar
-- **Close DM conversations** — hide a DM thread from the sidebar with one click; it reappears automatically if a new message arrives
-- **File attachments** — paste, drag-and-drop, or use the paperclip button to attach any file type; images are displayed inline, other files appear as a download link; uploaded files auto-delete after a configurable retention period
-- **Automatic retention & size caps** — a background thread permanently removes messages and attachments once they exceed a configurable age (default: 770 days for messages, 30 days for files), and can also delete the oldest content once the message database or the uploads directory grows past a size cap; runs every 24 hours with no cron job required
-- **Desktop & sound notifications** — configurable per session, mutable with one click; `@mentions` alert you even when the tab is focused
-- **Mobile responsive** — full drawer sidebar, touch-friendly layout, pinch-to-zoom font sizing
-- **Dark theme** — easy on the eyes
-- **Password security** — salted hashes (PBKDF2), enforced complexity requirements
-- **Account self-deletion** — users can delete their own account from Settings; soft delete removes login credentials and re-attributes messages to "Deleted User" while preserving chat history; hard delete removes the account and every message the user ever sent across all channels and conversations; both require password confirmation
-- **Admin password reset** — generate a one-time, time-limited reset URL from the CLI; the user receives an in-app notification when a reset is requested
+- ⚡ **Sign up in seconds** — pick a username and password and you're in; no email verification, no waiting. Changed your mind? Accounts can be deleted just as quickly.
+- 🔒 **Your password stays secret** — passwords are hashed and salted (PBKDF2) with enforced complexity, so not even the server admin can see what you typed.
+- 📁 **Messages are read-protected** — the message database is locked down on disk, so your conversations aren't sitting around for anyone to open.
+- 💬 **Channels & direct messages** — public channels (configurable), invite-only private channels you can rename and manage, and one-on-one or group DMs that keep going so anyone can catch up on what they missed.
+- 🔍 **Every message is saved & searchable** — nothing disappears, and full-text search finds any message in an instant. New users see the history from day one.
+- 📷 **Images show up inline** — paste, drag-and-drop, or use the paperclip button to attach any file. Images embed right in the conversation; everything else becomes a download link.
+- ✏️ **Replies, edits & reactions** — quote any message to reply in context, edit or delete your own messages, and react with emoji. Every change syncs to everyone in real time.
+- 👀 **Presence, typing & @mentions** — see who's online, watch the typing dots, and ping the right person with an @mention (or `@everyone`). Mentions alert you with a sound and desktop notification even while the tab is focused, and read receipts show who's seen your messages.
+- 📞 **Voice, video & screen sharing** — jump on a call or share your screen right from the chat in any DM or private channel. Calls grow into group calls with the in-call "Add person" button, and participant tiles reflow automatically with live speaking indicators.
+- 🛡️ **LAN-first, peer-to-peer media** — call and screen-share media is sent directly between participants over WebRTC and never touches the server. A small bundled STUN server means there's nothing external to configure — it even works on fully air-gapped LANs.
+- 🎨 **Make it yours** — upload a profile avatar (or use the default initials), pick a display-name colour, and hide DM threads you're done with (they reappear if a new message arrives).
+- 🔔 **Notifications, your way** — desktop and sound alerts are configurable per session and mutable with one click.
+- 🖥️ **Works everywhere** — runs right in your browser on Linux and Windows, with a touch-friendly, mobile-responsive layout, a drawer sidebar, and pinch-to-zoom font sizing.
+- 🌙 **Dark theme** — easy on the eyes.
+- 🧹 **Tidies up after itself** — a background thread automatically removes old messages and attachments past a configurable age (default: 770 days for messages, 30 for files) and trims the oldest content once the database or uploads grow past a size cap. Runs every 24 hours, no cron job required.
+- 🗑️ **Account self-deletion** — delete your own account from Settings. A soft delete re-attributes your messages to "Deleted User" while preserving chat history; a hard delete removes every message you ever sent. Both require password confirmation.
+- 🔑 **Admin password reset** — generate a one-time, time-limited reset URL from the CLI; the user gets an in-app notification when a reset is requested.
 
 ---
 
