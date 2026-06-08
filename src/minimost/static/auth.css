@@ -139,6 +139,14 @@ button[type="submit"]:disabled {
   background: #333;
 }
 
+/* Hairline separating the primary action (Log in) from the secondary footer
+   links below it. */
+.auth-divider {
+  height: 1px;
+  background: #3a3a3a;
+  margin: 22px 0 4px 0;
+}
+
 .auth-footer {
   margin-top: 16px;
   font-size: 13px;
@@ -148,6 +156,36 @@ button[type="submit"]:disabled {
 
 .auth-footer a {
   color: #9cdcfe;
+  text-decoration: none;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
+}
+
+/* Secondary login links ("Forgot your password?", "What is MiniMost?") laid
+   out on one row with a dot divider, instead of stacked underlined links. */
+.auth-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.auth-links a {
+  color: #9cdcfe;
+  text-decoration: none;
+}
+
+.auth-links a:hover {
+  text-decoration: underline;
+}
+
+.auth-links-sep {
+  color: #555;
 }
 
 .auth-hint {
