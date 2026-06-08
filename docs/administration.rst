@@ -12,7 +12,8 @@ and repeats every 24 hours. No cron job or external scheduler is required. It
 performs two jobs:
 
 1. **File cleanup** — removes old attachments from ``uploads/``.
-2. **Message cleanup** — permanently deletes old rows from every ``users/*.db``.
+2. **Message cleanup** — permanently deletes old rows from ``users/messages.db``
+   (along with their reactions and search-index entries).
 
 All retention periods are read from ``settings.json`` on each run, so changes
 take effect at the next scheduled run without restarting the server. See
@@ -56,8 +57,8 @@ Separate retention periods apply to different file types (both default: 30 days)
 Message Cleanup
 ~~~~~~~~~~~~~~~
 
-Old messages are permanently deleted from every ``users/*.db`` to prevent
-database files from growing without bound. The retention period is set by
+Old messages are permanently deleted from ``users/messages.db`` to prevent the
+database from growing without bound. The retention period is set by
 ``"message_retention_days"`` in ``settings.json`` (default: 770 days).
 
 **Running message cleanup manually:**
@@ -140,17 +141,16 @@ anything is changed.
 **Soft delete**
 
 Removes the user's login credentials, settings, and avatar. Every message they
-sent is re-attributed to ``Deleted User`` across all recipient databases.
-Chat history remains intact and visible to other users. The account cannot be
+sent is re-attributed to ``Deleted User`` in the shared message store. Chat
+history remains intact and visible to other users. The account cannot be
 recovered, but a new account with the same username can be registered later.
 
 **Hard delete**
 
 Removes the user's login credentials, settings, and avatar, and additionally
-deletes every message they ever sent from every channel and conversation across
-all user databases. Private channels the user created are left intact (other
-members' messages are unaffected); only the deleted user's own messages are
-removed.
+deletes every message they ever sent (and its reactions) from the shared message
+store. Private channels the user created are left intact (other members'
+messages are unaffected); only the deleted user's own messages are removed.
 
 .. note::
 
@@ -171,21 +171,19 @@ The self-service flow above is the recommended path whenever possible.
     sqlite3 auth.db "DELETE FROM user_settings WHERE username = 'alice';"
     sqlite3 auth.db "DELETE FROM password_reset_tokens WHERE username = 'alice';"
 
-    # 2. Remove messages from every user database
-    for db in users/*.db; do
-        sqlite3 "$db" "DELETE FROM messages WHERE sender = 'alice';"
-    done
+    # 2. Remove the user's messages, reactions and read state from the shared store
+    sqlite3 users/messages.db "DELETE FROM messages WHERE sender = 'alice';"
+    sqlite3 users/messages.db "DELETE FROM reactions WHERE reactor = 'alice';"
+    sqlite3 users/messages.db "DELETE FROM read_state WHERE user = 'alice';"
+    sqlite3 users/messages.db "DELETE FROM dm_hidden WHERE user = 'alice';"
 
-    # 3. Delete the user's own database file and avatar
-    rm -f users/alice.db
+    # 3. Delete the user's avatar
     # avatar filename is stored in user_settings.avatar_file — check before deleting
     rm -f avatars/<avatar_filename>
 
     # 4. Remove presence records
     sqlite3 presence.db "DELETE FROM presence WHERE user = 'alice';"
     sqlite3 presence.db "DELETE FROM typing WHERE user = 'alice';"
-    sqlite3 presence.db "DELETE FROM read_receipts WHERE reader = 'alice';"
-    sqlite3 presence.db "DELETE FROM message_reactions WHERE reactor = 'alice';"
     sqlite3 presence.db "DELETE FROM private_channel_members WHERE username = 'alice';"
     sqlite3 presence.db "DELETE FROM call_participants WHERE username = 'alice';"
 
@@ -210,12 +208,12 @@ Database Maintenance
 
 **Check WAL file sizes:**
 
-If a user's database has a large ``.wal`` file, it means the WAL has not
+If the message database has a large ``.wal`` file, it means the WAL has not
 been checkpointed. Force a checkpoint:
 
 .. code-block:: bash
 
-    sqlite3 users/alice.db "PRAGMA wal_checkpoint(FULL);"
+    sqlite3 users/messages.db "PRAGMA wal_checkpoint(FULL);"
 
 **Compact a database:**
 
@@ -224,7 +222,7 @@ After many soft-deletes, a database may grow larger than necessary. Run
 
 .. code-block:: bash
 
-    sqlite3 users/alice.db "VACUUM;"
+    sqlite3 users/messages.db "VACUUM;"
 
 Note: ``VACUUM`` rewrites the entire database file and can take a while on
 large databases.
@@ -235,10 +233,7 @@ large databases.
 
     sqlite3 auth.db "PRAGMA integrity_check;"
     sqlite3 presence.db "PRAGMA integrity_check;"
-    for db in users/*.db; do
-        echo "Checking $db..."
-        sqlite3 "$db" "PRAGMA integrity_check;"
-    done
+    sqlite3 users/messages.db "PRAGMA integrity_check;"
 
 Backup and Restore
 ------------------
@@ -275,10 +270,7 @@ SQLite WAL mode allows safe online backups using the ``.backup`` command:
 
     sqlite3 auth.db ".backup /backup/auth.db"
     sqlite3 presence.db ".backup /backup/presence.db"
-    for db in users/*.db; do
-        name=$(basename "$db")
-        sqlite3 "$db" ".backup /backup/users/$name"
-    done
+    sqlite3 users/messages.db ".backup /backup/users/messages.db"
 
 Monitoring
 ----------
@@ -300,11 +292,8 @@ Monitoring
 
 .. code-block:: bash
 
-    for db in users/*.db; do
-        user=$(basename "$db" .db)
-        count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE deleted=0;")
-        echo "$user: $count messages"
-    done
+    sqlite3 users/messages.db \
+        "SELECT sender, COUNT(*) FROM messages WHERE deleted=0 GROUP BY sender ORDER BY 2 DESC;"
 
 Migrating to a New Server
 --------------------------

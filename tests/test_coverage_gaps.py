@@ -57,9 +57,9 @@ def test_edit_editor_not_in_channel_users(alice):
     """Covers 'if editor not in recipients: recipients.append(editor)' in edit."""
     common_mod.init_user_db("bob")
     ts = time.time()
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("general", "alice", "original", ts),
     )
     db.commit()
@@ -78,9 +78,9 @@ def test_delete_deleter_not_in_channel_users(alice):
     """Covers 'if deleter not in recipients: recipients.append(deleter)' in delete."""
     common_mod.init_user_db("bob")
     ts = time.time()
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("general", "alice", "bye", ts),
     )
     db.commit()
@@ -103,9 +103,9 @@ def test_react_user_not_in_channel_users(alice):
 
     common_mod.init_user_db("bob")
     ts = time.time()
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("general", "alice", "msg", ts),
     )
     db.commit()

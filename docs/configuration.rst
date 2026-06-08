@@ -49,12 +49,12 @@ Example (showing all available keys with their defaults)::
     Changes take effect at the next scheduled cleanup run — no restart required.
 
 ``message_retention_days``
-    How many days to keep messages in the per-user SQLite databases before
+    How many days to keep messages in the shared ``users/messages.db`` before
     they are permanently deleted. Unlike the soft-delete used when a user
-    deletes a message, this removes the database rows entirely so the
-    ``users/*.db`` files do not grow without bound over time. Defaults to
-    ``770`` (approximately two years). Changes take effect at the next
-    scheduled cleanup run — no restart required.
+    deletes a message, this removes the database rows entirely (along with their
+    reactions and search-index entries) so the database does not grow without
+    bound over time. Defaults to ``770`` (approximately two years). Changes take
+    effect at the next scheduled cleanup run — no restart required.
 
     .. note::
 
@@ -109,7 +109,7 @@ Example (showing all available keys with their defaults)::
 .. warning::
 
    Removing a channel from ``settings.json`` does not delete its message
-   history. The messages remain in each user's database but the channel will
+   history. The messages remain in the message database but the channel will
    no longer appear in the sidebar. If you re-add the channel name later,
    the history reappears.
 
@@ -167,26 +167,28 @@ presence.db
 **Location:** ``<project_root>/presence.db``
 
 The shared SQLite database for real-time state: presence status, typing
-indicators, read receipts, and message reactions. Created automatically on
-first startup.
+indicators, private-channel membership, and call state. Created automatically on
+first startup. (Read receipts and reactions are **not** here — they live in the
+shared message database; see ``users/`` below.)
 
 This database can be safely deleted if it becomes corrupted — it will be
 recreated on next startup. The only data lost is:
 
 - Presence states (users will appear offline until they next reload).
 - Typing indicators (transient — no user-visible impact).
-- Read receipts (``✓`` checkmarks will disappear for existing messages).
-- Reactions (emoji reactions will disappear from all messages).
+- Private-channel membership (private channels would need to be recreated).
+- Active call state (any in-progress calls are dropped).
 
 users/ directory
 ----------------
 
 **Location:** ``<project_root>/users/``
 
-Contains one SQLite ``.db`` file per registered user, named
-``<username>.db``. Each file holds the user's complete message history.
+Contains the single shared message store, ``messages.db``: the ``messages``
+table (full history), the trigram full-text search index, the ``reactions``
+table, and the per-``(user, channel)`` read-state watermarks.
 
-These files are the primary data store of MiniMost. Back them up regularly.
+This file is the primary data store of MiniMost. Back it up regularly.
 
 uploads/ directory
 ------------------

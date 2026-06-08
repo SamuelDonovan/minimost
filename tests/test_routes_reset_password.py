@@ -275,7 +275,7 @@ def test_cli_reset_sends_dm():
 
     _cmd_reset_password(["alice"])
 
-    user_db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    user_db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = user_db.execute(
         "SELECT sender, content_type FROM messages WHERE sender = 'system'"
     ).fetchone()
@@ -288,7 +288,7 @@ def test_cli_reset_no_dm_when_no_user_db():
     """If user DB hasn't been created yet, the token is still stored."""
     _add_user("alice")
     # Don't call init_user_db — simulate a user with no DB file
-    db_path = common_mod.user_db_path("alice")
+    db_path = common_mod.shared_db_path()
     if db_path.exists():
         db_path.unlink()
 

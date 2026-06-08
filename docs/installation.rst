@@ -59,7 +59,7 @@ On the first request, MiniMost automatically creates:
 - ``secret.key`` — a 64-character hex secret used for session signing.
 - ``auth.db`` — the authentication database.
 - ``presence.db`` — the shared real-time state database.
-- ``users/`` — directory for per-user message databases.
+- ``users/`` — directory holding the shared ``messages.db`` message store.
 - ``uploads/`` — directory for image attachments.
 
 Open http://127.0.0.1:5000 in a browser, click **Sign up**, and create the

@@ -23,6 +23,7 @@ DB_DIR : pathlib.Path
 """
 
 from pathlib import Path
+from typing import Optional
 import sqlite3
 
 from werkzeug.utils import secure_filename
@@ -128,121 +129,63 @@ def _ensure_search_index(cur) -> None:
         cur.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
 
 
-def init_user_db(username: str):
-    """Create the per-user SQLite database and ensure the schema is current.
+def shared_db_path() -> Path:
+    """Return the absolute path of the single shared message database.
 
-    This function is idempotent: calling it multiple times on the same
-    *username* is safe because the ``CREATE TABLE IF NOT EXISTS`` guard
-    prevents duplicate table creation.
+    MiniMost stores every message exactly once in a single shared database
+    (``users/messages.db``) rather than copying it into a per-user file. The
+    path is resolved from the live :data:`DB_DIR` on each call so the test
+    suite's monkeypatched directory is honoured.
 
-    **What it does:**
+    :returns: Absolute path to ``messages.db``.
+    :rtype: pathlib.Path
+    """
+    return DB_DIR / "messages.db"
 
-    1. Creates the ``users/`` directory if it does not already exist.
-    2. Opens (or creates) ``users/<username>.db`` with SQLite.
-    3. Enables **WAL** (Write-Ahead Logging) journal mode for better
-       concurrency under simultaneous reads from multiple Gunicorn workers.
-    4. Creates the ``messages`` table if it is absent.
 
-    **Messages table schema:**
+def init_user_db(username: Optional[str] = None):
+    """Backwards-compatible alias for :func:`init_messages_db`.
 
-    .. list-table::
-       :header-rows: 1
-       :widths: 20 10 70
+    Historically each account had its own database, initialised here. The data
+    model is now a single shared database, so *username* is ignored and this
+    simply ensures the shared schema exists. Kept as a named entry point because
+    the signup and account-recovery flows still call it per account.
 
-       * - Column
-         - Type
-         - Description
-       * - ``id``
-         - INTEGER PK
-         - Auto-increment primary key.
-       * - ``channel``
-         - TEXT
-         - Public channel name (e.g. ``"general"``) or DM identifier
-           (e.g. ``"dm:alice:bob"``).
-       * - ``sender``
-         - TEXT
-         - Username of the message author.
-       * - ``content``
-         - TEXT
-         - Message body text.  ``NULL`` for image-only messages.
-       * - ``content_type``
-         - TEXT
-         - Always ``'text'`` for the current version; reserved for future
-           media types.
-       * - ``filename``
-         - TEXT
-         - Uploaded image filename stored in ``uploads/``.  ``NULL`` for
-           text-only messages.
-       * - ``ts``
-         - REAL
-         - Unix timestamp (seconds, floating-point) at which the message
-           was sent.  Used as the primary ordering key and as the
-           cross-user identity token for edits, deletes, and reactions.
-       * - ``edited``
-         - INTEGER
-         - Boolean flag (0/1) — ``1`` when the message body has been
-           modified after initial send.
-       * - ``edited_ts``
-         - REAL
-         - Unix timestamp of the most recent edit.
-       * - ``read``
-         - INTEGER
-         - Per-user read flag (0/1).  The sender's copy is always inserted
-           as ``read=1``; recipients start at ``0``.
-       * - ``deleted``
-         - INTEGER
-         - Soft-delete flag (0/1).  Deleted messages are retained in the
-           database so that tombstones can be propagated to clients that
-           have already cached the message.
-       * - ``deleted_ts``
-         - REAL
-         - Unix timestamp when the message was deleted.
-       * - ``reply_to_id``
-         - INTEGER FK
-         - Foreign key to ``messages.id`` — the parent message that this
-           message is replying to, or ``NULL``.
-       * - ``reactions``
-         - TEXT
-         - Legacy JSON column; reactions are now stored in the shared
-           ``presence.db::message_reactions`` table.  Kept for schema
-           compatibility.
-       * - ``reactions_ts``
-         - REAL
-         - Unix timestamp updated whenever a reaction is toggled.  The
-           polling query uses this to detect reaction changes without
-           re-fetching the whole message list.
-       * - ``mentions``
-         - TEXT
-         - Reserved for future ``@mention`` tracking.
-       * - ``metadata``
-         - TEXT
-         - Reserved for future structured metadata.
-       * - ``client_msg_id``
-         - TEXT
-         - Client-generated deduplication token (not currently enforced
-           server-side).
-       * - ``expires_ts``
-         - REAL
-         - Unix timestamp after which the associated upload file may be
-           deleted by :mod:`minimost.clean`.
+    :param username: Ignored. Retained for call-site compatibility.
+    :returns: None
+    """
+    init_messages_db()
 
-    :param username: Account username whose database should be initialised.
-    :type username: str
+
+def init_messages_db():
+    """Create the shared message database and ensure its schema is current.
+
+    Idempotent — every table uses ``CREATE TABLE IF NOT EXISTS``, so repeated
+    calls are safe and cheap. Creates:
+
+    * ``messages`` — one canonical row per message (referenced everywhere by its
+      auto-increment ``id``; there are no per-user copies, so edits/deletes/
+      reactions act on a single row).
+    * ``messages_fts`` — the trigram substring search index (see
+      :func:`_ensure_search_index`).
+    * ``reactions`` — one row per (message, emoji, reactor), keyed by the real
+      ``message_id`` rather than a timestamp.
+    * ``read_state`` — a per-(user, channel) **read watermark** (``last_read_ts``).
+      Unread counts and read receipts are both derived from it, so read state
+      costs O(users × channels) rows instead of O(messages × users).
+    * ``dm_hidden`` — per-(user, channel) hidden-DM markers.
+
+    WAL keeps readers (the 500 ms pollers) from blocking the single writer;
+    ``auto_vacuum = INCREMENTAL`` reclaims space from retention/edits without the
+    long global lock that FULL would take on a shared file.
+
     :returns: None
     """
     DB_DIR.mkdir(exist_ok=True)
-    path = user_db_path(username)
-    db = sqlite3.connect(str(path))
-    db.execute("PRAGMA auto_vacuum = FULL")
+    db = sqlite3.connect(str(shared_db_path()))
     db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA auto_vacuum = INCREMENTAL")
     cur = db.cursor()
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS dm_hidden (
-        channel  TEXT PRIMARY KEY,
-        hidden_ts REAL NOT NULL
-    )
-    """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS messages (
@@ -259,13 +202,11 @@ def init_user_db(username: str):
         edited INTEGER DEFAULT 0,
         edited_ts REAL,
 
-        read INTEGER DEFAULT 0,
         deleted INTEGER DEFAULT 0,
         deleted_ts REAL,
 
         reply_to_id INTEGER,
 
-        reactions TEXT,
         reactions_ts REAL,
         mentions TEXT,
         metadata TEXT,
@@ -274,6 +215,37 @@ def init_user_db(username: str):
         expires_ts REAL,
 
         FOREIGN KEY (reply_to_id) REFERENCES messages(id)
+    )
+    """)
+    # The hot path (channel poll + unread counts) filters by channel and ts.
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_channel_ts ON messages(channel, ts)"
+    )
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS reactions (
+        message_id INTEGER NOT NULL,
+        emoji      TEXT NOT NULL,
+        reactor    TEXT NOT NULL,
+        PRIMARY KEY (message_id, emoji, reactor)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS read_state (
+        user         TEXT NOT NULL,
+        channel      TEXT NOT NULL,
+        last_read_ts REAL NOT NULL DEFAULT 0,
+        PRIMARY KEY (user, channel)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS dm_hidden (
+        user      TEXT NOT NULL,
+        channel   TEXT NOT NULL,
+        hidden_ts REAL NOT NULL,
+        PRIMARY KEY (user, channel)
     )
     """)
 

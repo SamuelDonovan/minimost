@@ -479,9 +479,9 @@ def test_close_dm_reappears_after_new_message(alice_and_bob, app):
     # Bob sends a new message (written directly to alice's DB after the hidden_ts)
     import time as time_mod
 
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         (ch, "bob", "resurface me", time_mod.time() + 1),
     )
     db.commit()

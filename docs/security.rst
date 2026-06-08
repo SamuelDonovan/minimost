@@ -169,17 +169,25 @@ The upload limit is 16 MiB, enforced by Flask's ``MAX_CONTENT_LENGTH``
 configuration. Requests exceeding this limit are rejected before the route
 handler runs.
 
-Data Isolation
---------------
+Channel Access Control
+----------------------
 
-Each user's message history is stored in a separate SQLite database file
-(``users/<username>.db``). This means:
+All messages live in one shared database (``users/messages.db``), so access is
+enforced **at query time** rather than by filesystem separation. Every route
+that reads or writes messages checks :func:`minimost.chat.is_valid_channel`
+before touching the database:
 
-- A bug that corrupts one user's database does not affect others.
-- Database-level access control is possible at the filesystem level (e.g.
-  each file is owned by the corresponding OS user account).
-- A SQL query error in one user's route handler cannot read another user's
-  messages — the wrong database is simply not open.
+- **Public channels** — the channel must be one of the configured names.
+- **Private channels** — the caller must be a member (and late joiners only see
+  history from their ``history_start_ts`` onward).
+- **DMs** — the caller's username must appear in the ``dm:`` channel identifier.
+
+This guard is applied consistently to the polling endpoint
+(:func:`minimost.chat.messages`), to ``search_messages`` (which additionally
+confines results to the set of channels the caller may read), and to
+``channel_members``, so a crafted channel name cannot surface another user's
+DMs or a private channel they don't belong to. All queries are parameterised, so
+the channel identifier is never interpolated into SQL.
 
 Known Limitations
 -----------------

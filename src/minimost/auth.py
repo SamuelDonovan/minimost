@@ -151,77 +151,17 @@ def hash_password(password: str) -> str:
 
 
 def _seed_channel_history(new_user: str) -> None:
-    """Copy all public channel message history into a newly created user's DB.
+    """No-op retained for backwards compatibility.
 
-    When a new account is created, this function seeds the new user's
-    ``messages`` table with every public-channel message from an existing
-    user's database.  This ensures new users can see the full conversation
-    history from the moment they join, rather than starting with a blank
-    slate.
+    Messages now live in a single shared database, so a newly registered user
+    can already see the full public-channel history the instant their account
+    exists — there is nothing to copy. This stub remains only so existing
+    callers and imports keep working.
 
-    **Algorithm:**
-
-    1. Pick any existing user from ``auth.db`` (other than *new_user*).
-    2. Open that user's ``.db`` file as the source.
-    3. Select all rows from ``messages`` where ``channel NOT LIKE 'dm:%'``
-       (i.e. public channels only — DMs are never copied).
-    4. Insert those rows verbatim into the new user's database with
-       ``read = 1`` so they generate no unread-message notifications.
-
-    **Edge cases:**
-
-    * If no other users exist (first registration), the function returns
-      immediately — there is no history to copy.
-    * If the existing user's ``.db`` file is missing on disk, the function
-      also returns without error.
-
-    :param new_user: The username of the account being registered.
-    :type new_user: str
+    :param new_user: Ignored.
     :returns: None
     """
-    adb = sqlite3.connect(AUTH_DB)
-    adb.execute(_WAL)
-    row = adb.execute(
-        "SELECT username FROM users WHERE username != ? LIMIT 1", (new_user,)
-    ).fetchone()
-    adb.close()
-
-    if not row:
-        return
-
-    src_path = common.user_db_path(row[0])
-    if not src_path.exists():
-        return
-
-    src = sqlite3.connect(str(src_path))
-    src.execute(_WAL)
-    rows = src.execute("""
-        SELECT id, channel, sender, content, content_type, filename, ts,
-               edited, edited_ts, deleted, deleted_ts, reply_to_id,
-               reactions, reactions_ts, mentions, metadata, client_msg_id, expires_ts
-        FROM messages
-        WHERE channel NOT LIKE 'dm:%'
-        """).fetchall()
-    src.close()
-
-    if not rows:
-        return
-
-    dst = sqlite3.connect(str(common.user_db_path(new_user)))
-    dst.execute(_WAL)
-    dst.executemany(
-        """
-        INSERT INTO messages
-            (id, channel, sender, content, content_type, filename, ts,
-             edited, edited_ts, deleted, deleted_ts, reply_to_id,
-             reactions, reactions_ts, mentions, metadata, client_msg_id, expires_ts,
-             read)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-        """,
-        rows,
-    )
-    dst.commit()
-    dst.close()
+    return
 
 
 def login_required(fn):
@@ -550,14 +490,10 @@ def signup_post():
 
     db.close()
 
-    # Remove any leftover DB from a previously soft-deleted account so that
-    # init_user_db and _seed_channel_history start from a clean slate.
-    stale_db = common.user_db_path(username)
-    if stale_db.exists():
-        stale_db.unlink()
-
-    common.init_user_db(username)
-    _seed_channel_history(username)
+    # Ensure the shared message schema exists (idempotent). Messages live in one
+    # shared database now, so there is no per-account database to reset or seed —
+    # the new user can already see all public history.
+    common.init_messages_db()
 
     # Greet the newcomer in the first public channel under the MiniMost
     # identity.  Imported lazily because chat imports auth at module load.

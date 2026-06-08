@@ -257,7 +257,7 @@ All formatting uses Markdown syntax (underline uses `__text__`). Shortcuts work 
 - Passwords are salted and hashed with PBKDF2 via Werkzeug — no plaintext or bare SHA-256 storage
 - Password complexity is enforced on both frontend and backend (8+ characters, uppercase, number, special character)
 - All database queries use parameterized statements — no SQL injection surface
-- Each user has an isolated SQLite database; channel history is shared only through controlled writes
+- Messages live in a single shared SQLite database; every read enforces channel access control (public channels, private-channel membership, and DM participation)
 - SAST scanning via [Bandit](https://bandit.readthedocs.io/), [Semgrep](https://semgrep.dev/), [CodeQL](https://codeql.github.com/), and [SonarCloud](https://sonarcloud.io/) in CI
 - Dependency vulnerabilities audited on every push with [pip-audit](https://github.com/pypa/pip-audit)
 - Flask debug mode is disabled in production
@@ -268,7 +268,7 @@ All formatting uses Markdown syntax (underline uses `__text__`). Shortcuts work 
 
 **Are messages encrypted?**
 
-Messages are not end-to-end encrypted. Each user's data lives in a SQLite file on the server filesystem. These files are not world-readable, but an administrator with filesystem access can read/audit them. Treat this as an internal LAN tool, not a secure messenger.
+Messages are not end-to-end encrypted. All data lives in SQLite files on the server filesystem. These files are not world-readable, but an administrator with filesystem access can read/audit them. Treat this as an internal LAN tool, not a secure messenger.
 
 **What if a user forgets their password?**
 

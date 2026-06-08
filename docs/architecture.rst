@@ -21,13 +21,11 @@ of JSON endpoints at fixed intervals to pick up new data.
          ▼
     Flask Application (Gunicorn workers)
          │
-         ├── auth.db          (shared, WAL mode)
-         ├── presence.db      (shared, WAL mode)
-         ├── avatars/         (user profile images)
+         ├── auth.db              (shared, WAL mode)
+         ├── presence.db          (shared, WAL mode)
+         ├── avatars/             (user profile images)
          └── users/
-             ├── alice.db     (per-user, WAL mode)
-             ├── bob.db       (per-user, WAL mode)
-             └── ...
+             └── messages.db      (shared message store, WAL mode)
 
 Application Factory
 -------------------
@@ -60,103 +58,141 @@ The factory is responsible for:
 Blueprint structure means each module is self-contained and the URL routing
 is defined close to the handler code.
 
-Distributed SQLite Model
--------------------------
+Shared SQLite Model
+-------------------
 
-The most unusual design decision in MiniMost is its database layout.
+Every message lives exactly once in a single shared SQLite file
+(``users/messages.db``), addressed by its auto-increment ``id``. Built by
+:func:`minimost.common.init_messages_db`; :func:`minimost.chat.get_db` opens it.
 
-Most chat applications use a single shared database where every user's
-messages are stored together. MiniMost instead gives every user their own
-SQLite file (``users/<username>.db``).
+.. note::
 
-**Why?**
+   Earlier versions copied each message into a per-user ``users/<username>.db``
+   (fan-out on write) and cross-referenced copies by ``ts``. That model is gone.
+   ``init_user_db``, ``user_db_path`` and ``_seed_channel_history`` survive only
+   as no-op compatibility shims.
 
-- **Per-user read state** — each user needs to track which messages they have
-  read. In a shared table this requires a ``(user_id, message_id)`` join
-  table that grows with ``O(users × messages)``. With per-user databases, the
-  ``read`` column is a single bit on the message row itself.
-- **Isolation** — a corrupted or locked user database affects only that one
-  user, not the entire application.
-- **SQLite WAL mode** — SQLite's WAL journal allows one writer and many
-  readers to operate simultaneously without blocking each other. Per-user
-  databases mean write contention is spread across many files rather than
-  concentrated on one.
+**Tables in messages.db:**
 
-**The trade-off:**
+- **messages** — one canonical row per message.
+- **messages_fts** — trigram FTS5 substring search index over ``content``, kept
+  in sync with ``messages`` by triggers (see *Search*).
+- **reactions** — one row per ``(message_id, emoji, reactor)``.
+- **read_state** — one read **watermark** (``last_read_ts``) per
+  ``(user, channel)`` (see *Read state*).
+- **dm_hidden** — one row per ``(user, channel)`` for hidden DM threads.
 
-When a user sends a message, MiniMost must write a copy of that message into
-**every recipient's database** individually. For a public channel with *N*
-users, that is *N* separate ``INSERT`` statements. For small teams this is
-fast; for large teams it could become a bottleneck.
+**Why a single database?**
+
+- **One canonical row** — edits, deletes and reactions act on a single row by
+  ``id``, eliminating the timestamp-matching code the per-user model needed.
+- **No write amplification** — a public-channel message is one ``INSERT``, not
+  one per recipient, and is stored (and indexed) once rather than ``N`` times.
+- **Cross-channel queries stay cheap** — global search and the total-unread
+  badge are single indexed queries rather than a fan-out across many files.
+
+**The trade-off:** all writes serialise on one file's write lock. In WAL mode
+the lock is held for microseconds per insert and readers never block, so for
+MiniMost's self-hosted scale this is a non-issue; very high write concurrency
+is the case where per-channel sharding would become worthwhile.
 
 Message Propagation
 -------------------
 
 When ``POST /send/<channel>`` is called:
 
-1. :func:`minimost.chat.channel_users` returns the list of recipients.
-   - Public channels: all registered users.
-   - DM channels: the participants listed in the channel name.
-2. The sender is added to the list if not already present.
-3. For each recipient, ``get_db(recipient)`` opens their database.
-4. The message row(s) are inserted — one for the text content, one per
-   attached image.
-5. Each database is committed and closed.
+1. :func:`minimost.chat.is_valid_channel` authorises the sender for the channel.
+2. The message row(s) are inserted into the shared ``messages`` table — one for
+   the text content, one per attached image. Consecutive short messages from the
+   same sender within 300 s are merged into the previous row instead.
+3. The sender's ``read_state`` watermark for the channel is advanced to this
+   message, so their own message never counts as unread.
 
-The ``ts`` (Unix timestamp) is assigned once before the loop and shared
-across all recipients. This shared timestamp is used as the cross-user
-identity token for edits, deletes, and reactions — since row ``id`` values
-differ between per-user databases.
+:func:`minimost.chat.extract_mentions` scans the text for ``@username`` tokens
+that resolve to real channel members and stores the result (JSON, or the
+``"@everyone"`` sentinel for a channel-wide mention) in the ``mentions`` column.
+Editing a message re-extracts mentions from the new text. The polling response
+returns ``mentions`` so each client can highlight and notify the mentioned
+viewer.
 
-Before the loop, :func:`minimost.chat.extract_mentions` scans the text for
-``@username`` tokens that resolve to real channel members and stores the result
-(JSON, or the ``"@everyone"`` sentinel for a channel-wide mention) in each
-recipient's ``mentions`` column. Editing a message re-extracts mentions from
-the new text. The polling response returns ``mentions`` so each client can
-highlight and notify the mentioned viewer.
+Because all messages share one table, the read path enforces access control
+explicitly: :func:`minimost.chat.messages`, ``search_messages`` and
+``channel_members`` check :func:`minimost.chat.is_valid_channel` (public
+channels, private channels the user belongs to, DMs they participate in), and
+private-channel late-joiners are bounded by ``history_start_ts``.
+
+Read State (Watermark)
+----------------------
+
+Read state is a **per-channel watermark**, not a per-message flag. ``read_state``
+holds one ``last_read_ts`` per ``(user, channel)``:
+
+- **Unread counts** = messages in the channel after ``last_read_ts`` (sent by
+  someone else, not deleted).
+- **Read receipts** are *derived*: a user has read message *M* iff their
+  ``last_read_ts >= M.ts``. ``GET /read_receipts/<channel>`` returns the
+  watermarks (``{user: last_read_ts}``) and the client computes each ``✓`` from
+  the message timestamps it already holds.
+
+This costs ``O(users × channels)`` rows instead of the ``O(messages × users)``
+of a per-message receipts table. ``POST /mark_read/<channel>`` advances the
+watermark to the channel's newest message; ``POST /send`` advances the sender's.
+
+Search
+------
+
+``GET /search_messages`` performs a case-insensitive **substring** search over
+message content. It is backed by an FTS5 virtual table (``messages_fts``) using
+the **trigram** tokenizer, which indexes every 3-character substring, so the
+match is served from the index in well under a millisecond regardless of history
+size (a plain ``LIKE '%q%'`` would scan the whole table). The index is
+*external-content* (it stores only trigram postings, not a second copy of the
+text) and is kept in sync with ``messages`` by insert/update/delete triggers.
+
+- Queries shorter than 3 characters can't use the trigram index and fall back to
+  a ``LIKE`` scan.
+- Ordering by the FTS rowid descending returns newest-first results and lets
+  FTS5 stop after 50 rows instead of sorting the full match set (``id`` is
+  monotonic with ``ts``).
+- Results are confined to channels the caller may read (see *Message
+  Propagation*), so the shared table never leaks other users' DMs or private
+  channels.
 
 Shared State: auth.db and presence.db
 --------------------------------------
 
-Some state cannot live in per-user databases because it needs to be visible
-to all users simultaneously.
-
-``auth.db`` holds two tables:
+``auth.db`` holds:
 
 - **users** — credentials (``username``, ``password_hash``).
-- **user_settings** — per-user display preferences (``name_color``,
-  ``avatar_file``). Stored here rather than in per-user databases so that
-  every client can read another user's colour and avatar without needing
-  access to that user's private database.
+- **user_settings** — display preferences (``name_color``, ``avatar_file``), so
+  every client can read another user's colour and avatar.
 
 ``presence.db`` holds:
 
 - **Presence** (active/idle/hidden/offline) — shown to all users in sidebar.
 - **Typing indicators** — shown to channel members in real time.
-- **Read receipts** — visible to the message sender.
-- **Reactions** — visible to all users on the message.
+- **Private channels** — ``private_channels`` and ``private_channel_members``
+  (the latter carries each member's ``history_start_ts``).
 - **Call state** — ``calls`` and ``call_participants`` track the full
   lifecycle of every voice/video call; ``call_signals`` relays WebRTC
   offer/answer/ICE-candidate messages between peers during connection setup.
   (The legacy ``call_media``/``share_media`` tables are retained but unused now
   that media flows peer-to-peer over WebRTC.)
-
-All of this lives in ``presence.db``. The key table is ``message_reactions``,
-which stores individual ``(channel, msg_ts, emoji, reactor)`` tuples. This
-avoids the read-modify-write race condition that would occur if reactions were
-stored as a JSON string in per-user databases.
+- The legacy ``read_receipts`` and ``message_reactions`` tables remain defined
+  but are **unused** — read state and reactions now live in ``messages.db``.
 
 **Reactions workflow:**
 
 1. Client posts to ``/react/<msg_id>``.
-2. Server opens ``presence.db`` and atomically toggles the reaction row
-   (``INSERT`` or ``DELETE``).
-3. Server reads back all current reactions for that message.
-4. Server bumps ``reactions_ts`` in every recipient's database — this is the
-   signal that the polling query will pick up.
-5. Next poll cycle: ``/messages/<channel>?after=<ts>`` returns the message
-   because ``reactions_ts > after``.
-6. Client receives the updated ``reactions`` JSON and re-renders.
+2. Server atomically toggles the row in the shared ``reactions`` table
+   (``INSERT`` or ``DELETE``), keyed by the message ``id`` — one statement, no
+   read-modify-write race and no per-user fan-out.
+3. Server bumps ``reactions_ts`` on the message row — the signal the polling
+   query picks up.
+4. Next poll cycle: ``/messages/<channel>?after=<ts>`` returns the message
+   because ``reactions_ts > after``, with its reactions joined in from the
+   ``reactions`` table.
+5. Client receives the updated ``reactions`` JSON and re-renders.
 
 Polling Architecture
 --------------------
@@ -191,7 +227,7 @@ The client runs several ``setInterval`` loops:
        and closes it when the caller hangs up or times out.
    * - ``fetchReadReceipts``
      - 3 s
-     - Updates ``✓`` read checkmarks.
+     - Fetches per-user read watermarks and derives the ``✓`` checkmarks.
    * - ``_pollCallState``
      - 3 s
      - Polls ``GET /calls/<id>/state`` during an active call; diffs the
@@ -237,11 +273,12 @@ New User Registration Flow
    reserved names ``minimost``, ``everyone``, and ``deleteduser`` are rejected
    (case-insensitively) because the app gives them special meaning.
 3. ``(username, hash)`` is inserted into ``auth.db``.
-4. :func:`minimost.common.init_user_db` creates ``users/<username>.db``.
-5. :func:`minimost.auth._seed_channel_history` copies all public channel
-   messages from an existing user's database (with ``read=1``) so the new
-   user sees the full history without any unread notifications.
-6. Session is established; user is redirected to ``/``.
+4. :func:`minimost.common.init_messages_db` ensures the shared message schema
+   exists (idempotent). There is no per-account database to create or seed — the
+   new user can already see the full public history, since every message lives in
+   the one shared table.
+5. A welcome message is posted; the session is established; user is redirected
+   to ``/``.
 
 DM Channel Naming
 -----------------
@@ -261,14 +298,15 @@ DM Visibility (dm_hidden)
 --------------------------
 
 Users can close (hide) a DM thread from the sidebar without deleting any
-messages. The per-user database includes a ``dm_hidden`` table with columns
-``channel`` (primary key) and ``hidden_ts`` (Unix timestamp of when the
-conversation was hidden).
+messages. The ``dm_hidden`` table (in ``messages.db``) records one row per
+``(user, channel)`` with a ``hidden_ts`` (Unix timestamp of when the
+conversation was hidden), so hiding is per-viewer.
 
-The ``GET /dms`` query uses a ``HAVING`` clause to filter out hidden
-conversations unless a message has arrived after ``hidden_ts``::
+The ``GET /dms`` query joins ``dm_hidden`` for the requesting user and uses a
+``HAVING`` clause to filter out hidden conversations unless a message has
+arrived after ``hidden_ts``::
 
-    HAVING MAX(ts) > COALESCE(hidden_ts, 0)
+    HAVING dh.hidden_ts IS NULL OR MAX(m.ts) > dh.hidden_ts
 
 This means the DM reappears automatically the next time a new message is
 received — no manual "reopen" action is required.

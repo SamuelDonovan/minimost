@@ -62,6 +62,9 @@ Messaging
   changes propagate to all recipients in real time.
 - **Full-text search** — search across all message content with fuzzy matching
   and highlighted results.
+- **Automatic message retention** — a background thread permanently removes
+  messages older than a configurable threshold (``message_retention_days``,
+  default 770 days) so the database does not grow without bound.
 
 Real-time Interaction
 ~~~~~~~~~~~~~~~~~~~~~
@@ -145,7 +148,7 @@ Security
 - Password hashing with PBKDF2 (Werkzeug).
 - Enforced password complexity on both frontend and backend.
 - 3-second delay on failed login attempts (brute-force protection).
-- Per-user isolated SQLite databases.
+- Channel access control enforced on every read of the shared message store.
 - Parameterized SQL queries throughout.
 - SSRF protection on link preview fetching (allowlist, private-range block, DNS resolution check).
 - SAST scanning with Bandit, Semgrep, CodeQL, and SonarCloud; dependency CVEs audited with pip-audit.
@@ -197,8 +200,8 @@ Project Structure
     ├── presence.db                 # Shared real-time state database (incl. call state)
     ├── uploads/                    # Image attachment storage
     ├── avatars/                    # User avatar image storage
-    ├── users/                      # Per-user SQLite message databases
-    │   └── {username}.db
+    ├── users/                      # Shared message store
+    │   └── messages.db             # messages, search index, reactions, read state
     └── src/minimost/
         ├── __init__.py             # Flask app factory
         ├── __main__.py             # CLI entry point
@@ -210,7 +213,7 @@ Project Structure
         ├── common.py               # Database path helpers
         ├── database.py             # Schema bootstrap (auth.db)
         ├── preview.py              # Link preview generation
-        ├── clean.py                # Image retention cleanup utility
+        ├── clean.py                # Retention cleanup (old files and messages)
         ├── templates/
         │   ├── login.html
         │   ├── signup.html
@@ -234,8 +237,6 @@ MiniMost is intentionally minimal. The following are explicit non-goals:
 - **Role-based access control** — all registered users have the same
   permissions; there are no admin accounts, channel moderation roles, or
   invite-only channels.
-- **Message retention policies** — the database grows indefinitely (images
-  are cleaned up by ``clean.py``, but message rows are never deleted).
 - **Federation or multi-server** — MiniMost is a single-server application
   with no inter-server protocol.
 - **Webhooks or integrations** — there is no bot API or incoming webhook
@@ -262,8 +263,8 @@ preview cache (``preview.py``).
 Yes. The entire state of the application lives in:
 
 - ``auth.db`` — credentials and user settings (name colour, avatar filename)
-- ``presence.db`` — reactions and read receipts (transient state)
-- ``users/*.db`` — all message history
+- ``presence.db`` — presence, typing, private-channel membership, and call state
+- ``users/messages.db`` — all messages, the search index, reactions, and read state
 - ``uploads/`` — image attachments
 - ``avatars/`` — user profile avatar images
 

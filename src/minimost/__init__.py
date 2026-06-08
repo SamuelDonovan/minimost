@@ -260,20 +260,15 @@ def create_app():
 
 
 def _migrate_search_indexes() -> None:
-    """Backfill the trigram search index onto pre-existing user databases.
+    """Ensure the shared message database and its search index exist at boot.
 
-    :func:`~minimost.common.init_user_db` adds the FTS5 search index, but it
-    only runs when an account is created. Databases that predate the index need
-    it built once. ``init_user_db`` is idempotent and builds (then rebuilds) the
-    index on first sight, so re-running it over every existing ``users/*.db`` is
-    a cheap no-op after the first start. Runs once per worker at boot.
+    :func:`~minimost.common.init_messages_db` is idempotent and builds (then
+    rebuilds, once) the FTS5 trigram index if it is missing, so calling it at
+    startup transparently upgrades a database that predates the index. Runs once
+    per worker at boot.
     """
-    users_dir = common.DB_DIR
-    if not users_dir.exists():
-        return
-    for path in users_dir.glob("*.db"):
-        with suppress(Exception):
-            common.init_user_db(path.stem)
+    with suppress(Exception):
+        common.init_messages_db()
 
 
 def _start_cleanup_scheduler(

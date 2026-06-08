@@ -72,7 +72,7 @@ def _get_pdb_members(channel_id):
 
 def _get_user_messages(username, channel):
     """Return all messages for a user in a channel from their DB."""
-    db = sqlite3.connect(str(common_mod.user_db_path(username)))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     rows = db.execute(
         "SELECT sender, content, content_type FROM messages WHERE channel=?",
         (channel,),
@@ -206,9 +206,9 @@ def test_list_private_channels_unread_count(alice_and_bob):
     ch = f"private:{channel_id}"
 
     # Insert an unread message from bob into alice's DB
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         (ch, "bob", "hey alice", time.time()),
     )
     db.commit()
@@ -225,9 +225,9 @@ def test_list_private_channels_own_messages_not_counted_as_unread(alice):
     channel_id = resp.get_json()["id"]
     ch = f"private:{channel_id}"
 
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         (ch, "alice", "my own msg", time.time()),
     )
     db.commit()
@@ -244,9 +244,9 @@ def test_list_private_channels_deleted_messages_not_counted(alice_and_bob):
     channel_id = resp.get_json()["id"]
     ch = f"private:{channel_id}"
 
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read, deleted) VALUES (?,?,?,?,0,1)",
+        "INSERT INTO messages (channel, sender, content, ts, deleted) VALUES (?,?,?,?,1)",
         (ch, "bob", "deleted msg", time.time()),
     )
     db.commit()

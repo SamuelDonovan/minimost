@@ -40,7 +40,7 @@ def _create_channel(client, name, members=None):
 
 
 def _get_user_messages(username, channel):
-    db = sqlite3.connect(str(common_mod.user_db_path(username)))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     rows = db.execute(
         "SELECT sender, content, content_type FROM messages WHERE channel=?",
         (channel,),

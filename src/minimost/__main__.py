@@ -107,12 +107,10 @@ def main():
 
 
 def _send_reset_dm(username: str, expires_minutes: int) -> None:
-    """Insert a system notification DM into the user's message database."""
-    from minimost.common import user_db_path
+    """Insert a system notification DM into the shared message database."""
+    from minimost.common import shared_db_path, init_messages_db
 
-    db_path = user_db_path(username)
-    if not db_path.exists():
-        return
+    init_messages_db()
     channel = "dm:" + ":".join(sorted(["system", username]))
     minutes_word = "minute" if expires_minutes == 1 else "minutes"
     message = (
@@ -120,12 +118,12 @@ def _send_reset_dm(username: str, expires_minutes: int) -> None:
         f"The reset link will expire in {expires_minutes} {minutes_word}. "
         f"If you did not request this, please contact your administrators."
     )
-    db = sqlite3.connect(str(db_path))
+    db = sqlite3.connect(str(shared_db_path()))
     db.execute("PRAGMA journal_mode=WAL")
     db.execute(
-        "INSERT INTO messages (channel, sender, content, content_type, ts, read)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (channel, "system", message, "system", time.time(), 0),
+        "INSERT INTO messages (channel, sender, content, content_type, ts)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (channel, "system", message, "system", time.time()),
     )
     db.commit()
     db.close()

@@ -110,7 +110,8 @@ loop calls a different API endpoint and updates the DOM based on the response.
      - Calls ``/channel_unreads`` and updates channel unread badges.
    * - ``fetchReadReceipts()``
      - 3 s
-     - Calls ``/read_receipts/<channel>`` and updates ``✓`` indicators.
+     - Calls ``/read_receipts/<channel>`` for per-user read watermarks and
+       derives the ``✓`` indicators from each message's timestamp.
    * - ``refreshTotalUnreadCount()``
      - 5 s
      - Calls ``/unread_count`` and updates the browser tab title.
@@ -306,12 +307,14 @@ Search
 The search modal uses two matching strategies:
 
 1. **Server-side search** — ``GET /search_messages?q=<query>`` performs a
-   SQLite ``LIKE %query%`` match and returns up to 50 results. This handles
-   exact substring matches across the full message history.
+   case-insensitive substring match and returns up to 50 results (restricted to
+   channels the caller can read). The match is served by a trigram FTS5 index
+   over the full message history, so it stays fast as history grows; queries
+   shorter than three characters fall back to a ``LIKE`` scan.
 
-2. **Client-side fuzzy search** — ``fuzzySearch(query, text)`` scores
-   candidate strings based on how well a fuzzy (out-of-order character)
-   match works. Used to rank results and highlight matches in the UI.
+2. **Client-side fuzzy search** — ``fuzzySearch(query, text)`` scores the
+   returned candidates based on how well a fuzzy (out-of-order character) match
+   works. Used to rank results and highlight matches in the UI.
 
 Results are displayed with the matched text highlighted using
 ``highlightFuzzyMatch(text, indices)``, which wraps matched character

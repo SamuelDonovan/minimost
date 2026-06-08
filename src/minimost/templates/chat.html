@@ -766,16 +766,21 @@ function fetchReadReceipts() {
     fetch(`/read_receipts/${channel}`)
         .then(r => r.ok ? r.json() : {})
         .then(data => {
+            // {user: last_read_ts} watermarks — receipts are derived per message.
             readReceiptsMap = data;
             updateReadReceiptUI();
         });
 }
 
 function updateReadReceiptUI() {
+    // A user has read a message iff their watermark reached the message's ts.
+    const watermarks = Object.entries(readReceiptsMap);
     document.querySelectorAll(".read-receipt").forEach(el => {
-        const readers = readReceiptsMap[el.dataset.ts];
-        if (!readers || readers.length === 0) return;
-        const names = readers.filter(r => r !== CURRENT_USER).join(", ");
+        const ts = Number(el.dataset.ts);
+        const names = watermarks
+            .filter(([u, w]) => u !== CURRENT_USER && w >= ts)
+            .map(([u]) => u)
+            .join(", ");
         if (!names) return;
         el.textContent = "✓";
         el.classList.add("seen");

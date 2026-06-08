@@ -26,9 +26,9 @@ def _add_user(username, password="Password1!"):
 def _insert_message(username, channel="general", content="hello", ts=None, sender=None):
     ts = ts or time.time()
     sender = sender or username
-    db = sqlite3.connect(str(common_mod.user_db_path(username)))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, 0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         (channel, sender, content, ts),
     )
     db.commit()
@@ -83,9 +83,9 @@ def test_channel_unreads_empty(alice):
 def test_channel_unreads_counts(alice_and_bob, app):
     _add_user("charlie")
     ts = time.time()
-    alice_db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    alice_db = sqlite3.connect(str(common_mod.shared_db_path()))
     alice_db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, 0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         (
             "general",
             "bob",
@@ -111,9 +111,9 @@ def test_unread_count_zero(alice):
 
 
 def test_unread_count_with_dm(alice):
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, 0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("dm:alice:bob", "bob", "hey", time.time()),
     )
     db.commit()
@@ -133,9 +133,9 @@ def test_dms_empty(alice):
 
 
 def test_dms_returns_conversations(alice):
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, 0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("dm:alice:bob", "bob", "hi", time.time()),
     )
     db.commit()
@@ -213,13 +213,13 @@ def test_messages_invalid_after(alice):
 
 def test_messages_includes_reactions(alice):
     msg_id, ts = _insert_message("alice", "general", "react me")
-    pdb = sqlite3.connect(presence_mod.PRESENCE_DB)
-    pdb.execute(
-        "INSERT INTO message_reactions (channel, msg_ts, emoji, reactor) VALUES (?, ?, ?, ?)",
-        ("general", ts, "thumbs_up", "alice"),
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "INSERT INTO reactions (message_id, emoji, reactor) VALUES (?, ?, ?)",
+        (msg_id, "thumbs_up", "alice"),
     )
-    pdb.commit()
-    pdb.close()
+    db.commit()
+    db.close()
     data = alice.get("/messages/general?after=0").get_json()
     assert data[0]["reactions"] is not None
     rx = json.loads(data[0]["reactions"])
@@ -228,7 +228,7 @@ def test_messages_includes_reactions(alice):
 
 def test_messages_deleted_tombstone(alice):
     msg_id, ts = _insert_message("alice", "general", "bye")
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
         "UPDATE messages SET deleted=1, deleted_ts=? WHERE id=?",
         (time.time(), msg_id),
@@ -266,7 +266,7 @@ def test_send_text_message(alice):
 
 def test_send_stores_in_db(alice):
     alice.post("/send/general", data={"text": "stored msg"})
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT content FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert row is not None
@@ -275,7 +275,7 @@ def test_send_stores_in_db(alice):
 
 def test_send_propagates_to_all_users(alice_and_bob):
     alice_and_bob.post("/send/general", data={"text": "broadcast"})
-    bob_db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    bob_db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = bob_db.execute(
         "SELECT content FROM messages WHERE channel='general'"
     ).fetchone()
@@ -428,9 +428,9 @@ def test_search_filter_by_sender_is_case_insensitive(alice):
 
 def test_search_filter_by_channel(alice):
     _insert_message("alice", "general", "in general")
-    _insert_message("alice", "random", "in random")
-    data = alice.get("/search_messages?channel=random").get_json()
-    assert [m["content"] for m in data] == ["in random"]
+    _insert_message("alice", "software", "in software")
+    data = alice.get("/search_messages?channel=software").get_json()
+    assert [m["content"] for m in data] == ["in software"]
 
 
 def test_search_filter_by_date_range(alice):
@@ -481,10 +481,10 @@ def test_search_index_reflects_edits(alice):
 
 def test_search_index_reflects_hard_delete(alice):
     """A hard-deleted row leaves the search index (via the delete trigger)."""
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES "
-        "('general', 'alice', 'ephemeral note', 1.0, 0)"
+        "INSERT INTO messages (channel, sender, content, ts) VALUES "
+        "('general', 'alice', 'ephemeral note', 1.0)"
     )
     db.commit()
     db.execute("DELETE FROM messages WHERE content = 'ephemeral note'")
@@ -511,7 +511,7 @@ def test_edit_success(alice):
 def test_edit_updates_content(alice):
     msg_id, _ = _insert_message("alice", "general", "original")
     alice.post(f"/edit/{msg_id}", data={"text": "new text"})
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute(
         "SELECT content, edited FROM messages WHERE id=?", (msg_id,)
     ).fetchone()
@@ -522,7 +522,7 @@ def test_edit_updates_content(alice):
 
 def test_edit_forbidden_for_other_user(alice_and_bob, app):
     _insert_message("bob", "general", "bobs msg")
-    bob_db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    bob_db = sqlite3.connect(str(common_mod.shared_db_path()))
     bob_row = bob_db.execute(
         "SELECT id FROM messages WHERE content='bobs msg'"
     ).fetchone()
@@ -537,26 +537,15 @@ def test_edit_not_found(alice):
     assert resp.status_code == 403
 
 
-def test_edit_propagates_to_other_users(alice_and_bob):
-    ts = time.time()
-    for user in ("alice", "bob"):
-        db = sqlite3.connect(str(common_mod.user_db_path(user)))
-        db.execute(
-            "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
-            ("general", "alice", "original", ts),
-        )
-        db.commit()
-        db.close()
-
-    alice_db = sqlite3.connect(str(common_mod.user_db_path("alice")))
-    msg_id = alice_db.execute("SELECT id FROM messages WHERE ts=?", (ts,)).fetchone()[0]
-    alice_db.close()
+def test_edit_visible_to_other_users(alice_and_bob):
+    """An edit to the single shared row is immediately seen by everyone."""
+    msg_id, _ = _insert_message("alice", "general", "original")
 
     alice_and_bob.post(f"/edit/{msg_id}", data={"text": "edited"})
 
-    bob_db = sqlite3.connect(str(common_mod.user_db_path("bob")))
-    row = bob_db.execute("SELECT content FROM messages WHERE ts=?", (ts,)).fetchone()
-    bob_db.close()
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    row = db.execute("SELECT content FROM messages WHERE id=?", (msg_id,)).fetchone()
+    db.close()
     assert row[0] == "edited"
 
 
@@ -578,7 +567,7 @@ def test_delete_success(alice):
 def test_delete_marks_deleted(alice):
     msg_id, _ = _insert_message("alice", "general", "bye")
     alice.post(f"/delete/{msg_id}")
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT deleted FROM messages WHERE id=?", (msg_id,)).fetchone()
     db.close()
     assert row[0] == 1
@@ -586,9 +575,9 @@ def test_delete_marks_deleted(alice):
 
 def test_delete_forbidden_for_other_user(alice_and_bob):
     ts = time.time()
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("general", "bob", "bob msg", ts),
     )
     db.commit()
@@ -660,40 +649,24 @@ def test_mark_read_returns_204(alice):
     assert resp.status_code == 204
 
 
-def test_mark_read_updates_messages(alice):
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
-    db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
-        ("general", "bob", "unread", time.time()),
-    )
-    db.commit()
-    db.close()
-    alice.post("/mark_read/general")
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
-    row = db.execute(
-        "SELECT read FROM messages WHERE channel='general' AND sender='bob'"
-    ).fetchone()
-    db.close()
-    assert row[0] == 1
-
-
-def test_mark_read_inserts_receipts(alice):
+def test_mark_read_advances_watermark(alice):
     ts = time.time()
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
-    db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
-        ("general", "bob", "msg", ts),
-    )
-    db.commit()
-    db.close()
+    _insert_message("alice", "general", "unread", ts=ts, sender="bob")
     alice.post("/mark_read/general")
-    pdb = sqlite3.connect(presence_mod.PRESENCE_DB)
-    row = pdb.execute(
-        "SELECT reader FROM read_receipts WHERE channel='general' AND msg_ts=?", (ts,)
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    row = db.execute(
+        "SELECT last_read_ts FROM read_state WHERE user='alice' AND channel='general'"
     ).fetchone()
-    pdb.close()
+    db.close()
     assert row is not None
-    assert row[0] == "alice"
+    assert row[0] >= ts
+
+
+def test_mark_read_clears_unread_count(alice):
+    _insert_message("alice", "general", "unread", sender="bob")
+    assert alice.get("/channel_unreads").get_json()["general"] == 1
+    alice.post("/mark_read/general")
+    assert alice.get("/channel_unreads").get_json()["general"] == 0
 
 
 def test_mark_read_no_unread_messages(alice):
@@ -709,18 +682,19 @@ def test_read_receipts_empty(alice):
     assert data == {}
 
 
-def test_read_receipts_returns_data(alice):
+def test_read_receipts_returns_watermarks(alice):
+    # The endpoint returns each user's read watermark; the client derives the
+    # per-message receipts from it.
     ts = time.time()
-    pdb = sqlite3.connect(presence_mod.PRESENCE_DB)
-    pdb.execute(
-        "INSERT INTO read_receipts (channel, msg_ts, reader) VALUES (?,?,?)",
-        ("general", ts, "alice"),
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "INSERT INTO read_state (user, channel, last_read_ts) VALUES (?,?,?)",
+        ("bob", "general", ts),
     )
-    pdb.commit()
-    pdb.close()
+    db.commit()
+    db.close()
     data = alice.get("/read_receipts/general").get_json()
-    assert str(ts) in data
-    assert "alice" in data[str(ts)]
+    assert data == {"bob": ts}
 
 
 # ── GET /users ────────────────────────────────────────────────────────────────
@@ -790,7 +764,7 @@ def test_delete_account_soft(alice):
     assert resp.status_code == 200
     assert resp.get_json()["status"] == "ok"
     # Message still exists but sender renamed
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT sender FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert row[0] == "Deleted User"
@@ -828,16 +802,16 @@ def test_send_appends_to_recent_message(alice):
     import time as _time
 
     ts = _time.time() - 10  # 10 s ago — within 300 s window
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("general", "alice", "first line", ts),
     )
     db.commit()
     db.close()
     resp = alice.post("/send/general", data={"text": "second line"})
     assert resp.status_code == 200
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT content FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert "first line\nsecond line" == row[0]
@@ -847,15 +821,15 @@ def test_send_does_not_append_old_message(alice):
     import time as _time
 
     ts = _time.time() - 400  # older than 300 s
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?,?,?,?,0)",
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
         ("general", "alice", "old message", ts),
     )
     db.commit()
     db.close()
     alice.post("/send/general", data={"text": "new message"})
-    db = sqlite3.connect(str(common_mod.user_db_path("alice")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     rows = db.execute(
         "SELECT content FROM messages WHERE channel='general' ORDER BY ts"
     ).fetchall()
@@ -938,7 +912,7 @@ def test_extract_mentions_empty_text(alice_and_bob):
 
 def test_send_stores_mentions(alice_and_bob):
     alice_and_bob.post("/send/general", data={"text": "ping @bob"})
-    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert json.loads(row[0]) == ["bob"]
@@ -946,7 +920,7 @@ def test_send_stores_mentions(alice_and_bob):
 
 def test_send_no_mentions_stores_null(alice_and_bob):
     alice_and_bob.post("/send/general", data={"text": "plain message"})
-    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert row[0] is None
@@ -962,7 +936,7 @@ def test_edit_updates_mentions(alice_and_bob):
     alice_and_bob.post("/send/general", data={"text": "no ping"})
     msg = alice_and_bob.get("/messages/general?after=0").get_json()[0]
     alice_and_bob.post(f"/edit/{msg['id']}", data={"text": "now @bob"})
-    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert json.loads(row[0]) == ["bob"]
@@ -999,7 +973,7 @@ def test_extract_mentions_everyone_overrides_others(alice_and_bob):
 
 def test_send_everyone_stores_sentinel(alice_and_bob):
     alice_and_bob.post("/send/general", data={"text": "listen up @everyone"})
-    db = sqlite3.connect(str(common_mod.user_db_path("bob")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert json.loads(row[0]) == [chat_mod.MENTION_EVERYONE]

@@ -184,10 +184,10 @@ def test_signup_seeds_history(client):
     _add_user("existing")
     import time
 
-    existing_db = sqlite3.connect(str(common_mod.user_db_path("existing")))
+    existing_db = sqlite3.connect(str(common_mod.shared_db_path()))
     existing_db.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, ?)",
-        ("general", "existing", "hello world", time.time(), 1),
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
+        ("general", "existing", "hello world", time.time()),
     )
     existing_db.commit()
     existing_db.close()
@@ -201,7 +201,7 @@ def test_signup_seeds_history(client):
         },
     )
 
-    new_db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
+    new_db = sqlite3.connect(str(common_mod.shared_db_path()))
     # Count only the seeded history row; the signup also posts a system
     # welcome message into the same channel, which is asserted separately.
     count = new_db.execute(
@@ -224,7 +224,7 @@ def test_signup_posts_welcome_message(client):
         },
     )
 
-    db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute(
         "SELECT channel, sender, content, content_type FROM messages"
         " WHERE content_type = 'system'"
@@ -251,7 +251,7 @@ def test_signup_welcome_reaches_existing_users(client):
         },
     )
 
-    db = sqlite3.connect(str(common_mod.user_db_path("existing")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     row = db.execute(
         "SELECT content FROM messages WHERE content_type = 'system'"
     ).fetchone()
@@ -274,7 +274,7 @@ def test_signup_welcome_no_public_channels(client):
             },
         )
 
-    db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     count = db.execute(
         "SELECT COUNT(*) FROM messages WHERE content_type = 'system'"
     ).fetchone()[0]

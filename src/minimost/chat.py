@@ -57,7 +57,7 @@ import re
 import uuid
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 # From Flask
 from flask import (
@@ -126,8 +126,8 @@ _SQL_AVATAR = "SELECT avatar_file FROM user_settings WHERE username = ?"
 _SQL_ENSURE_SETTINGS = "INSERT OR IGNORE INTO user_settings (username) VALUES (?)"
 _MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
 _INSERT_MSG_SQL = (
-    "INSERT INTO messages (channel, sender, content, content_type, ts, read)"
-    " VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO messages (channel, sender, content, content_type, ts)"
+    " VALUES (?, ?, ?, ?, ?)"
 )
 
 _HERE = Path(__file__).resolve().parent
@@ -272,34 +272,104 @@ def get_private_channel_members(channel_id: int) -> List[str]:
     return [r[0] for r in rows]
 
 
-def get_db(username: str):
-    """Open and return a SQLite connection to a user's message database.
+def get_db(username: Optional[str] = None):
+    """Open and return a connection to the shared message database.
 
     The connection is configured with:
 
-    * **WAL journal mode** — allows concurrent reads during writes, which is
-      important when multiple Gunicorn workers serve different users
-      simultaneously.
+    * **WAL journal mode** — readers (the 500 ms pollers) never block the single
+      writer, so many users can read concurrently while one message is written.
     * **``row_factory = sqlite3.Row``** — rows can be accessed by column name
       (e.g. ``row["sender"]``) in addition to integer index.
 
     The caller is responsible for closing the returned connection.
 
-    :param username: The account username whose database should be opened.
-    :type username: str
-    :returns: An open SQLite database connection.
+    :param username: Ignored. Retained so existing call sites that passed a
+        username (from the former per-user-database model) keep working.
+    :returns: An open SQLite database connection to the shared database.
     :rtype: sqlite3.Connection
 
     Example::
 
-        db = get_db("alice")
+        db = get_db()
         rows = db.execute("SELECT * FROM messages WHERE channel = ?", ("general",)).fetchall()
         db.close()
     """
-    db = sqlite3.connect(str(common.user_db_path(username)))
+    db = sqlite3.connect(str(common.shared_db_path()))
     db.execute(_WAL)
     db.row_factory = sqlite3.Row
     return db
+
+
+def _advance_read(db, user: str, channel: str, ts: float) -> None:
+    """Move *user*'s read watermark for *channel* forward to at least *ts*.
+
+    The watermark only ever advances — a stale concurrent write can't rewind it
+    — so unread counts and read receipts stay monotonic.
+    """
+    db.execute(
+        "INSERT INTO read_state (user, channel, last_read_ts) VALUES (?, ?, ?) "
+        "ON CONFLICT(user, channel) DO UPDATE SET "
+        "last_read_ts = MAX(last_read_ts, excluded.last_read_ts)",
+        (user, channel, ts),
+    )
+
+
+def _history_start(channel: str, user: str):
+    """Return the timestamp before which *user* may not see *channel*'s history.
+
+    Private-channel members added after creation get a ``history_start_ts`` so
+    they don't see the backlog. Returns ``None`` when there is no cutoff (public
+    channels, DMs, founding members).
+    """
+    if not channel.startswith("private:"):
+        return None
+    try:
+        channel_id = int(channel.split(":")[1])
+    except (ValueError, IndexError):
+        return None
+    pdb = _get_private_db()
+    row = pdb.execute(
+        "SELECT history_start_ts FROM private_channel_members "
+        "WHERE channel_id = ? AND username = ?",
+        (channel_id, user),
+    ).fetchone()
+    pdb.close()
+    return row["history_start_ts"] if row else None
+
+
+def _search_access(user):
+    """Build the channel-access filter for a shared-database search.
+
+    Returns ``(clause, params, history_starts)`` where *clause* restricts a
+    ``messages m`` query to channels *user* may read — public channels, the
+    private channels they belong to, and their own DMs — and *history_starts*
+    maps a private channel to the timestamp before which the user must not see
+    its backlog (so late joiners can't search history from before they joined).
+    """
+    allowed = list(CHANNELS)
+    history_starts = {}
+    pdb = _get_private_db()
+    rows = pdb.execute(
+        "SELECT channel_id, history_start_ts FROM private_channel_members "
+        "WHERE username = ?",
+        (user,),
+    ).fetchall()
+    pdb.close()
+    for r in rows:
+        ch = f"private:{r['channel_id']}"
+        allowed.append(ch)
+        if r["history_start_ts"] is not None:
+            history_starts[ch] = r["history_start_ts"]
+
+    placeholders = ",".join("?" * len(allowed)) if allowed else "NULL"
+    clause = (
+        f"(m.channel IN ({placeholders})"
+        " OR m.channel LIKE 'dm:' || ? || ':%'"
+        " OR m.channel LIKE 'dm:%:' || ?"
+        " OR m.channel LIKE 'dm:%:' || ? || ':%')"
+    )
+    return clause, [*allowed, user, user, user], history_starts
 
 
 def all_users() -> List[str]:
@@ -465,10 +535,17 @@ def channel_unreads():
     :rtype: flask.Response (application/json)
     """
     user = session["user"]
-    db = get_db(user)
+    db = get_db()
     placeholders = ",".join("?" * len(CHANNELS))
-    sql = f"SELECT channel, COUNT(*) as count FROM messages WHERE channel IN ({placeholders}) AND sender != ? AND read = 0 AND deleted = 0 GROUP BY channel"  # nosec B608  # fmt: skip
-    rows = db.execute(sql, (*CHANNELS, user)).fetchall()
+    sql = (
+        "SELECT m.channel AS channel, COUNT(*) AS count "  # nosec B608
+        "FROM messages m "
+        "LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel "
+        f"WHERE m.channel IN ({placeholders}) AND m.sender != ? AND m.deleted = 0 "
+        "AND m.ts > COALESCE(r.last_read_ts, 0) "
+        "GROUP BY m.channel"
+    )
+    rows = db.execute(sql, (user, *CHANNELS, user)).fetchall()
     db.close()
     result = dict.fromkeys(CHANNELS, 0)
     for row in rows:
@@ -502,26 +579,24 @@ def unread_count():
     :rtype: flask.Response (application/json)
     """
     user = session["user"]
-    db = get_db(user)
+    db = get_db()
 
     row = db.execute(
         """
-        SELECT
-            COALESCE(SUM(
-                CASE
-                    WHEN read = 0 AND sender != ?
-                    THEN 1 ELSE 0
-                END
-            ), 0) AS unread
-        FROM messages
-        WHERE channel LIKE 'dm:%'
+        SELECT COUNT(*) AS unread
+        FROM messages m
+        LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel
+        WHERE m.channel LIKE 'dm:%'
+          AND m.sender != ?
+          AND m.deleted = 0
+          AND m.ts > COALESCE(r.last_read_ts, 0)
           AND (
-                channel LIKE 'dm:' || ? || ':%'
-             OR channel LIKE 'dm:%:' || ?
-             OR channel LIKE 'dm:%:' || ? || ':%'
+                m.channel LIKE 'dm:' || ? || ':%'
+             OR m.channel LIKE 'dm:%:' || ?
+             OR m.channel LIKE 'dm:%:' || ? || ':%'
           )
     """,
-        (user, user, user, user),
+        (user, user, user, user, user),
     ).fetchone()
 
     count = row["unread"]
@@ -555,10 +630,7 @@ def dms():
     :rtype: flask.Response (application/json)
     """
     user = session["user"]
-    db = get_db(user)
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS dm_hidden (channel TEXT PRIMARY KEY, hidden_ts REAL NOT NULL)"
-    )
+    db = get_db()
 
     rows = db.execute(
         """
@@ -567,12 +639,14 @@ def dms():
             MAX(m.ts) AS last_ts,
             COALESCE(SUM(
                 CASE
-                    WHEN m.read = 0 AND m.sender != ?
+                    WHEN m.sender != ? AND m.deleted = 0
+                         AND m.ts > COALESCE(rs.last_read_ts, 0)
                     THEN 1 ELSE 0
                 END
             ), 0) AS unread
         FROM messages m
-        LEFT JOIN dm_hidden dh ON dh.channel = m.channel
+        LEFT JOIN dm_hidden dh ON dh.user = ? AND dh.channel = m.channel
+        LEFT JOIN read_state rs ON rs.user = ? AND rs.channel = m.channel
         WHERE m.channel LIKE 'dm:%'
           AND (
                 m.channel LIKE 'dm:' || ? || ':%'
@@ -583,7 +657,7 @@ def dms():
         HAVING dh.hidden_ts IS NULL OR MAX(m.ts) > dh.hidden_ts
         ORDER BY last_ts DESC
     """,
-        (user, user, user, user),
+        (user, user, user, user, user, user),
     ).fetchall()
 
     db.close()
@@ -625,13 +699,10 @@ def close_dm():
     if user not in dm_channel.split(":")[1:]:
         return "forbidden", 403
 
-    db = get_db(user)
+    db = get_db()
     db.execute(
-        "CREATE TABLE IF NOT EXISTS dm_hidden (channel TEXT PRIMARY KEY, hidden_ts REAL NOT NULL)"
-    )
-    db.execute(
-        "INSERT OR REPLACE INTO dm_hidden (channel, hidden_ts) VALUES (?, ?)",
-        (dm_channel, time()),
+        "INSERT OR REPLACE INTO dm_hidden (user, channel, hidden_ts) VALUES (?, ?, ?)",
+        (user, dm_channel, time()),
     )
     db.commit()
     db.close()
@@ -863,21 +934,24 @@ def delete_avatar():
     return "ok"
 
 
-def _apply_delete_to_messages(all_usernames, user, delete_type):
-    for recipient in all_usernames:
-        udb_path = common.user_db_path(recipient)
-        if not udb_path.exists():
-            continue
-        udb = sqlite3.connect(str(udb_path))
-        udb.execute(_WAL)
-        if delete_type == "soft":
-            udb.execute(
-                "UPDATE messages SET sender = 'Deleted User' WHERE sender = ?", (user,)
-            )
-        else:
-            udb.execute("DELETE FROM messages WHERE sender = ?", (user,))
-        udb.commit()
-        udb.close()
+def _apply_delete_to_messages(user, delete_type):
+    """Anonymise (soft) or remove (hard) a departing user's messages.
+
+    Acts on the single shared ``messages`` table. The FTS index follows
+    automatically via its triggers (rename re-indexes; delete removes).
+    """
+    db = get_db()
+    if delete_type == "soft":
+        db.execute(
+            "UPDATE messages SET sender = 'Deleted User' WHERE sender = ?", (user,)
+        )
+    else:
+        db.execute("DELETE FROM messages WHERE sender = ?", (user,))
+        db.execute("DELETE FROM reactions WHERE reactor = ?", (user,))
+    db.execute("DELETE FROM read_state WHERE user = ?", (user,))
+    db.execute("DELETE FROM dm_hidden WHERE user = ?", (user,))
+    db.commit()
+    db.close()
 
 
 @chat_bp.route("/delete_account", methods=["POST"])
@@ -923,38 +997,27 @@ def delete_account():
     if not row or not check_password_hash(row[0], password):
         return jsonify({"error": "Incorrect password."}), 403
 
-    # Collect all usernames while the account still exists
     adb = sqlite3.connect(auth.AUTH_DB)
     adb.execute(_WAL)
-    all_usernames = [r[0] for r in adb.execute("SELECT username FROM users").fetchall()]
     avatar_row = adb.execute(
         "SELECT avatar_file FROM user_settings WHERE username = ?", (user,)
     ).fetchone()
     adb.close()
 
-    # Walk every user DB to update or remove messages from this sender
-    _apply_delete_to_messages(all_usernames, user, delete_type)
+    # Anonymise or remove the user's messages in the shared database, and drop
+    # their read/hidden state.
+    _apply_delete_to_messages(user, delete_type)
 
     # Clean presence.db for both delete types — removes the user from private
-    # channel membership so they are no longer included as a message recipient.
+    # channel membership so they are no longer treated as a member.
     pdb = sqlite3.connect(presence.PRESENCE_DB)
     pdb.execute(_WAL)
     pdb.execute("DELETE FROM presence WHERE user = ?", (user,))
     pdb.execute("DELETE FROM typing WHERE user = ?", (user,))
-    pdb.execute("DELETE FROM read_receipts WHERE reader = ?", (user,))
-    pdb.execute("DELETE FROM message_reactions WHERE reactor = ?", (user,))
     pdb.execute("DELETE FROM private_channel_members WHERE username = ?", (user,))
     pdb.execute("DELETE FROM call_participants WHERE username = ?", (user,))
     pdb.commit()
     pdb.close()
-
-    if delete_type == "hard":
-        # Delete the user's own DB file
-        user_db = common.user_db_path(user)
-        try:
-            user_db.unlink()
-        except FileNotFoundError:
-            pass
 
     # Delete avatar file
     if avatar_row and avatar_row[0]:
@@ -1072,6 +1135,12 @@ def messages(channel):
     :rtype: flask.Response (application/json)
     """
     user = session["user"]
+
+    # All messages now live in one shared database, so the channel-access check
+    # that per-user databases gave us implicitly must be made explicit here.
+    if not is_valid_channel(channel, user):
+        return "forbidden", 403
+
     after_raw = request.args.get("after", "0")
     if after_raw.lower() == "nan":
         after = 0.0
@@ -1083,7 +1152,11 @@ def messages(channel):
         except (ValueError, TypeError):
             after = 0.0
 
-    db = get_db(user)
+    # Members added to a private channel after creation don't see the backlog.
+    hist_start = _history_start(channel, user)
+    after = max(after, hist_start) if hist_start is not None else after
+
+    db = get_db()
     rows = db.execute(
         """
         SELECT
@@ -1098,7 +1171,6 @@ def messages(channel):
             deleted,
             deleted_ts,
             reply_to_id,
-            reactions,
             reactions_ts,
             mentions
         FROM messages
@@ -1111,83 +1183,76 @@ def messages(channel):
     """,
         (channel, after, after, after, after),
     ).fetchall()
-    db.close()
 
     result = [dict(r) for r in rows]
 
     if result:
-        ts_list = [r["ts"] for r in result]
-        placeholders = ",".join("?" * len(ts_list))
-        pdb = sqlite3.connect(presence.PRESENCE_DB)
-        pdb.execute(_WAL)
-        rx_rows = pdb.execute(
-            f"SELECT msg_ts, emoji, reactor FROM message_reactions WHERE channel = ? AND msg_ts IN ({placeholders})",  # nosec B608
-            [channel] + ts_list,
+        ids = [r["id"] for r in result]
+        placeholders = ",".join("?" * len(ids))
+        rx_rows = db.execute(
+            f"SELECT message_id, emoji, reactor FROM reactions WHERE message_id IN ({placeholders})",  # nosec B608
+            ids,
         ).fetchall()
-        pdb.close()
 
         rx_map: dict = {}
-        for msg_ts, emoji, reactor in rx_rows:
-            rx_map.setdefault(msg_ts, {}).setdefault(emoji, []).append(reactor)
+        for message_id, emoji, reactor in rx_rows:
+            rx_map.setdefault(message_id, {}).setdefault(emoji, []).append(reactor)
 
         for msg in result:
-            reactions_dict = rx_map.get(msg["ts"])
+            reactions_dict = rx_map.get(msg["id"])
             msg["reactions"] = json.dumps(reactions_dict) if reactions_dict else None
 
+    db.close()
     return jsonify(result)
 
 
-def _insert_for_recipient(
+def _insert_message(
     db, channel, sender, text, ts, reply_to_id, filenames, mentions=None
 ):
+    """Insert a message (and/or its file attachments) as canonical rows.
+
+    One row per text body and one per uploaded file, all in the single shared
+    database. Does not commit or close — the caller owns the transaction.
+    """
     if text:
         db.execute(
-            "INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id, mentions)"
-            " VALUES (?, ?, ?, NULL, ?, 0, ?, ?)",
+            "INSERT INTO messages (channel, sender, content, filename, ts, reply_to_id, mentions)"
+            " VALUES (?, ?, ?, NULL, ?, ?, ?)",
             (channel, sender, text, ts, reply_to_id, mentions),
         )
     for filename in filenames:
         db.execute(
-            "INSERT INTO messages (channel, sender, content, filename, ts, read, reply_to_id)"
-            " VALUES (?, ?, '', ?, ?, 0, ?)",
+            "INSERT INTO messages (channel, sender, content, filename, ts, reply_to_id)"
+            " VALUES (?, ?, '', ?, ?, ?)",
             (channel, sender, filename, ts, reply_to_id),
         )
-    db.commit()
-    db.close()
 
 
-def _try_append_message(channel, sender, text, ts, recipients, filenames, reply_to_id):
+def _try_append_message(db, channel, sender, text, ts, filenames, reply_to_id):
     """Append text to the sender's previous message if within the 300 s window.
 
-    Returns True and commits if appended; returns False if a new message is needed.
+    Returns True if appended; returns False if a new message is needed. Operates
+    on the single canonical row, so the merge is one UPDATE. Does not commit.
     """
     if not text or filenames or reply_to_id is not None:
         return False
-    db = get_db(sender)
     prev = db.execute(
         """
-        SELECT ts, content FROM messages
+        SELECT id, ts, content FROM messages
         WHERE channel = ? AND sender = ? AND deleted = 0
           AND filename IS NULL AND reply_to_id IS NULL
         ORDER BY ts DESC LIMIT 1
         """,
         (channel, sender),
     ).fetchone()
-    db.close()
     if not prev or (ts - prev["ts"]) >= 300:
         return False
     combined = prev["content"] + "\n" + text
-    prev_ts = prev["ts"]
     mentions = _mentions_json(combined, channel)
-    for r in recipients:
-        db = get_db(r)
-        db.execute(
-            "UPDATE messages SET content = ?, edited_ts = ?, mentions = ?"
-            " WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL",
-            (combined, ts, mentions, channel, sender, prev_ts),
-        )
-        db.commit()
-        db.close()
+    db.execute(
+        "UPDATE messages SET content = ?, edited_ts = ?, mentions = ? WHERE id = ?",
+        (combined, ts, mentions, prev["id"]),
+    )
     return True
 
 
@@ -1210,15 +1275,10 @@ def post_welcome_message(new_user: str) -> None:
         return
     channel = CHANNELS[0]
     content = f"Welcome to MiniMost, {new_user}! \U0001f44b Say hello \U0001f44b"
-    now = time()
-    for recipient in channel_users(channel):
-        db = get_db(recipient)
-        db.execute(
-            _INSERT_MSG_SQL,
-            (channel, "system", content, "system", now, 1),
-        )
-        db.commit()
-        db.close()
+    db = get_db()
+    db.execute(_INSERT_MSG_SQL, (channel, "system", content, "system", time()))
+    db.commit()
+    db.close()
 
 
 @chat_bp.route("/send/<channel>", methods=["POST"])
@@ -1229,7 +1289,7 @@ def send(channel):
     Route: ``POST /send/<channel>``
 
     Requires authentication.  Validates the channel, processes any uploaded
-    images, then inserts the message into every recipient's database.
+    images, then inserts the message into the shared message database.
 
     **Form fields:**
 
@@ -1244,21 +1304,16 @@ def send(channel):
     At least one of *text* or *files* must be non-empty; a request with
     neither returns ``400 empty``.
 
-    **Message propagation:**
+    **Message storage:**
 
-    MiniMost does not use a shared messages table.  Instead, each message is
-    written into **every recipient's individual database** by iterating over
-    :func:`channel_users`.  This means:
+    Each message is one canonical row in the shared ``messages`` table:
 
-    * For a public channel with *N* users, *N* separate ``INSERT`` statements
-      are executed.
-    * For each uploaded image, an additional ``INSERT`` per recipient is
-      executed (one row per file, with ``content = ''`` and ``filename``
-      set to the UUID-based filename).
-    * All inserts for a given recipient are committed in a single transaction.
-
-    The sender is always added to the recipient list so their own message
-    appears in their database (marked ``read = 0`` like everyone else's).
+    * A text body becomes one row; each uploaded image becomes an additional
+      row (``content = ''`` with ``filename`` set to the UUID-based filename).
+    * Consecutive short messages from the same sender within 300 s are merged
+      into the previous row (see :func:`_try_append_message`).
+    * The sender's read watermark for the channel is advanced to this message,
+      so their own message never counts as unread.
 
     **File naming:**
 
@@ -1274,8 +1329,6 @@ def send(channel):
     :raises: ``403 forbidden`` — if the user is not permitted to post to the
         channel.
     :raises: ``400 empty`` — if neither text nor valid files were provided.
-    :raises: ``400 no recipients`` — if the recipient list is empty (should
-        not happen in normal operation).
     """
     sender = session["user"]
 
@@ -1300,23 +1353,20 @@ def send(channel):
         return "empty", 400
 
     ts = time()
-    recipients = channel_users(channel)
-    if sender not in recipients:
-        recipients.append(sender)
-
-    if not recipients:  # pragma: no cover
-        return "no recipients", 400
-
-    if _try_append_message(
-        channel, sender, text, ts, recipients, filenames, reply_to_id
-    ):
-        return "ok"
-
-    mentions = _mentions_json(text, channel)
-    for r in recipients:
-        _insert_for_recipient(
-            get_db(r), channel, sender, text, ts, reply_to_id, filenames, mentions
-        )
+    db = get_db()
+    try:
+        if not _try_append_message(
+            db, channel, sender, text, ts, filenames, reply_to_id
+        ):
+            mentions = _mentions_json(text, channel)
+            _insert_message(
+                db, channel, sender, text, ts, reply_to_id, filenames, mentions
+            )
+        # The sender has implicitly read up to their own message.
+        _advance_read(db, sender, channel, ts)
+        db.commit()
+    finally:
+        db.close()
 
     return "ok"
 
@@ -1344,8 +1394,7 @@ def get_message(msg_id):
     :raises: ``404 not found`` — if no message with *msg_id* exists in the
         current user's database.
     """
-    user = session["user"]
-    db = get_db(user)
+    db = get_db()
     row = db.execute(
         "SELECT id, sender, content, filename, deleted FROM messages WHERE id = ?",
         (msg_id,),
@@ -1476,9 +1525,24 @@ def search_messages():
     if sender:
         clauses.append("m.sender = ? COLLATE NOCASE")
         params.append(sender)
+
+    # Channel access control. With one shared database the search must be
+    # confined to channels the user may read — a single explicit channel they
+    # can access, or otherwise the full set of channels visible to them.
+    history_starts = {}
     if channel:
+        if not is_valid_channel(channel, user):
+            return jsonify([])
         clauses.append("m.channel = ?")
         params.append(channel)
+        hs = _history_start(channel, user)
+        if hs is not None:
+            history_starts[channel] = hs
+    else:
+        access_clause, access_params, history_starts = _search_access(user)
+        clauses.append(access_clause)
+        params.extend(access_params)
+
     if start_ts is not None:
         clauses.append("m.ts >= ?")
         params.append(start_ts)
@@ -1514,10 +1578,20 @@ def search_messages():
             "WHERE " + " AND ".join(clauses) + " ORDER BY m.ts DESC LIMIT 50"
         )
 
-    db = get_db(user)
+    db = get_db()
     cur = db.execute(sql, params)
     results = [dict(r) for r in cur.fetchall()]
     db.close()
+
+    # Hide private-channel backlog from members who joined later.
+    if history_starts:
+        results = [
+            r
+            for r in results
+            if r["channel"] not in history_starts
+            or r["ts"] >= history_starts[r["channel"]]
+        ]
+
     return jsonify(results)
 
 
@@ -1559,34 +1633,24 @@ def edit(msg_id):
     editor = session["user"]
     new_text = request.form.get("text", "").strip()
 
-    db = get_db(editor)
+    db = get_db()
     row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
-    db.close()
 
     if not row or row["sender"] != editor:
+        db.close()
         return "forbidden", 403
 
-    channel = row["channel"]
-    ts = row["ts"]
-
-    recipients = channel_users(channel)
-    if editor not in recipients:
-        recipients.append(editor)
-
-    edited_time = time()
-    mentions = _mentions_json(new_text, channel)
-    for r in recipients:
-        db = get_db(r)
-        db.execute(
-            """
-            UPDATE messages
-            SET content = ?, edited = 1, edited_ts = ?, mentions = ?
-            WHERE channel = ? AND sender = ? AND ts = ? AND filename IS NULL
-            """,
-            (new_text, edited_time, mentions, channel, editor, ts),
-        )
-        db.commit()
-        db.close()
+    mentions = _mentions_json(new_text, row["channel"])
+    db.execute(
+        """
+        UPDATE messages
+        SET content = ?, edited = 1, edited_ts = ?, mentions = ?
+        WHERE id = ? AND filename IS NULL
+        """,
+        (new_text, time(), mentions, msg_id),
+    )
+    db.commit()
+    db.close()
 
     return "ok"
 
@@ -1625,33 +1689,19 @@ def delete_message(msg_id):
     """
     deleter = session["user"]
 
-    db = get_db(deleter)
+    db = get_db()
     row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
-    db.close()
 
     if not row or row["sender"] != deleter:
+        db.close()
         return "forbidden", 403
 
-    channel = row["channel"]
-    ts = row["ts"]
-    deleted_time = time()
-
-    recipients = channel_users(channel)
-    if deleter not in recipients:
-        recipients.append(deleter)
-
-    for r in recipients:
-        db = get_db(r)
-        db.execute(
-            """
-            UPDATE messages
-            SET deleted = 1, deleted_ts = ?
-            WHERE channel = ? AND sender = ? AND ts = ?
-            """,
-            (deleted_time, channel, deleter, ts),
-        )
-        db.commit()
-        db.close()
+    db.execute(
+        "UPDATE messages SET deleted = 1, deleted_ts = ? WHERE id = ?",
+        (time(), msg_id),
+    )
+    db.commit()
+    db.close()
 
     return "ok"
 
@@ -2221,62 +2271,44 @@ def react(msg_id):
     if reaction not in VALID_REACTIONS:
         return "invalid reaction", 400
 
-    db = get_db(user)
+    db = get_db()
     row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
-    db.close()
 
     if not row:
+        db.close()
         return "not found", 404
 
-    channel = row["channel"]
-    sender = row["sender"]
-    ts = row["ts"]
-
-    # Toggle reaction atomically in the shared presence DB to eliminate
-    # the read-modify-write race that per-user DBs cannot prevent.
-    pdb = sqlite3.connect(presence.PRESENCE_DB)
-    pdb.execute(_WAL)
-    existing = pdb.execute(
-        "SELECT 1 FROM message_reactions WHERE channel=? AND msg_ts=? AND emoji=? AND reactor=?",
-        (channel, ts, reaction, user),
+    # Toggle the reaction on the canonical message row. Reactions key on the real
+    # message id, so this is a single atomic insert/delete — no per-user fan-out
+    # and no read-modify-write race.
+    existing = db.execute(
+        "SELECT 1 FROM reactions WHERE message_id=? AND emoji=? AND reactor=?",
+        (msg_id, reaction, user),
     ).fetchone()
 
     if existing:
-        pdb.execute(
-            "DELETE FROM message_reactions WHERE channel=? AND msg_ts=? AND emoji=? AND reactor=?",
-            (channel, ts, reaction, user),
+        db.execute(
+            "DELETE FROM reactions WHERE message_id=? AND emoji=? AND reactor=?",
+            (msg_id, reaction, user),
         )
     else:
-        pdb.execute(
-            "INSERT INTO message_reactions (channel, msg_ts, emoji, reactor) VALUES (?, ?, ?, ?)",
-            (channel, ts, reaction, user),
+        db.execute(
+            "INSERT INTO reactions (message_id, emoji, reactor) VALUES (?, ?, ?)",
+            (msg_id, reaction, user),
         )
 
-    rx_rows = pdb.execute(
-        "SELECT emoji, reactor FROM message_reactions WHERE channel=? AND msg_ts=?",
-        (channel, ts),
+    # Bump reactions_ts so the polling query re-sends this row to every viewer.
+    db.execute("UPDATE messages SET reactions_ts=? WHERE id=?", (time(), msg_id))
+
+    rx_rows = db.execute(
+        "SELECT emoji, reactor FROM reactions WHERE message_id=?", (msg_id,)
     ).fetchall()
-    pdb.commit()
-    pdb.close()
+    db.commit()
+    db.close()
 
     reactions = {}
     for emoji, reactor in rx_rows:
         reactions.setdefault(emoji, []).append(reactor)
-
-    # Bump reactions_ts in each user DB so the polling query picks up the change.
-    reactions_ts = time()
-    recipients = channel_users(channel)
-    if user not in recipients:
-        recipients.append(user)
-
-    for r in recipients:
-        udb = get_db(r)
-        udb.execute(
-            "UPDATE messages SET reactions_ts=? WHERE channel=? AND sender=? AND ts=?",
-            (reactions_ts, channel, sender, ts),
-        )
-        udb.commit()
-        udb.close()
 
     return jsonify(reactions)
 
@@ -2316,30 +2348,18 @@ def mark_read(channel):
     :rtype: flask.Response
     """
     user = session["user"]
-    db = get_db(user)
+    db = get_db()
 
-    unread_rows = db.execute(
-        "SELECT ts FROM messages WHERE channel = ? AND sender != ? AND read = 0",
-        (channel, user),
-    ).fetchall()
-
-    db.execute(
-        "UPDATE messages SET read = 1 WHERE channel = ? AND sender != ?",
-        (channel, user),
-    )
-
-    db.commit()
+    # Advance the read watermark to the newest message in the channel. Unread
+    # counts and read receipts are both derived from this single per-(user,
+    # channel) row, so there is no per-message write.
+    row = db.execute(
+        "SELECT MAX(ts) AS max_ts FROM messages WHERE channel = ?", (channel,)
+    ).fetchone()
+    if row and row["max_ts"] is not None:
+        _advance_read(db, user, channel, row["max_ts"])
+        db.commit()
     db.close()
-
-    if unread_rows:
-        pdb = sqlite3.connect(presence.PRESENCE_DB)
-        pdb.execute(_WAL)
-        pdb.executemany(
-            "INSERT OR IGNORE INTO read_receipts (channel, msg_ts, reader) VALUES (?, ?, ?)",
-            [(channel, row[0], user) for row in unread_rows],
-        )
-        pdb.commit()
-        pdb.close()
 
     return "", 204
 
@@ -2347,39 +2367,32 @@ def mark_read(channel):
 @chat_bp.route("/read_receipts/<channel>", methods=["GET"])
 @auth.login_required
 def read_receipts(channel):
-    """Return read receipts for all messages in a channel.
+    """Return each member's read watermark for a channel.
 
     Route: ``GET /read_receipts/<channel>``
 
-    Requires authentication.  Queries ``presence.db::read_receipts`` and
-    returns a mapping of message timestamps to the list of users who have
-    read each message.
+    Requires authentication.  Returns the ``read_state`` watermarks for the
+    channel: one ``last_read_ts`` per user. A user has read a given message iff
+    their watermark is ``>=`` that message's ``ts``, so the client derives the
+    per-message ``✓`` receipts itself from the message timestamps it already
+    holds.
 
-    The message timestamp (``msg_ts``) is used as the key (as a string)
-    rather than the message ``id`` because IDs differ across per-user
-    databases while timestamps are shared.
-
-    The client polls this endpoint every 3 seconds when viewing a channel
-    and renders ``✓`` indicators with a tooltip listing the readers.
+    This keeps the 3-second poll's payload and work proportional to the number
+    of members (O(users)) rather than the channel's full history
+    (O(messages × users)), which is what returning a per-message map would cost.
 
     :param channel: The channel name or DM identifier.
     :type channel: str
-    :returns: JSON object mapping message timestamp strings to lists of
-        reader usernames, e.g.
-        ``{"1716000000.123": ["alice", "bob"], "1716000001.456": ["alice"]}``.
+    :returns: JSON object mapping each reader's username to their read watermark
+        (epoch seconds), e.g. ``{"alice": 1716000001.4, "bob": 1716000000.1}``.
     :rtype: flask.Response (application/json)
     """
-    pdb = sqlite3.connect(presence.PRESENCE_DB)
-    pdb.execute(_WAL)
-    rows = pdb.execute(
-        "SELECT msg_ts, reader FROM read_receipts WHERE channel = ?", (channel,)
+    db = get_db()
+    states = db.execute(
+        "SELECT user, last_read_ts FROM read_state WHERE channel = ?", (channel,)
     ).fetchall()
-    pdb.close()
-
-    result = {}
-    for msg_ts, reader in rows:
-        result.setdefault(str(msg_ts), []).append(reader)
-    return jsonify(result)
+    db.close()
+    return jsonify({s["user"]: s["last_read_ts"] for s in states})
 
 
 @chat_bp.route("/users", methods=["GET"])
@@ -2537,12 +2550,15 @@ def list_private_channels():
     pdb.close()
 
     result = []
-    db = get_db(user)
+    db = get_db()
     for row in rows:
         ch = f"private:{row['id']}"
         count = db.execute(
-            "SELECT COUNT(*) AS c FROM messages WHERE channel = ? AND sender != ? AND read = 0 AND deleted = 0",
-            (ch, user),
+            "SELECT COUNT(*) AS c FROM messages m "
+            "LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel "
+            "WHERE m.channel = ? AND m.sender != ? AND m.deleted = 0 "
+            "AND m.ts > COALESCE(r.last_read_ts, 0)",
+            (user, ch, user),
         ).fetchone()["c"]
         result.append(
             {
@@ -2587,17 +2603,12 @@ def rename_private_channel(channel_id):
     pdb.commit()
     pdb.close()
 
-    now = time()
     ch = f"private:{channel_id}"
     sys_content = f'{user} has renamed the channel to "{name}"'
-    for recipient in get_private_channel_members(channel_id):
-        db = get_db(recipient)
-        db.execute(
-            _INSERT_MSG_SQL,
-            (ch, "system", sys_content, "system", now, 1),
-        )
-        db.commit()
-        db.close()
+    db = get_db()
+    db.execute(_INSERT_MSG_SQL, (ch, "system", sys_content, "system", time()))
+    db.commit()
+    db.close()
 
     return "ok"
 
@@ -2643,15 +2654,10 @@ def add_private_channel_member(channel_id):
     pdb.close()
 
     sys_content = f"{user} added {username} to this channel"
-    all_members = members + [username]
-    for recipient in all_members:
-        db = get_db(recipient)
-        db.execute(
-            _INSERT_MSG_SQL,
-            (ch, "system", sys_content, "system", now, 1),
-        )
-        db.commit()
-        db.close()
+    db = get_db()
+    db.execute(_INSERT_MSG_SQL, (ch, "system", sys_content, "system", now))
+    db.commit()
+    db.close()
 
     return "ok"
 
@@ -2684,17 +2690,12 @@ def leave_private_channel(channel_id):
 
     remaining = [m for m in members if m != user]
     if remaining:
-        now = time()
         ch = f"private:{channel_id}"
         sys_content = f"{user} has left the channel"
-        for recipient in remaining:
-            db = get_db(recipient)
-            db.execute(
-                _INSERT_MSG_SQL,
-                (ch, "system", sys_content, "system", now, 1),
-            )
-            db.commit()
-            db.close()
+        db = get_db()
+        db.execute(_INSERT_MSG_SQL, (ch, "system", sys_content, "system", time()))
+        db.commit()
+        db.close()
 
     return "ok"
 

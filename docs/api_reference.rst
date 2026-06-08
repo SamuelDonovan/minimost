@@ -129,7 +129,7 @@ Messages
         - Description
       * - ``id``
         - integer
-        - Database primary key (in the current user's database).
+        - Database primary key (shared message store).
       * - ``channel``
         - string
         - Channel or DM identifier.
@@ -159,7 +159,7 @@ Messages
         - Timestamp of deletion.
       * - ``reply_to_id``
         - integer or null
-        - ID of the parent message (in the same user's database).
+        - ID of the parent message (shared message store).
       * - ``reactions``
         - string (JSON) or null
         - JSON-encoded object mapping emoji names to lists of reactor
@@ -201,7 +201,7 @@ Messages
 
    **Requires authentication.**
 
-   :param int msg_id: Message primary key in the current user's database.
+   :param int msg_id: Message primary key.
    :>json integer id: Message ID.
    :>json string sender: Author's username.
    :>json string content: Message text.
@@ -215,7 +215,7 @@ Messages
 
    **Requires authentication.** Only the original sender can edit.
 
-   :param int msg_id: Message ID in the current user's database.
+   :param int msg_id: Message ID.
    :form text: Replacement message text. Mentions are re-extracted from the new
        text and the ``mentions`` column is updated accordingly.
    :status 200: Returns ``"ok"``.
@@ -227,17 +227,25 @@ Messages
 
    **Requires authentication.** Only the original sender can delete.
 
-   :param int msg_id: Message ID in the current user's database.
+   :param int msg_id: Message ID.
    :status 200: Returns ``"ok"``.
    :status 403: Not the sender, or message not found.
 
 .. http:get:: /search_messages
 
-   Search message history by keyword.
+   Search message history. The keyword is a case-insensitive **substring**
+   match served by the trigram full-text index, so it stays fast regardless of
+   history size. Results are confined to channels the caller may read (public
+   channels, private channels they belong to, and their own DMs). At least one
+   filter must be supplied; with none, an empty array is returned.
 
    **Requires authentication.**
 
    :query string q: Search term (substring match).
+   :query string from: Restrict to a sender (case-insensitive).
+   :query string channel: Restrict to a single channel the caller can access.
+   :query float start: Only messages at or after this Unix timestamp.
+   :query float end: Only messages before this Unix timestamp.
    :>json array: Up to 50 matching message objects (fields: ``id``,
        ``channel``, ``sender``, ``content``, ``ts``), newest first.
 
@@ -250,7 +258,7 @@ Reactions
 
    **Requires authentication.**
 
-   :param int msg_id: Message ID in the current user's database.
+   :param int msg_id: Message ID.
    :form reaction: Emoji name (e.g. ``thumbsup``, ``heart``). Must be a
        valid reaction name from the ``VALID_REACTIONS`` set.
    :>json object: Current reactions map after the toggle, e.g.
@@ -392,30 +400,35 @@ Read Receipts
 
 .. http:post:: /mark_read/(channel)
 
-   Mark all messages in a channel as read.
+   Mark a channel as read by advancing the caller's read watermark to its
+   newest message.
 
    **Requires authentication.**
 
    :param channel: Channel or DM identifier.
-   :status 204: Messages marked as read.
+   :status 204: Watermark advanced.
 
 .. http:get:: /read_receipts/(channel)
 
-   Return read receipts for all messages in a channel.
+   Return each member's read watermark for a channel. A user has read a message
+   iff their watermark is ``>=`` that message's ``ts``; the client derives the
+   per-message ``✓`` indicators from the message timestamps it already holds.
+   This keeps the payload proportional to the number of members, not the
+   channel's history length.
 
    **Requires authentication.**
 
    :param channel: Channel or DM identifier.
-   :>json object: Mapping of message timestamp strings to lists of reader
-       usernames.
+   :>json object: Mapping of each reader's username to their read watermark
+       (epoch seconds).
 
    **Example response:**
 
    .. code-block:: json
 
       {
-          "1716000000.123": ["alice", "bob"],
-          "1716000001.456": ["alice"]
+          "alice": 1716000001.456,
+          "bob": 1716000000.123
       }
 
 User Settings

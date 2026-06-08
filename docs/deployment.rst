@@ -427,4 +427,4 @@ Before exposing MiniMost to a network:
 5. **Schedule image cleanup** — add a cron entry for ``clean.py`` to
    prevent unbounded disk growth (see :doc:`administration`).
 6. **Back up regularly** — back up ``auth.db``, ``presence.db``, and
-   ``users/*.db``.
+   ``users/messages.db``.

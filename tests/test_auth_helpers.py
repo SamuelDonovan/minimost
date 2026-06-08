@@ -85,111 +85,26 @@ def test_validate_signup_reserved_usernames(name):
 # ── _seed_channel_history ─────────────────────────────────────────────────────
 
 
-def test_seed_no_existing_users(isolated_dbs):
-    common_mod.init_user_db("newuser")
-    _seed_channel_history("newuser")
-    db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
-    count = db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-    db.close()
-    assert count == 0
+def test_seed_is_noop(isolated_dbs):
+    """Seeding is obsolete under the shared database — it must not copy or error.
 
+    New users see public history natively because every message lives in one
+    shared table, so the retained stub does nothing.
+    """
+    from time import time
 
-def test_seed_existing_user_no_db_file(isolated_dbs):
-    db = sqlite3.connect(auth_mod.AUTH_DB)
-    from werkzeug.security import generate_password_hash
-
+    common_mod.init_messages_db()
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     db.execute(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        ("ghost", generate_password_hash("x")),
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
+        ("general", "existing", "hello", time()),
     )
     db.commit()
     db.close()
-    common_mod.init_user_db("newuser")
-    _seed_channel_history("newuser")
-    db = sqlite3.connect(str(common_mod.user_db_path("newuser")))
+
+    _seed_channel_history("newuser")  # must not raise or duplicate rows
+
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
     count = db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
     db.close()
-    assert count == 0
-
-
-def test_seed_copies_public_channel_messages(isolated_dbs):
-    from werkzeug.security import generate_password_hash
-    from time import time
-
-    adb = sqlite3.connect(auth_mod.AUTH_DB)
-    adb.execute(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        ("existing", generate_password_hash("x")),
-    )
-    adb.commit()
-    adb.close()
-
-    common_mod.init_user_db("existing")
-    src = sqlite3.connect(str(common_mod.user_db_path("existing")))
-    src.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, ?)",
-        ("general", "existing", "hello", time(), 1),
-    )
-    src.commit()
-    src.close()
-
-    common_mod.init_user_db("newuser")
-    _seed_channel_history("newuser")
-
-    dst = sqlite3.connect(str(common_mod.user_db_path("newuser")))
-    rows = dst.execute("SELECT channel, read FROM messages").fetchall()
-    dst.close()
-    assert len(rows) == 1
-    assert rows[0][0] == "general"
-    assert rows[0][1] == 1
-
-
-def test_seed_does_not_copy_dm_messages(isolated_dbs):
-    from werkzeug.security import generate_password_hash
-    from time import time
-
-    adb = sqlite3.connect(auth_mod.AUTH_DB)
-    adb.execute(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        ("existing", generate_password_hash("x")),
-    )
-    adb.commit()
-    adb.close()
-
-    common_mod.init_user_db("existing")
-    src = sqlite3.connect(str(common_mod.user_db_path("existing")))
-    src.execute(
-        "INSERT INTO messages (channel, sender, content, ts, read) VALUES (?, ?, ?, ?, ?)",
-        ("dm:existing:other", "existing", "private", time(), 1),
-    )
-    src.commit()
-    src.close()
-
-    common_mod.init_user_db("newuser")
-    _seed_channel_history("newuser")
-
-    dst = sqlite3.connect(str(common_mod.user_db_path("newuser")))
-    count = dst.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-    dst.close()
-    assert count == 0
-
-
-def test_seed_empty_public_history(isolated_dbs):
-    from werkzeug.security import generate_password_hash
-
-    adb = sqlite3.connect(auth_mod.AUTH_DB)
-    adb.execute(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-        ("existing", generate_password_hash("x")),
-    )
-    adb.commit()
-    adb.close()
-
-    common_mod.init_user_db("existing")
-    common_mod.init_user_db("newuser")
-    _seed_channel_history("newuser")
-
-    dst = sqlite3.connect(str(common_mod.user_db_path("newuser")))
-    count = dst.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-    dst.close()
-    assert count == 0
+    assert count == 1
