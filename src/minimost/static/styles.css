@@ -1861,6 +1861,8 @@ a {
   font-size: 16px;
   color: #eee;
   word-break: break-word;
+  flex: 1;
+  min-width: 0;
 }
 .account-section-label {
   font-size: 0.78em;
@@ -1929,6 +1931,14 @@ a {
   overflow-y: auto;
 }
 #account-signout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
   background: none;
   border: 1px solid #555;
   color: #ddd;
@@ -1937,6 +1947,10 @@ a {
     background 0.15s,
     border-color 0.15s,
     color 0.15s;
+}
+.account-signout-icon {
+  font-size: 14px;
+  line-height: 1;
 }
 #account-signout-btn:hover {
   background: var(--danger, #e53e3e);
@@ -2138,6 +2152,25 @@ a {
   border: 1px solid #555;
 }
 #settings-cancel-btn:hover {
+  background: #2d2d2d;
+  border-color: #888;
+  color: #fff;
+}
+#account-save-btn {
+  background: #007acc;
+  color: #fff;
+  border: 1px solid #007acc;
+}
+#account-save-btn:hover {
+  background: #1a8ce0;
+  border-color: #1a8ce0;
+}
+#account-cancel-btn {
+  background: transparent;
+  color: #ccc;
+  border: 1px solid #555;
+}
+#account-cancel-btn:hover {
   background: #2d2d2d;
   border-color: #888;
   color: #fff;

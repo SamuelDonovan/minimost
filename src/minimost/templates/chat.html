@@ -209,6 +209,9 @@
             <div id="account-modal-header">
                 <div id="account-modal-avatar"></div>
                 <div id="account-modal-name">{{ session["user"] }}</div>
+                <button id="account-signout-btn" onclick="window.location='/logout'" title="Sign out of your account">
+                    <span class="account-signout-icon" aria-hidden="true">⏻</span>Sign out
+                </button>
             </div>
 
             <div class="account-section-label">Set yourself as</div>
@@ -261,7 +264,7 @@
 
             <div class="modal-actions">
                 <button id="account-save-btn">Save</button>
-                <button id="account-signout-btn" onclick="window.location='/logout'">Sign out</button>
+                <button type="button" id="account-cancel-btn" onclick="closeAccount()">Cancel</button>
             </div>
 
             <p class="settings-section-title">Password</p>
@@ -1192,11 +1195,15 @@ function setPresenceOverride(value) {
     }).then(() => refreshPresence()).catch(() => {});
 }
 
+function closeAccount() {
+    cancelDeleteConfirm();
+    cancelChangePassword();
+    accountModal.style.display = "none";
+}
+
 accountModal.addEventListener("click", e => {
     if (e.target === accountModal) {
-        cancelDeleteConfirm();
-        cancelChangePassword();
-        accountModal.style.display = "none";
+        closeAccount();
     }
 });
 
