@@ -12,6 +12,17 @@ repos:
         language: python
         additional_dependencies: ["black==26.3.1"]
         types: [python]
+      - id: bandit
+        name: bandit
+        # Scan the whole src/ tree (honouring [tool.bandit] in pyproject) rather
+        # than only the staged files, so it matches the CI invocation exactly.
+        # Pinned in a pre-commit-managed venv for the same reason as black; keep
+        # this version in sync with bandit.yml.
+        entry: bandit -r -c pyproject.toml src/
+        language: python
+        additional_dependencies: ["bandit==1.9.4"]
+        types: [python]
+        pass_filenames: false
       - id: prettier
         name: prettier
         entry: npx prettier --write --ignore-unknown

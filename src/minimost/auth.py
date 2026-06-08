@@ -64,6 +64,7 @@ _WAL = "PRAGMA journal_mode=WAL"
 _RESET_PW_TEMPLATE = "reset_password.html"
 _SIGNUP_TEMPLATE = "signup.html"
 _LOGIN_TEMPLATE = "login.html"
+_ABOUT_TEMPLATE = "about.html"
 
 # settings.json is bundled inside the package (src/minimost/); _HERE is the
 # package directory.
@@ -209,6 +210,21 @@ def login():
     :rtype: flask.Response
     """
     return render_template(_LOGIN_TEMPLATE)
+
+
+@auth_bp.route("/about", methods=["GET"])
+def about():
+    """Render the "What is MiniMost?" marketing page.
+
+    Routes: ``GET /about``
+
+    A public, login-free page that explains what MiniMost is and pitches
+    visitors on creating an account.  Linked from the login page.
+
+    :returns: A rendered ``about.html`` template.
+    :rtype: flask.Response
+    """
+    return render_template(_ABOUT_TEMPLATE)
 
 
 @auth_bp.route("/login", methods=["POST"])

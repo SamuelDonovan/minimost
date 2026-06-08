@@ -290,8 +290,8 @@ def delete_messages_over_size(
             # nosec B608 — placeholders is a string of bound-parameter markers,
             # never message data; the ids are passed as parameters.
             conn.execute(
-                f"DELETE FROM messages WHERE id IN ({placeholders})", ids
-            )  # nosec B608
+                f"DELETE FROM messages WHERE id IN ({placeholders})", ids  # nosec B608
+            )
             # Reactions reference messages by id; drop any now-orphaned rows.
             # (The FTS index self-cleans via its delete trigger.)
             if _has_table(conn, "reactions"):

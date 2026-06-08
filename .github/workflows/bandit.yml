@@ -13,5 +13,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
-      - run: pip install bandit
-      - run: bandit -r src/
+      # Pinned so CI and the pre-commit hook scan with the same bandit; keep
+      # this version in sync with .pre-commit-config.yaml.
+      - run: pip install bandit==1.9.4
+      - run: bandit -r -c pyproject.toml src/

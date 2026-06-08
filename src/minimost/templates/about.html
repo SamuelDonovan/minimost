@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>What is MiniMost?</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='auth.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
+</head>
+<body>
+    <div class="auth-brand">Mini<span style="color:#007acc">Most</span></div>
+
+    <div class="about-card">
+        <h1 class="about-title">What is MiniMost?</h1>
+        <p class="about-lead">
+            MiniMost is a fast, no-frills team chat you can run yourself. If
+            you've used Skype or Office Communicator, you'll feel at home in
+            seconds &mdash; but everything lives on your own machine, so your
+            messages never leave the people you share them with.
+        </p>
+
+        <a class="about-cta" href="/signup">Create your account &rarr;</a>
+        <p class="about-cta-hint">
+            It takes about ten seconds, and you can delete your account just as
+            easily if it isn't for you.
+        </p>
+
+        <h2 class="about-section">Why you'll like it</h2>
+        <ul class="about-features">
+            <li>
+                <span class="about-feature-icon">&#9889;</span>
+                <div>
+                    <strong>Sign up in seconds</strong>
+                    Pick a username and password and you're in &mdash; no email
+                    verification, no waiting. Changed your mind? Accounts can be
+                    deleted just as quickly.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128274;</span>
+                <div>
+                    <strong>Your password stays secret</strong>
+                    Passwords are hashed and salted before they're stored &mdash;
+                    not even the server admin can see what you typed.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128193;</span>
+                <div>
+                    <strong>Messages are read-protected</strong>
+                    The message database is locked down on disk, so your
+                    conversations aren't sitting around for anyone to open.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128222;</span>
+                <div>
+                    <strong>Voice, video &amp; screen sharing</strong>
+                    Jump on a call or share your screen right from the chat.
+                    Media is sent peer-to-peer, so it stays between you and the
+                    people on the call.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128269;</span>
+                <div>
+                    <strong>Every message is saved &amp; searchable</strong>
+                    Nothing disappears. Full-text search finds any message in an
+                    instant &mdash; no more scrolling for that link someone sent
+                    last week.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128247;</span>
+                <div>
+                    <strong>Images show up inline</strong>
+                    Drop in a screenshot or photo and it's embedded right in the
+                    conversation &mdash; no downloading attachments to see what
+                    someone sent.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128172;</span>
+                <div>
+                    <strong>Group chats that just keep going</strong>
+                    Start a channel or group conversation and it stays put.
+                    People can catch up on everything they missed, any time.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128421;</span>
+                <div>
+                    <strong>Works on Linux and Windows</strong>
+                    It runs right in your browser, so you can reach your chats
+                    from whatever computer you're on.
+                </div>
+            </li>
+            <li>
+                <span class="about-feature-icon">&#128064;</span>
+                <div>
+                    <strong>Presence, typing &amp; @mentions</strong>
+                    See who's online, watch the typing dots, and ping the right
+                    person with an @mention &mdash; the little touches you'd
+                    expect from a modern messenger.
+                </div>
+            </li>
+        </ul>
+
+        <a class="about-cta" href="/signup">Get started &rarr;</a>
+
+        <p class="auth-footer">
+            Already have an account? <a href="/login">Log in</a>
+        </p>
+    </div>
+
+    <div class="version-tag"># v{{ app_version }}</div>
+</body>
+</html>
