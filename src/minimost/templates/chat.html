@@ -173,6 +173,9 @@
                     <button type="button" onclick="formatMsg('~~')" class="icon-btn format-btn" title="Strikethrough (Ctrl+S)" aria-label="Strikethrough">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
                     </button>
+                    <button type="button" onclick="openCodeBlockPicker(event)" id="codeblock-btn" class="icon-btn format-btn" title="Code block" aria-label="Code block">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    </button>
                 </div>
                 <div id="input-actions-main">
                 <button type="button" onclick="openEmojiPicker(event)" id="emoji-btn" class="icon-btn" title="Add emoji">
@@ -488,6 +491,12 @@
 <div id="emoji-picker" style="display:none;">
     <input type="text" id="emoji-search" placeholder="Search emoji…" autocomplete="off">
     <div class="emoji-picker-grid" id="emoji-picker-grid"></div>
+</div>
+
+<!-- Code block language picker (insert fenced block into message box) -->
+<div id="codeblock-picker" style="display:none;">
+    <input type="text" id="codeblock-search" placeholder="Search language…" autocomplete="off">
+    <div class="codeblock-picker-list" id="codeblock-picker-list"></div>
 </div>
 
 <!-- Help Overlay -->
@@ -855,6 +864,160 @@ function formatMsg(wrapper) {
     wrapSelection(msgBox, wrapper);
     msgBox.focus();
 }
+
+// Languages offered in the code block picker. Each entry is [label, fence tag];
+// the tags map to the syntax highlighter in chat-search.js. An empty tag means
+// a plain (unhighlighted) fenced block.
+const CODE_BLOCK_LANGS = [
+    ["Plain text", ""],
+    ["Python", "python"],
+    ["JavaScript", "javascript"],
+    ["TypeScript", "typescript"],
+    ["C", "c"],
+    ["C++", "cpp"],
+    ["Java", "java"],
+    ["Go", "go"],
+    ["Rust", "rust"],
+    ["Bash / Shell", "bash"],
+    ["Makefile", "makefile"],
+    ["CMake", "cmake"],
+    ["Groovy", "groovy"],
+    ["VHDL", "vhdl"],
+    ["Verilog", "verilog"],
+    ["HTML", "html"],
+    ["XML", "xml"],
+    ["JSON", "json"],
+];
+
+// Matches currently shown in the picker, and the keyboard-selected index.
+let codeBlockMatches = [];
+let codeBlockIndex = -1;
+
+function updateCodeBlockHighlight() {
+    const items = document.getElementById("codeblock-picker-list").children;
+    Array.from(items).forEach((el, i) => {
+        el.classList.toggle("active", i === codeBlockIndex);
+        if (i === codeBlockIndex) el.scrollIntoView({ block: "nearest" });
+    });
+}
+
+// Fuzzy-filter the language list, reusing the shared fuzzySearch/highlight
+// helpers (the same ones behind the @mention and message-search finders).
+function filterCodeLangs(query) {
+    const list = document.getElementById("codeblock-picker-list");
+    const q = query.trim();
+    codeBlockIndex = -1;
+
+    codeBlockMatches = q
+        ? CODE_BLOCK_LANGS
+              .map(([label, tag]) => ({ label, tag, result: fuzzySearch(q, label) }))
+              .filter(({ result }) => result !== null)
+              .sort((a, b) => b.result.score - a.result.score)
+        : CODE_BLOCK_LANGS.map(([label, tag]) => ({ label, tag, result: { indices: [] } }));
+
+    list.innerHTML = "";
+    codeBlockMatches.forEach(({ label, tag, result }, idx) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "codeblock-picker-item";
+        item.innerHTML = highlightFuzzyMatch(label, result.indices);
+        // mousedown so the search input doesn't blur before the click lands.
+        item.onmousedown = e => {
+            e.preventDefault();
+            insertCodeBlock(tag);
+        };
+        list.appendChild(item);
+    });
+}
+
+function openCodeBlockPicker(event) {
+    event.stopPropagation();
+    const picker = document.getElementById("codeblock-picker");
+    if (picker.style.display === "block") {
+        closeCodeBlockPicker();
+        return;
+    }
+    closeEmojiPicker();
+    filterCodeLangs("");
+    picker.style.display = "block";
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pw = picker.offsetWidth;
+    const ph = picker.offsetHeight;
+    let left = Math.max(8, Math.min(rect.left, window.innerWidth - pw - 8));
+    // The message box sits at the bottom, so open above the button.
+    let top = rect.top - ph - 6;
+    if (top < 8) top = rect.bottom + 6;
+    picker.style.left = left + "px";
+    picker.style.top = top + "px";
+    const search = document.getElementById("codeblock-search");
+    search.value = "";
+    requestAnimationFrame(() => search.focus());
+}
+
+function closeCodeBlockPicker() {
+    const picker = document.getElementById("codeblock-picker");
+    if (picker) picker.style.display = "none";
+}
+
+// Insert a fenced code block at the cursor, wrapping any selected text, and
+// leave the cursor on the (empty) code line ready to type.
+function insertCodeBlock(lang) {
+    closeCodeBlockPicker();
+    const start = msgBox.selectionStart;
+    const end = msgBox.selectionEnd;
+    const value = msgBox.value;
+    const before = value.slice(0, start);
+    const selected = value.slice(start, end);
+    const after = value.slice(end);
+
+    // Keep the opening/closing fences on their own lines.
+    const leadingNL = before === "" || before.endsWith("\n") ? "" : "\n";
+    const trailingNL = after === "" || after.startsWith("\n") ? "" : "\n";
+
+    const open = leadingNL + "```" + lang + "\n";
+    const close = "\n```" + trailingNL;
+    msgBox.value = before + open + selected + close + after;
+
+    const cursor = before.length + open.length + selected.length;
+    msgBox.selectionStart = msgBox.selectionEnd = cursor;
+    msgBox.focus();
+    updateSendState();
+}
+
+document.addEventListener("click", function (e) {
+    const picker = document.getElementById("codeblock-picker");
+    const btn = document.getElementById("codeblock-btn");
+    if (
+        picker?.style.display === "block" &&
+        !picker.contains(e.target) &&
+        !btn?.contains(e.target)
+    ) {
+        closeCodeBlockPicker();
+    }
+});
+
+const codeBlockSearch = document.getElementById("codeblock-search");
+codeBlockSearch.addEventListener("input", e => filterCodeLangs(e.target.value));
+codeBlockSearch.addEventListener("keydown", e => {
+    const items = document.getElementById("codeblock-picker-list").children;
+    if (!items.length) return;
+    if (e.key === "ArrowDown") {
+        e.preventDefault();
+        codeBlockIndex = (codeBlockIndex + 1) % items.length;
+        updateCodeBlockHighlight();
+    } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        codeBlockIndex = (codeBlockIndex - 1 + items.length) % items.length;
+        updateCodeBlockHighlight();
+    } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertCodeBlock(codeBlockMatches[Math.max(codeBlockIndex, 0)].tag);
+    } else if (e.key === "Escape") {
+        e.stopPropagation();
+        closeCodeBlockPicker();
+        msgBox.focus();
+    }
+});
 
 document.addEventListener("load", e => {
     if (e.target.tagName === "IMG") {
