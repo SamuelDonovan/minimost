@@ -1,0 +1,26 @@
+name: Windows
+
+# MiniMost supports Windows as a first-class platform (dev server, pure-Python
+# TLS cert generation, STUN, and WebRTC calling all work there; only the
+# optional Gunicorn production server does not). The rest of CI runs on Linux,
+# so this job is the real guarantee that the app boots and the suite passes on
+# Windows — most valuably, it exercises the pure-Python certificate generation
+# and ssl.load_cert_chain on a genuine Windows interpreter.
+
+on: [push]
+
+jobs:
+  test-windows:
+    name: Test on Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package and test dependencies
+        run: pip install -e ".[dev]"
+      - name: Run test suite
+        run: pytest -q
