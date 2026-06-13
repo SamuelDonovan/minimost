@@ -117,13 +117,22 @@ def _generate_ca(ca_cert, ca_key):
     return key
 
 
-def _generate_leaf(cert_path, key_path, ca_key):
-    """Create a short-lived leaf cert signed by the local CA."""
+def _generate_leaf(cert_path, key_path, ca_cert, ca_key):
+    """Create a short-lived leaf cert signed by the local CA.
+
+    The leaf's AuthorityKeyIdentifier is copied from the CA certificate's own
+    SubjectKeyIdentifier so the two always match (OpenSSL/browsers reject the
+    chain otherwise), even if the CA on disk used an older key-identifier scheme.
+    """
     dns_names, ip_addresses = _build_san()
+    ca_key_id = _pki.certificate_subject_key_id(_pki.pem_to_der(ca_cert.read_text()))
+    if ca_key_id is None:
+        ca_key_id = _pki.key_identifier(ca_key)
     leaf_key = _pki.generate_key()
     cert_der = _pki.build_leaf_cert(
         leaf_key,
         ca_key,
+        ca_key_id,
         _LEAF_COMMON_NAME,
         _CA_COMMON_NAME,
         dns_names,
@@ -190,7 +199,7 @@ def ensure_certs(directory):
         # no longer chains to the CA (e.g. left over from the older self-signed
         # setup), or is inside the renewal window.
         if ca_created or not have_leaf or _leaf_needs_renewal(cert_path, ca_key):
-            _generate_leaf(cert_path, key_path, ca_key)
+            _generate_leaf(cert_path, key_path, ca_cert, ca_key)
             print(
                 "Generated TLS leaf certificate ({0}, {1}).".format(
                     cert_path, key_path

@@ -58,9 +58,12 @@ def test_oid_encoding_matches_known_value():
 def test_leaf_chains_to_ca_and_carries_san():
     ca_key = _pki.generate_key()
     ca_der = _pki.build_ca_cert(ca_key, "Test CA", 3650)
+    ca_ski = _pki.certificate_subject_key_id(ca_der)
+    assert ca_ski is not None
     leaf_der = _pki.build_leaf_cert(
         _KEY,
         ca_key,
+        ca_ski,
         "leaf",
         "Test CA",
         ["localhost", "example.local"],
@@ -74,9 +77,32 @@ def test_leaf_chains_to_ca_and_carries_san():
     assert _pki.certificate_signed_by(leaf_der, _KEY) is False
 
 
+def test_leaf_aki_matches_ca_ski():
+    # OpenSSL/browsers reject the chain unless the leaf's AuthorityKeyIdentifier
+    # equals the CA's SubjectKeyIdentifier, regardless of how the CA's SKI was
+    # generated. Simulate a CA whose SKI does NOT equal key_identifier(ca_key).
+    ca_key = _pki.generate_key()
+    ca_der = _pki.build_ca_cert(ca_key, "Test CA", 3650)
+    ca_ski = _pki.certificate_subject_key_id(ca_der)
+    assert ca_ski is not None
+    leaf_der = _pki.build_leaf_cert(
+        _KEY, ca_key, ca_ski, "leaf", "Test CA", ["localhost"], [], 398
+    )
+    # The leaf's AKI extnValue embeds the CA SKI, so the CA SKI bytes appear in
+    # the leaf certificate verbatim.
+    assert ca_ski in leaf_der
+
+
 def test_certificate_not_after_is_within_chrome_cap():
     leaf_der = _pki.build_leaf_cert(
-        _KEY, _KEY, "leaf", "leaf", ["localhost"], [b"\x7f\x00\x00\x01"], 398
+        _KEY,
+        _KEY,
+        _pki.key_identifier(_KEY),
+        "leaf",
+        "leaf",
+        ["localhost"],
+        [b"\x7f\x00\x00\x01"],
+        398,
     )
     not_after = _pki.certificate_not_after(leaf_der)
     span = not_after - datetime.datetime.now(datetime.timezone.utc)

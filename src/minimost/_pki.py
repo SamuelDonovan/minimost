@@ -31,7 +31,7 @@ import base64
 import datetime
 import hashlib
 import secrets
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # --------------------------------------------------------------------------
 # Object identifiers used by the certificates we build.
@@ -353,9 +353,17 @@ def _subject_public_key_info(key: Dict[str, int]) -> bytes:
 
 
 def _key_identifier(key: Dict[str, int]) -> bytes:
-    """RFC 5280 method-1 key identifier: SHA-1 of the RSA public key bytes."""
+    """Key identifier for the SKI/AKI extensions: SHA-256 of the RSA public key,
+    truncated to 160 bits.
+
+    RFC 5280 §4.2.1.2 describes a SHA-1-based method but explicitly permits
+    "other methods of generating unique numbers", so a truncated SHA-256 is
+    compliant — and avoids a weak hash algorithm.  This value is only an
+    identifier used to match a leaf's AuthorityKeyIdentifier to its CA's
+    SubjectKeyIdentifier; it is not a security primitive.
+    """
     rsa_public_key = _der_seq(_der_int(key["n"]), _der_int(key["e"]))
-    return hashlib.sha1(rsa_public_key).digest()  # nosec B324 - SKI per RFC 5280
+    return hashlib.sha256(rsa_public_key).digest()[:20]
 
 
 def _pem(der: bytes, label: str) -> str:
@@ -533,13 +541,21 @@ def build_ca_cert(key: Dict[str, int], common_name: str, days: int) -> bytes:
 def build_leaf_cert(
     leaf_key: Dict[str, int],
     ca_key: Dict[str, int],
+    ca_key_id: bytes,
     leaf_common_name: str,
     ca_common_name: str,
     dns_names: List[str],
     ip_addresses: List[bytes],
     days: int,
 ) -> bytes:
-    """Build a server (leaf) certificate DER signed by the CA's *ca_key*."""
+    """Build a server (leaf) certificate DER signed by the CA's *ca_key*.
+
+    *ca_key_id* must be the CA certificate's actual SubjectKeyIdentifier so the
+    leaf's AuthorityKeyIdentifier matches it byte-for-byte — OpenSSL and browsers
+    reject the chain otherwise (``unable to get local issuer certificate``).
+    Reading it from the CA cert (rather than recomputing) keeps the two in sync
+    even when the CA on disk used a different key-identifier scheme.
+    """
     extensions = [
         # cA defaults to FALSE, so an empty SEQUENCE is the DER for CA:FALSE.
         _extension(_OID_BASIC_CONSTRAINTS, True, _der_seq()),
@@ -558,7 +574,7 @@ def build_leaf_cert(
         _extension(
             _OID_AUTHORITY_KEY_ID,
             False,
-            _der_seq(_der_implicit(0, _key_identifier(ca_key))),
+            _der_seq(_der_implicit(0, ca_key_id)),
         ),
     ]
     tbs = _tbs_certificate(
@@ -644,3 +660,63 @@ def certificate_signed_by(cert_der: bytes, ca_key: Dict[str, int]) -> bool:
     except (IndexError, ValueError):
         return False
     return _verify(_public_key(ca_key), tbs_der, signature)
+
+
+def _tbs_extensions(tbs_der: bytes) -> Optional[bytes]:
+    """Return the bytes of the ``extensions`` SEQUENCE OF, or None if absent."""
+    _, content_start, _ = _read_tlv(tbs_der, 0)  # tbsCertificate SEQUENCE
+    offset = content_start
+    tag, _, end = _read_tlv(tbs_der, offset)
+    if tag == 0xA0:  # optional explicit version [0]
+        offset = end
+    for _ in range(6):  # serial, signature, issuer, validity, subject, spki
+        _, _, offset = _read_tlv(tbs_der, offset)
+    if offset >= len(tbs_der):
+        return None
+    tag, ext_start, _ = _read_tlv(tbs_der, offset)  # extensions [3]
+    if tag != 0xA3:
+        return None
+    _, seq_start, seq_end = _read_tlv(tbs_der, ext_start)  # SEQUENCE OF Extension
+    return tbs_der[seq_start:seq_end]
+
+
+def _extension_value(tbs_der: bytes, oid: str) -> Optional[bytes]:
+    """Return the raw ``extnValue`` (OCTET STRING content) for *oid*, or None."""
+    extensions = _tbs_extensions(tbs_der)
+    if extensions is None:
+        return None
+    target = _der_oid(oid)
+    offset = 0
+    while offset < len(extensions):
+        _, ext_start, ext_end = _read_tlv(extensions, offset)  # one Extension
+        _, _, oid_end = _read_tlv(extensions, ext_start)
+        if extensions[ext_start:oid_end] == target:
+            pointer = oid_end
+            tag, value_start, value_end = _read_tlv(extensions, pointer)
+            if tag == 0x01:  # optional critical BOOLEAN
+                tag, value_start, value_end = _read_tlv(extensions, value_end)
+            return extensions[value_start:value_end]
+        offset = ext_end
+    return None
+
+
+def certificate_subject_key_id(cert_der: bytes) -> Optional[bytes]:
+    """Return the SubjectKeyIdentifier of a certificate, or None if it has none."""
+    try:
+        tbs_der, _ = _split_certificate(cert_der)
+        extn_value = _extension_value(tbs_der, _OID_SUBJECT_KEY_ID)
+        if extn_value is None:
+            return None
+        # extnValue wraps KeyIdentifier ::= OCTET STRING.
+        tag, start, end = _read_tlv(extn_value, 0)
+        if tag != 0x04:
+            return None
+        return extn_value[start:end]
+    except (IndexError, ValueError):
+        return None
+
+
+def key_identifier(key: Dict[str, int]) -> bytes:
+    """Public accessor for :func:`_key_identifier` (used as a fallback when a CA
+    certificate carries no SubjectKeyIdentifier to copy)."""
+    return _key_identifier(key)
