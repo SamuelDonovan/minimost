@@ -93,9 +93,10 @@ max_requests_jitter = 50
 # TLS / HTTPS  (required for WebRTC calling)
 # --------------------------------------------------------------------
 # A local CA and a server certificate signed by it are generated automatically
-# on first run using the system openssl binary (see minimost.certs). The leaf
-# renews itself; clients import ca.pem once. If generation fails a warning is
-# printed and gunicorn starts without TLS (calls will not work in that case).
+# on first run in pure Python (stdlib only, no openssl binary; see
+# minimost.certs). The leaf renews itself; clients import ca.pem once. If
+# generation fails a warning is printed and gunicorn starts without TLS (calls
+# will not work in that case).
 _cert, _key = ensure_certs(Path.cwd())
 
 if _cert and _key:

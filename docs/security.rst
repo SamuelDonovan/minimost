@@ -223,10 +223,10 @@ limiting on the ``/signup`` route.
 
 Voice and video calling requires a secure context — browsers refuse to grant
 microphone, camera, and WebRTC access over plain HTTP.  MiniMost automatically
-generates a self-signed TLS certificate on first run using the system
-``openssl`` binary (see :doc:`deployment`).  This certificate is suitable
-for LAN use; replace it with a CA-signed certificate for public-facing
-deployments.
+generates a self-signed TLS certificate on first run in pure Python (standard
+library only — no ``openssl`` binary; see :doc:`deployment`).  This certificate
+is suitable for LAN use; replace it with a CA-signed certificate for
+public-facing deployments.
 
 The TLS private key (``key.pem``) should be protected with the same
 filesystem permissions as ``secret.key`` and ``auth.db``.

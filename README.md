@@ -108,7 +108,7 @@ Or without installing:
 python3 -m minimost
 ```
 
-On first run MiniMost automatically generates a self-signed TLS certificate (`cert.pem` / `key.pem`) using the system `openssl` binary and serves over **HTTPS**. The server starts at [https://127.0.0.1:5000](https://127.0.0.1:5000) by default. Use `--host` and `--port` to change the bind address:
+On first run MiniMost automatically generates a self-signed TLS certificate (`cert.pem` / `key.pem`) in pure Python (no `openssl` binary required) and serves over **HTTPS**. The server starts at [https://127.0.0.1:5000](https://127.0.0.1:5000) by default. Use `--host` and `--port` to change the bind address:
 
 ```bash
 # Listen on all interfaces (accessible from other machines on the network)
@@ -120,7 +120,7 @@ minimost --host 192.168.1.10 --port 8080
 
 To reach the server from another machine, navigate to `https://<server-ip>:<port>` in a browser. The generated certificate is self-signed, so your browser will show a security warning — add a permanent exception to dismiss it.
 
-> **Note:** HTTPS is required for voice and video calling (browsers only allow camera/microphone and WebRTC access in secure contexts). If `openssl` is not installed, MiniMost will still start over plain HTTP but the calling feature will not work.
+> **Note:** HTTPS is required for voice and video calling (browsers only allow camera/microphone and WebRTC access in secure contexts). The certificate is generated in pure Python (standard library only — no `openssl` binary required), so this works the same on Linux, macOS, and Windows.
 
 > **Note:** Calls and screen shares connect peers directly over WebRTC. For this to work, peers must be on the **same LAN/subnet** and able to reach each other (and the bundled STUN server on UDP `3478`, configurable via `stun_port` in `settings.json`) over UDP. No public STUN/TURN server is used, so calls work on air-gapped networks, but they will not traverse the public internet or connect peers on different subnets.
 

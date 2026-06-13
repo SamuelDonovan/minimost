@@ -76,26 +76,24 @@ A complete first-time setup on a fresh host:
 
 1. **Install Python 3.6+ and MiniMost** (``pip install minimost-*.whl``, or
    ``pip install -e .`` from a source checkout). The only runtime dependency is
-   Flask; install ``gunicorn`` separately for production.
-2. **Install the ``openssl`` binary** (e.g. ``apt install openssl``) so MiniMost
-   can auto-generate the self-signed TLS certificate on first run. Without it,
-   chat works but calls and screen sharing do not — browsers require HTTPS for
-   camera, microphone, and WebRTC access. See `TLS Certificates`_.
-3. **Choose a working/data directory the service account can write to.** All
+   Flask; install ``gunicorn`` separately for production. The self-signed TLS
+   certificate is generated in pure Python on first run, so no ``openssl``
+   binary (or any other external tool) is required. See `TLS Certificates`_.
+2. **Choose a working/data directory the service account can write to.** All
    runtime state — ``auth.db``, ``presence.db``, ``users/``, ``uploads/``,
    ``avatars/``, ``secret.key`` and the generated ``cert.pem`` / ``key.pem`` — is
    written there (the project root in a source checkout, or the process working
    directory under Gunicorn). ``settings.json`` ships inside the package and is
    read from there.
-4. **Open the firewall ports** listed in `Ports and Firewall`_ — the TCP
+3. **Open the firewall ports** listed in `Ports and Firewall`_ — the TCP
    application port for everyone, plus UDP ``3478`` and the ephemeral UDP range
    if you want calls and screen sharing.
-5. **Preserve ``secret.key`` across restarts.** It is generated automatically on
+4. **Preserve ``secret.key`` across restarts.** It is generated automatically on
    first run and signs session cookies; deleting it logs every user out.
-6. **(Production) Run behind Gunicorn**, optionally as a systemd service, and
+5. **(Production) Run behind Gunicorn**, optionally as a systemd service, and
    review the ``bind`` address/port in ``gunicorn.conf.py``. See
    `Gunicorn (Recommended for Production)`_ and `Systemd Service`_.
-7. **On each client**, browse to ``https://<server-ip>:<port>`` and trust the
+6. **On each client**, browse to ``https://<server-ip>:<port>`` and trust the
    certificate authority once (see `Trusting the Certificate`_).
 
 TLS Certificates
@@ -108,7 +106,7 @@ certificate signed by it:
 
 - On first run, both the development server (``minimost`` / ``python3 -m
   minimost``) and the Gunicorn configuration file (``gunicorn.conf.py``)
-  generate, using the system ``openssl`` binary:
+  generate, in pure Python (standard library only — no ``openssl`` binary):
 
   - ``ca.pem`` / ``ca-key.pem`` — a long-lived **local certificate authority**
     (valid for 10 years).  ``ca.pem`` is the file clients import to trust the
@@ -125,7 +123,7 @@ certificate signed by it:
   is missing, no longer chains to the CA, or within 30 days of expiry — so a
   routine restart silently renews it.  Because it is re-signed by the *same*
   CA, clients never need to re-import anything.
-- If ``openssl`` is not installed or generation fails, a warning is printed
+- If certificate generation fails for any reason, a warning is printed
   to stderr and the server starts over plain HTTP.  Chat will work normally
   but calling will not.
 

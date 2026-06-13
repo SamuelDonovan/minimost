@@ -178,7 +178,7 @@ Technical Stack
      - WebRTC peer-to-peer (``RTCPeerConnection``); HTTP-polled signalling +
        a bundled stdlib STUN server (no public STUN/TURN)
    * - TLS certificates
-     - Auto-generated on first run via system ``openssl`` (self-signed)
+     - Auto-generated on first run in pure Python (self-signed, no ``openssl``)
    * - Production server
      - Gunicorn (optional, recommended for multi-user deployments)
    * - Python requirement
