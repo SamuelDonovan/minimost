@@ -257,6 +257,42 @@ Or specify options directly::
    worker has its own SQLite connection(s), WAL journal mode (enabled on all
    databases) is essential for preventing write contention between workers.
 
+Other WSGI Servers
+------------------
+
+MiniMost is a standard WSGI application exposed through the
+``minimost:create_app()`` factory, so it runs under any WSGI server — useful on
+Windows, where Gunicorn is unavailable (it relies on ``fork``/``fcntl``).
+
+Certificate provisioning is **not** tied to Gunicorn: :func:`minimost.create_app`
+generates the self-signed cert/key on first run (idempotently) and records the
+resolved paths in ``app.config['TLS_CERT_FILE']`` and ``['TLS_KEY_FILE']``.
+This happens for whatever server loads the factory, in the process working
+directory.
+
+Generating the files does **not** terminate TLS, however — that is the server's
+job.  Two common options:
+
+- **`waitress <https://github.com/Pylons/waitress>`_** (pure-Python, runs on
+  Windows) does not terminate TLS itself, so put it behind a TLS-terminating
+  reverse proxy (nginx, Caddy), or use it only on a trusted loopback.  Because
+  TLS is handled upstream, set ``MINIMOST_SKIP_TLS=1`` to skip local cert
+  generation::
+
+      pip install waitress
+      MINIMOST_SKIP_TLS=1 waitress-serve --listen=0.0.0.0:6767 --call minimost:create_app
+
+- **`uWSGI <https://uwsgi-docs.readthedocs.io/>`_** can terminate TLS directly
+  using the generated files::
+
+      uwsgi --https 0.0.0.0:6767,cert.pem,key.pem --module "minimost:create_app()"
+
+.. note::
+
+   ``MINIMOST_SKIP_TLS=1`` disables certificate generation entirely — set it
+   whenever TLS is terminated upstream (reverse proxy) so MiniMost does not
+   write unused cert files into the working directory.
+
 Systemd Service
 ---------------
 

@@ -27,6 +27,7 @@ _APP_VERSION : str
     ``{{ app_version }}``.
 """
 
+import os
 import secrets
 import threading
 import time
@@ -118,6 +119,40 @@ def _stun_port() -> int:
         if isinstance(value, int) and 0 < value < 65536:
             return value
     return DEFAULT_STUN_PORT
+
+
+def _provision_tls(app) -> None:
+    """Generate the self-signed TLS cert/key once, for any WSGI server.
+
+    Historically only the development server and the bundled Gunicorn config
+    generated certificates, so running MiniMost under another WSGI server
+    (waitress, uWSGI, mod_wsgi, …) silently meant no HTTPS — and therefore no
+    voice/video calling.  Doing it here means *any* server that loads
+    ``minimost:create_app()`` gets certificates provisioned, with no
+    server-specific glue.
+
+    Generation is idempotent (see :func:`minimost.certs.ensure_certs`) and the
+    resolved paths are stored in ``app.config['TLS_CERT_FILE']`` and
+    ``['TLS_KEY_FILE']`` so a launcher can point its TLS listener at them.  Note
+    that generating the files does **not** terminate TLS — the WSGI server still
+    has to be configured to serve HTTPS using these paths.
+
+    Set ``MINIMOST_SKIP_TLS=1`` to skip generation entirely, e.g. when TLS is
+    terminated upstream by a reverse proxy, or under the test suite.
+
+    :param app: The Flask application whose config receives the cert paths.
+    """
+    if os.environ.get("MINIMOST_SKIP_TLS"):
+        return
+    from .certs import ensure_certs
+
+    # Use the process working directory (matching the Gunicorn config and the
+    # documented data-directory model) so it resolves correctly under an
+    # installed wheel, where the package dir is typically read-only.
+    cert, key = ensure_certs(Path.cwd())
+    if cert and key:
+        app.config["TLS_CERT_FILE"] = str(cert)
+        app.config["TLS_KEY_FILE"] = str(key)
 
 
 def create_app():
@@ -249,6 +284,7 @@ def create_app():
     calls_mod.reset_all_calls_ended()
     calls_mod.reset_all_screenshares_ended()
     _migrate_search_indexes()
+    _provision_tls(app)
 
     from .stun import start_stun_server
 

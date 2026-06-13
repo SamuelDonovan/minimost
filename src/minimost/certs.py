@@ -17,9 +17,12 @@ using a self-managed certificate authority:
   no longer chains to the CA, or within 30 days of expiry.  Because renewals are
   re-signed by the *same* CA, clients never need to re-import anything.
 
-This module is the single source of truth for that logic; both the development
-server (:mod:`minimost.__main__`) and the Gunicorn configuration
-(:mod:`minimost.gunicorn_conf`) call :func:`ensure_certs`.  All certificate
+This module is the single source of truth for that logic.  :func:`ensure_certs`
+is called from :func:`minimost.create_app` (so *any* WSGI server — the dev
+server, Gunicorn, waitress, uWSGI, … — provisions certificates with no
+server-specific glue), and additionally from the bundled Gunicorn configuration
+(:mod:`minimost.gunicorn_conf`), which needs the paths at config-load time to
+set its TLS listener.  Both call sites are idempotent.  All certificate
 generation is done in pure Python via :mod:`minimost._pki`, so it depends only
 on the standard library — there is no longer any dependency on a system
 ``openssl`` binary (which let provisioning work on Windows too).

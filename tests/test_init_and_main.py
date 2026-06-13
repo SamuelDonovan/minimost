@@ -80,11 +80,12 @@ def test_create_app_reuses_existing_secret_key(tmp_path):
 def test_main_default_args():
     from minimost.__main__ import main
 
+    # No TLS paths in config -> the dev server runs plain HTTP (ssl_context=None).
     mock_app = MagicMock()
+    mock_app.config = {}
     with patch("minimost.__main__.create_app", return_value=mock_app):
-        with patch("minimost.__main__._ensure_certs", return_value=(None, None)):
-            with patch("sys.argv", ["minimost"]):
-                main()
+        with patch("sys.argv", ["minimost"]):
+            main()
     mock_app.run.assert_called_once_with(
         host="127.0.0.1", port=5000, debug=False, ssl_context=None
     )
@@ -94,10 +95,27 @@ def test_main_custom_args():
     from minimost.__main__ import main
 
     mock_app = MagicMock()
+    mock_app.config = {}
     with patch("minimost.__main__.create_app", return_value=mock_app):
-        with patch("minimost.__main__._ensure_certs", return_value=(None, None)):
-            with patch("sys.argv", ["minimost", "--host", "0.0.0.0", "--port", "8080"]):
-                main()
+        with patch("sys.argv", ["minimost", "--host", "0.0.0.0", "--port", "8080"]):
+            main()
     mock_app.run.assert_called_once_with(
         host="0.0.0.0", port=8080, debug=False, ssl_context=None
+    )
+
+
+def test_main_uses_tls_paths_from_config():
+    from minimost.__main__ import main
+
+    # When create_app provisioned certs, the dev server serves them over HTTPS.
+    mock_app = MagicMock()
+    mock_app.config = {"TLS_CERT_FILE": "cert.pem", "TLS_KEY_FILE": "key.pem"}
+    with patch("minimost.__main__.create_app", return_value=mock_app):
+        with patch("sys.argv", ["minimost"]):
+            main()
+    mock_app.run.assert_called_once_with(
+        host="127.0.0.1",
+        port=5000,
+        debug=False,
+        ssl_context=("cert.pem", "key.pem"),
     )

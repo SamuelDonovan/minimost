@@ -34,27 +34,8 @@ import secrets
 import sqlite3
 import sys
 import time
-from pathlib import Path
 
 from minimost import create_app
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-
-
-def _ensure_certs():
-    """Ensure a CA-signed TLS leaf cert exists in the project root.
-
-    Thin wrapper around :func:`minimost.certs.ensure_certs`; see that function
-    for the full CA + leaf provisioning and auto-renewal behaviour.  Kept as a
-    module-level function so it stays an easy patch point in tests.
-
-    :returns: ``(cert_path, key_path)`` as :class:`pathlib.Path` objects on
-        success, or ``(None, None)`` if generation is skipped or fails.
-    :rtype: tuple[Path, Path] | tuple[None, None]
-    """
-    from minimost.certs import ensure_certs
-
-    return ensure_certs(_PROJECT_ROOT)
 
 
 def main():
@@ -99,10 +80,13 @@ def main():
     )
     args = parser.parse_args()
 
-    cert, key = _ensure_certs()
-    ssl_context = (str(cert), str(key)) if cert else None
-
+    # create_app() provisions the TLS certificate (shared by every WSGI server)
+    # and records the resolved paths in app.config; the dev server just consumes
+    # them. Set MINIMOST_SKIP_TLS=1 to serve plain HTTP.
     app = create_app()
+    cert = app.config.get("TLS_CERT_FILE")
+    key = app.config.get("TLS_KEY_FILE")
+    ssl_context = (cert, key) if cert and key else None
     app.run(host=args.host, port=args.port, debug=False, ssl_context=ssl_context)
 
 

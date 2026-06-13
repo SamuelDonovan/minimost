@@ -28,6 +28,9 @@ def isolated_dbs(tmp_path, monkeypatch):
     # so tests never read, write, or delete real uploads/avatars.
     monkeypatch.setattr(chat_mod, "UPLOAD_DIR", uploads_dir)
     monkeypatch.setattr(chat_mod, "AVATAR_DIR", avatars_dir)
+    # Skip the (relatively slow) TLS keygen in create_app for every test; the
+    # certificate logic is covered directly in test_pki.py instead.
+    monkeypatch.setenv("MINIMOST_SKIP_TLS", "1")
 
     preview_mod._CACHE.clear()
 
