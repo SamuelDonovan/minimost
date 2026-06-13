@@ -309,6 +309,11 @@ function isEmojiOnly(text) {
 }
 
 function formatText(text) {
+  // Normalise line endings up front. Textarea/clipboard content can carry CRLF
+  // (or lone CR); leaving the \r in place defeats the \n-only fence regex and
+  // trim below, which surfaces as a blank first line inside code blocks.
+  text = text.replace(/\r\n?/g, "\n");
+
   // 1. Extract fenced code blocks before any escaping.
   // Strip the newline immediately before/after each fence so the block
   // element doesn't double up with the pre-wrap newline character.

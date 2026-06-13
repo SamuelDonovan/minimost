@@ -208,6 +208,12 @@ describe("formatText()", () => {
     const result = formatText("```\nhello world\n```");
     expect(result).toContain("msg-code-block");
   });
+  test("CRLF code block does not render a leading blank line", () => {
+    const result = formatText("```python\r\ndef hello():\r\n    pass\r\n```");
+    const code = result.match(/<code>([\s\S]*?)<\/code>/)[1];
+    expect(code.startsWith("\n")).toBe(false);
+    expect(code).toContain("def");
+  });
 });
 
 // ── _syntaxHighlight ──────────────────────────────────────────────────────────
