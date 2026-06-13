@@ -2472,6 +2472,11 @@ def create_private_channel():
     if len(name) > MAX_CHANNEL_NAME_LEN:
         return f"channel name must be {MAX_CHANNEL_NAME_LEN} characters or fewer", 400
 
+    # Only admit usernames that correspond to real accounts; a non-existent
+    # user must never appear to be a member of the channel.
+    registered = {u.lower() for u in all_users()}
+    members = [m for m in members if m.lower() in registered]
+
     if user not in members:
         members.append(user)
 
