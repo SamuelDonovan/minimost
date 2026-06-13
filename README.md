@@ -59,6 +59,16 @@ _Full-text message search with highlighted results._
 
 ---
 
+## Free, MIT licensed, and fully auditable
+
+MiniMost is released under the [MIT License](LICENSE) — free to use, free to modify, and free to redistribute, with no strings attached.
+
+- 💯 **Truly free** — there's no license to set up, no activation key, no seat count to track, and no paid tier hiding features behind a paywall.
+- 👥 **No user limit** — invite your whole team, your whole company, or your whole LAN. The software never counts heads or asks you to upgrade.
+- 🔍 **Every line is open to inspect & audit** — all of the code is right here in this repository. Unlike "open core" products that ship a stripped-down public version while keeping the real functionality closed, there is no hidden enterprise edition and nothing held back. What you read is exactly what you run.
+
+---
+
 ## Requirements
 
 - Python 3.6+
