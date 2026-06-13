@@ -85,6 +85,11 @@ async function loadSidebar() {
 
     // Build the topbar account avatar now that avatars + presence are known.
     renderAccountAvatar();
+
+    // Upgrade any avatars (e.g. messages) that rendered with initials before
+    // the /user_avatars fetch above resolved, so they show the real image
+    // without waiting for a channel switch.
+    refreshAvatarImages();
   }
 }
 

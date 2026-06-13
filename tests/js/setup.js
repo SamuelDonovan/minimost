@@ -518,6 +518,7 @@ global.makeAvatarWrap = jest.fn((username, size) => {
 });
 global.applyPresenceDot = jest.fn();
 global.renderAccountAvatar = jest.fn();
+global.refreshAvatarImages = jest.fn();
 global._setInitials = jest.fn();
 global._showDmHoverCard = jest.fn();
 global._hideDmHoverCard = jest.fn();

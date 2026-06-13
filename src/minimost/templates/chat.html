@@ -1298,6 +1298,29 @@ function makeAvatarWrap(username, size = 28, channelKey = null, showDot = true) 
     return wrap;
 }
 
+// Upgrade already-rendered avatars from their initials fallback to the real
+// image.  makeAvatarWrap() decides image-vs-initials at render time from
+// window.usersWithAvatars, so anything drawn before /user_avatars resolves
+// (e.g. messages rendered while the sidebar is still loading) is stuck on
+// initials.  loadSidebar() calls this once the set is populated so those
+// stale avatars pick up their image without needing a channel switch.
+function refreshAvatarImages() {
+    document.querySelectorAll(".avatar-wrap[data-username]").forEach(wrap => {
+        const username = wrap.dataset.username;
+        if (!window.usersWithAvatars.has(username)) return;
+        const inner = wrap.querySelector(".avatar");
+        if (!inner || inner.querySelector(".avatar-img")) return; // already an image
+        const size = parseInt(wrap.style.width, 10) || 28;
+        inner.innerHTML = "";
+        const img = document.createElement("img");
+        img.className = "avatar-img";
+        img.src = `/avatar/${username}`;
+        img.alt = username;
+        img.onerror = () => { img.remove(); _setInitials(inner, username, size); };
+        inner.appendChild(img);
+    });
+}
+
 // ---- Account / presence-override ----------------------------------------
 
 // Renders the current user's avatar (with live presence dot) into the topbar
