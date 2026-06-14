@@ -426,7 +426,8 @@ body {
 }
 /* Take the header out of flow so the body sits flush at the top of the cluster
    (otherwise the always-present, opacity-0 action row would leave a gap). The
-   timestamp, read receipt, and hover actions float at the top-right instead. */
+   timestamp and hover actions float at the top-right instead. (The read receipt
+   is not here — it trails the message text inline; see .read-receipt.) */
 .msg.grouped .msg-content-col {
   margin-left: 40px; /* avatar (32px) + .msg flex gap (8px) */
 }
@@ -1161,13 +1162,20 @@ textarea {
 #typing-indicator.typing-out {
   animation: typingSlideOut 0.2s ease-in forwards;
 }
+/* Trails the message text inline ("text ✓"), so it stays left-aligned and clear
+   of the top-right header / code-block headers for both cluster heads and
+   grouped continuations. Empty until a reader is recorded, so it adds nothing
+   until it shows the ✓. */
 .read-receipt {
-  font-size: 0.75em;
+  /* rem, not em: the receipt sits inside .text, which can be scaled up (e.g.
+     .emoji-only is 2.7em) — keep the ✓ a constant size regardless. */
+  font-size: 0.75rem;
+  vertical-align: middle;
   color: #555;
-  margin-left: 4px;
-  position: relative;
+  margin-left: 6px;
   cursor: default;
   user-select: none;
+  white-space: nowrap;
 }
 .read-receipt.seen {
   color: #6cf;

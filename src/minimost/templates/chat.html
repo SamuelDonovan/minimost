@@ -1612,9 +1612,6 @@ function _buildMsgHtml(m, time, fullTime, color) {
     const displayName = m.sender === "system" ? "MiniMost" : m.sender;
     let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}" data-username="${m.sender}">${displayName}</span>`;
     headerHtml += `<span class="time" title="${fullTime}">${time}</span>`;
-    if (m.sender === CURRENT_USER) {
-        headerHtml += `<span class="read-receipt" data-ts="${m.ts}"></span>`;
-    }
 
     let actionsHtml = "";
     if (m.edited) {
@@ -1640,9 +1637,19 @@ function _buildMsgHtml(m, time, fullTime, color) {
         bodyHtml += `<div class="quoted-msg" id="quoted-${m.id}" onclick="scrollToMsg(${m.reply_to_id})"><em>Loading…</em></div>`;
     }
 
+    // Read receipt trails the message text inline (so it reads as "text ✓"). It
+    // lives *inside* the .text div: after plain text it stays on the same line,
+    // while after a code block (a block-level <pre>) it naturally drops to the
+    // next line, left-aligned, instead of overlapping the code-block header.
+    const receiptHtml = m.sender === CURRENT_USER
+        ? `<span class="read-receipt" data-ts="${m.ts}"></span>`
+        : "";
+
+    let receiptPlaced = false;
     if (m.content?.trim()) {
         const emojiOnly = isEmojiOnly(m.content) ? " emoji-only" : "";
-        bodyHtml += `<div class="text${emojiOnly}" id="msg-text-${m.id}" data-raw="${escapeHtml(m.content)}">${formatText(m.content)}</div>`;
+        bodyHtml += `<div class="text${emojiOnly}" id="msg-text-${m.id}" data-raw="${escapeHtml(m.content)}">${formatText(m.content)}${receiptHtml}</div>`;
+        receiptPlaced = true;
     }
 
     if (m.filename) {
@@ -1662,7 +1669,11 @@ function _buildMsgHtml(m, time, fullTime, color) {
 
     bodyHtml += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
 
-    return `<div class="msg-avatar-slot"></div><div class="msg-content-col"><div class="msg-header">${headerHtml}</div><div class="msg-body">${bodyHtml}</div></div>`;
+    // No text body (e.g. a file/image-only message): trail the receipt after the
+    // body so it still shows, left-aligned.
+    const trailingReceipt = receiptPlaced ? "" : receiptHtml;
+
+    return `<div class="msg-avatar-slot"></div><div class="msg-content-col"><div class="msg-header">${headerHtml}</div><div class="msg-body">${bodyHtml}</div>${trailingReceipt}</div>`;
 }
 
 function _injectMsgAvatar(msgEl, sender) {
@@ -1894,6 +1905,14 @@ function send() {
 }
 
 // Edit Messages
+// The read receipt span lives inside the .text div, so re-rendering the text
+// (edit/cancel/save) drops it. Rebuild it from the message's ts so it persists.
+function _readReceiptSpan(msgId) {
+    const msgEl = document.getElementById(`msg-${msgId}`);
+    const ts = msgEl ? msgEl.dataset.ts : "";
+    return `<span class="read-receipt" data-ts="${ts}"></span>`;
+}
+
 function startEdit(msgId) {
     const textDiv = document.getElementById(`msg-text-${msgId}`);
     const originalText = textDiv.dataset.raw || textDiv.innerText;
@@ -1937,8 +1956,9 @@ function startEdit(msgId) {
 function cancelEdit(msgId) {
     const textDiv = document.getElementById(`msg-text-${msgId}`);
     const originalText = textDiv.dataset.raw || "";
-    textDiv.innerHTML = formatText(originalText);
+    textDiv.innerHTML = formatText(originalText) + _readReceiptSpan(msgId);
     delete textDiv.dataset.editing;
+    updateReadReceiptUI();
 }
 
 function saveEdit(msgId) {
@@ -1964,8 +1984,9 @@ function saveEdit(msgId) {
     .then(() => {
         const textDiv = document.getElementById(`msg-text-${msgId}`);
         textDiv.dataset.raw = newText;
-        textDiv.innerHTML = formatText(newText);
+        textDiv.innerHTML = formatText(newText) + _readReceiptSpan(msgId);
         delete textDiv.dataset.editing;
+        updateReadReceiptUI();
     })
     .catch(err => {
         alert("Could not edit message");
