@@ -1866,7 +1866,11 @@ function fetchMessages() {
                 notifyMention(mentionMsg);
             }
 
-            if (appended && !document.hidden) {
+            // Only mark read when the page is genuinely in front of the user —
+            // visible *and* focused. A visible-but-unfocused tab (browser behind
+            // another app) must leave new messages unread until the user returns;
+            // reconcileOnActive() then marks them read on focus/visibilitychange.
+            if (appended && pageActive()) {
                 fetch(`/mark_read/${channel}`, { method: "POST" });
             }
 
