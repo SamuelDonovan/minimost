@@ -980,3 +980,88 @@ def test_send_everyone_stores_sentinel(alice_and_bob):
     row = db.execute("SELECT mentions FROM messages WHERE channel='general'").fetchone()
     db.close()
     assert json.loads(row[0]) == [chat_mod.MENTION_EVERYONE]
+
+
+# ── GET /mentions (mentions channel) ──────────────────────────────────────────
+
+
+def _as(client, user):
+    """Switch *client*'s session to act as *user* (a registered account)."""
+    with client.session_transaction() as sess:
+        sess["user"] = user
+
+
+def test_mentions_direct(alice_and_bob):
+    c = alice_and_bob
+    _as(c, "bob")
+    c.post("/send/general", data={"text": "hey @alice look here"})
+    _as(c, "alice")
+    data = c.get("/mentions").get_json()
+    assert len(data) == 1
+    assert data[0]["sender"] == "bob"
+    assert data[0]["channel"] == "general"
+    assert "look here" in data[0]["content"]
+
+
+def test_mentions_everyone_visible_to_recipient(alice_and_bob):
+    c = alice_and_bob
+    _as(c, "bob")
+    c.post("/send/general", data={"text": "ship it @everyone"})
+    _as(c, "alice")
+    data = c.get("/mentions").get_json()
+    assert len(data) == 1
+    assert data[0]["sender"] == "bob"
+
+
+def test_mentions_everyone_excludes_sender(alice_and_bob):
+    # The sender of an @everyone is not mentioning themselves.
+    alice_and_bob.post("/send/general", data={"text": "ship it @everyone"})
+    data = alice_and_bob.get("/mentions").get_json()
+    assert data == []
+
+
+def test_mentions_excludes_self_sent_direct(alice_and_bob):
+    # alice mentioning bob must not appear in alice's own mentions list.
+    alice_and_bob.post("/send/general", data={"text": "yo @bob"})
+    data = alice_and_bob.get("/mentions").get_json()
+    assert data == []
+
+
+def test_mentions_cleared_after_mark_read(alice_and_bob):
+    c = alice_and_bob
+    _as(c, "bob")
+    c.post("/send/general", data={"text": "ping @alice"})
+    _as(c, "alice")
+    assert len(c.get("/mentions").get_json()) == 1
+    c.post("/mark_read/general")
+    assert c.get("/mentions").get_json() == []
+
+
+def test_mentions_excludes_deleted(alice_and_bob):
+    c = alice_and_bob
+    _as(c, "bob")
+    c.post("/send/general", data={"text": "ping @alice"})
+    msg = c.get("/messages/general?after=0").get_json()[0]
+    c.post(f"/delete/{msg['id']}")
+    _as(c, "alice")
+    assert c.get("/mentions").get_json() == []
+
+
+def test_mentions_private_channel_access(alice_and_bob):
+    c = alice_and_bob
+    _add_user("charlie")
+    # alice creates a private channel with bob; bob pings the whole channel.
+    resp = c.post(
+        "/private_channels/create",
+        json={"name": "secret", "members": ["bob"]},
+    )
+    pchannel = resp.get_json()["channel"]
+    _as(c, "bob")
+    c.post(f"/send/{pchannel}", data={"text": "huddle up @everyone"})
+
+    # alice (a member) sees the mention...
+    _as(c, "alice")
+    assert len(c.get("/mentions").get_json()) == 1
+    # ...charlie (not a member) does not.
+    _as(c, "charlie")
+    assert c.get("/mentions").get_json() == []

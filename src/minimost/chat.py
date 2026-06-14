@@ -553,6 +553,74 @@ def channel_unreads():
     return jsonify(result)
 
 
+@chat_bp.route("/mentions", methods=["GET"])
+@auth.login_required
+def mentions():
+    """Return every unread message that ``@``-mentions the current user.
+
+    Route: ``GET /mentions``
+
+    Requires authentication.  Aggregates, across every channel the user may
+    read, the messages that mention them and that they have not yet read.  A
+    message counts as a mention if its ``mentions`` column (a JSON array set at
+    send time by :func:`extract_mentions`) contains the user's canonical
+    username, or the :data:`MENTION_EVERYONE` sentinel.  "Unread" is derived
+    from the per-``(user, channel)`` ``read_state`` watermark, so a mention
+    disappears from this list as soon as the user reads its channel — viewing
+    this list itself does not mark anything read.
+
+    The channel-access scope reuses :func:`_search_access`, and private-channel
+    late-joiners are bounded by ``history_start_ts`` exactly as
+    :func:`search_messages` does, so a user never sees mentions in channels they
+    cannot access or from before they joined.
+
+    :returns: JSON array of ``{id, channel, sender, content, filename, ts}``
+        objects, newest first.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    access_clause, access_params, history_starts = _search_access(user)
+
+    db = get_db()
+    rows = db.execute(
+        "SELECT m.id, m.channel, m.sender, m.content, m.filename, m.ts, m.mentions "
+        "FROM messages m "
+        "LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel "
+        "WHERE m.mentions IS NOT NULL "
+        "AND m.deleted = 0 "
+        "AND m.sender != ? "
+        "AND m.ts > COALESCE(r.last_read_ts, 0) "
+        f"AND {access_clause} "  # nosec B608 — access_clause is a constant template
+        "ORDER BY m.ts DESC",
+        (user, user, *access_params),
+    ).fetchall()
+    db.close()
+
+    result = []
+    for r in rows:
+        try:
+            mention_list = json.loads(r["mentions"])
+        except (TypeError, ValueError):
+            continue
+        if user not in mention_list and MENTION_EVERYONE not in mention_list:
+            continue
+        hs = history_starts.get(r["channel"])
+        if hs is not None and r["ts"] < hs:
+            continue
+        result.append(
+            {
+                "id": r["id"],
+                "channel": r["channel"],
+                "sender": r["sender"],
+                "content": r["content"],
+                "filename": r["filename"],
+                "ts": r["ts"],
+            }
+        )
+
+    return jsonify(result)
+
+
 @chat_bp.route("/unread_count", methods=["GET"])
 @auth.login_required
 def unread_count():

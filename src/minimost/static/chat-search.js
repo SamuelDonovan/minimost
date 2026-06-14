@@ -777,6 +777,7 @@ searchInput.addEventListener("keydown", (e) => {
 document.addEventListener("DOMContentLoaded", () => {
   initFavicon();
   loadSidebar();
+  fetchMentions();
   document.getElementById("chan").innerText = channel;
   switchChannel(channel);
   updateMembersCount();
@@ -804,6 +805,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(refreshChannels, 1000);
   setInterval(refreshPrivateChannels, 1000);
   setInterval(fetchReadReceipts, 3000);
+  setInterval(fetchMentions, 2000);
   setInterval(refreshTotalUnreadCount, 5000);
   setInterval(pollIncomingCalls, 1000);
   setInterval(refreshScreenShares, 1000);

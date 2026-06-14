@@ -1478,6 +1478,14 @@ function updateSidebarActive() {
 
 function switchChannel(c) {
     if (channel === c) return;
+
+    // The "Mentions" pseudo-channel is a read-only aggregated list, not a real
+    // channel — it has its own render path and must skip mark_read/polling.
+    if (c === MENTIONS_CHANNEL) {
+        openMentionsChannel();
+        return;
+    }
+
     closeSidebar();
 
     // 🚫 Cancel any in-flight fetch
@@ -1487,6 +1495,11 @@ function switchChannel(c) {
     }
 
     cancelReply();
+
+    // Restore controls that the Mentions view hides (no-op for normal switches).
+    document.getElementById("input").style.display = "";
+    const _membersBtn = document.getElementById("members-btn");
+    if (_membersBtn) _membersBtn.style.display = "";
 
     channel = c;
     lastTs = 0;
@@ -1701,6 +1714,10 @@ function _injectMsgAvatar(msgEl, sender) {
 }
 
 function fetchMessages() {
+    // The Mentions pseudo-channel has no /messages endpoint; its own poller
+    // (fetchMentions) refreshes the view instead.
+    if (channel === MENTIONS_CHANNEL) return;
+
     fetchController = new AbortController();
     const signal = fetchController.signal;
 

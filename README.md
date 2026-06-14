@@ -1,4 +1,6 @@
-<img src="src/minimost/static/minimost-logo.svg" alt="MiniMost" width="360">
+<p align="center">
+    <img src="src/minimost/static/minimost-logo.svg" alt="MiniMost" width="360">
+</p>
 
 ---
 

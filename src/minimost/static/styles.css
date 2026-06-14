@@ -1078,6 +1078,49 @@ mark.fuzzy-highlight {
   text-align: center;
   color: #888;
 }
+
+/* Mentions pseudo-channel: read-only list of unread @-mentions. */
+.mention-list-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #2c2c2c;
+}
+.mention-list-item:hover {
+  background: #2d2d2d;
+}
+.mention-list-col {
+  min-width: 0;
+  flex: 1;
+}
+.mention-list-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #888;
+}
+.mention-list-sender {
+  font-weight: 600;
+}
+.mention-list-chan {
+  color: #7eb8f7;
+  font-weight: 600;
+}
+.mention-list-text {
+  font-size: 14px;
+  color: #ddd;
+  line-height: 1.4;
+  margin-top: 2px;
+  word-break: break-word;
+}
+.mentions-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: #888;
+}
 button,
 input,
 textarea {

@@ -9,6 +9,7 @@ beforeAll(() => {
   // Stubs for sidebar
   global.openCreatePrivateChannel = jest.fn();
   global.bindPCTooltip = jest.fn();
+  global.renderMentionsSidebar = jest.fn();
   global.nativeNotifEnabled = false;
   global.notifMuted = false;
 

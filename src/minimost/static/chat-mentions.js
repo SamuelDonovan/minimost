@@ -242,3 +242,175 @@ msgBox.addEventListener(
 );
 
 msgBox.addEventListener("blur", () => setTimeout(hideMentions, 100));
+
+// --- Mentions channel --------------------------------------------------------
+// A virtual "Mentions" entry in the sidebar that lists every unread message
+// mentioning the current user (across all channels they can read), newest
+// first. Clicking a listed message jumps to it in its real channel; reading the
+// real channel advances that channel's read watermark, so the mention drops off
+// the list on the next poll. Viewing this list never marks anything read.
+//
+// MENTIONS_CHANNEL is a sentinel that never reaches the /messages backend —
+// switchChannel and fetchMessages special-case it (see chat.html).
+const MENTIONS_CHANNEL = "mentions";
+
+// Latest /mentions payload, shared between the sidebar badge and the list view.
+let mentionItems = [];
+
+// Poll /mentions, refresh the sidebar entry, and (if the view is open) re-render
+// it so read mentions disappear live.
+function fetchMentions() {
+  return fetch("/mentions")
+    .then((r) => (r.ok ? r.json() : []))
+    .then((items) => {
+      mentionItems = items;
+      renderMentionsSidebar();
+      if (channel === MENTIONS_CHANNEL) renderMentionsView();
+    })
+    .catch(() => {});
+}
+
+// Insert/update the single "Mentions" sidebar entry at the top of the dynamic
+// sidebar. Hidden entirely when there are no unread mentions.
+function renderMentionsSidebar() {
+  const sb = document.getElementById("sidebar-dynamic");
+  if (!sb) return;
+  let item = document.getElementById("mentions-sidebar-item");
+
+  if (!mentionItems.length) {
+    item?.remove();
+    // If the user is parked on an emptied Mentions view, reflect that.
+    if (channel === MENTIONS_CHANNEL) renderMentionsView();
+    return;
+  }
+
+  if (!item) {
+    item = document.createElement("div");
+    item.className = "sidebar-item";
+    item.id = "mentions-sidebar-item";
+    item.dataset.channel = MENTIONS_CHANNEL;
+    item.onpointerup = (e) => {
+      e.preventDefault();
+      switchChannel(MENTIONS_CHANNEL);
+    };
+  }
+  // Always keep it pinned to the very top, even after a sidebar rebuild.
+  if (sb.firstChild !== item) sb.insertBefore(item, sb.firstChild);
+
+  item.innerHTML = "";
+  const labelSpan = document.createElement("span");
+  labelSpan.className = "label";
+  labelSpan.textContent = "@ Mentions";
+  item.appendChild(labelSpan);
+
+  const badge = document.createElement("span");
+  badge.className = "unread-badge";
+  badge.textContent = mentionItems.length;
+  item.appendChild(badge);
+
+  if (channel === MENTIONS_CHANNEL) item.classList.add("active");
+}
+
+// Switch the main pane to the read-only Mentions list. Hides the composer and
+// channel-specific controls (you can't post to or call within Mentions).
+function openMentionsChannel() {
+  if (fetchController) {
+    fetchController.abort();
+    fetchController = null;
+  }
+  cancelReply();
+  channel = MENTIONS_CHANNEL;
+  closeSidebar();
+
+  document.getElementById("chat").innerHTML = "";
+  const ti = document.getElementById("typing-indicator");
+  if (ti) {
+    ti.innerHTML = "";
+    ti.className = "";
+  }
+
+  document.getElementById("chan").innerText = "Mentions";
+  const chanHash = document.querySelector(".chan-hash");
+  if (chanHash) chanHash.style.visibility = "hidden";
+  const nameBar = document.getElementById("private-ch-name-bar");
+  if (nameBar) nameBar.style.display = "none";
+  const membersBtn = document.getElementById("members-btn");
+  if (membersBtn) membersBtn.style.display = "none";
+  document.getElementById("call-btn").style.display = "none";
+  document.getElementById("topbar-share-btn").style.display = "none";
+  document.getElementById("input").style.display = "none";
+
+  renderMentionsView();
+  updateSidebarActive();
+}
+
+// Render the cached mentions as a list of read-only cards into #chat. Clicking a
+// card jumps to the real message. Empty state covers the list clearing while the
+// user is looking at it.
+function renderMentionsView() {
+  const chat = document.getElementById("chat");
+  if (!chat) return;
+  chat.innerHTML = "";
+
+  if (!mentionItems.length) {
+    const empty = document.createElement("div");
+    empty.className = "mentions-empty";
+    empty.textContent = "No unread mentions";
+    chat.appendChild(empty);
+    return;
+  }
+
+  mentionItems.forEach((m) => {
+    const card = document.createElement("div");
+    card.className = "mention-list-item";
+    card.onclick = () => _goToMention(m.channel, m.id);
+
+    const avatar = makeAvatarWrap(m.sender, 32);
+    card.appendChild(avatar);
+
+    const col = document.createElement("div");
+    col.className = "mention-list-col";
+
+    const meta = document.createElement("div");
+    meta.className = "mention-list-meta";
+    const name = document.createElement("span");
+    name.className = "mention-list-sender";
+    name.style.color = userColor(m.sender);
+    name.textContent = m.sender;
+    const chan = document.createElement("span");
+    chan.className = "mention-list-chan";
+    chan.textContent = _searchChannelLabel(m.channel);
+    const when = document.createElement("span");
+    when.className = "mention-list-time";
+    when.textContent = new Date(m.ts * 1000).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    meta.appendChild(name);
+    meta.appendChild(chan);
+    meta.appendChild(when);
+    col.appendChild(meta);
+
+    const body = document.createElement("div");
+    body.className = "mention-list-text";
+    if (m.content?.trim()) {
+      body.innerHTML = applyMentionPills(formatText(m.content));
+    } else if (m.filename) {
+      body.textContent = "📎 attachment";
+    }
+    col.appendChild(body);
+
+    card.appendChild(col);
+    chat.appendChild(card);
+  });
+}
+
+// Jump to a mentioned message in its real channel. switchChannel marks that
+// channel read (so the mention clears on the next poll); the short delay lets
+// the channel's messages render before we scroll. Mirrors _goToSearchResult.
+function _goToMention(ch, id) {
+  switchChannel(ch);
+  setTimeout(() => scrollToMsg(id), 200);
+}

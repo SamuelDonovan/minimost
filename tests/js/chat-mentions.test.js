@@ -184,3 +184,143 @@ describe("@-token detection", () => {
     );
   });
 });
+
+// ── Mentions channel ──────────────────────────────────────────────────────────
+describe("mentions channel", () => {
+  beforeAll(() => {
+    // DOM the mentions view / sidebar entry touch.
+    for (const id of [
+      "sidebar-dynamic",
+      "chat",
+      "chan",
+      "typing-indicator",
+      "private-ch-name-bar",
+      "members-btn",
+      "call-btn",
+      "topbar-share-btn",
+      "input",
+    ]) {
+      const el = document.createElement("div");
+      el.id = id;
+      document.body.appendChild(el);
+    }
+    const hash = document.createElement("span");
+    hash.className = "chan-hash";
+    document.body.appendChild(hash);
+
+    // Cross-file globals the new code calls.
+    global.switchChannel = jest.fn();
+    global.scrollToMsg = jest.fn();
+    global.updateSidebarActive = jest.fn();
+    global.cancelReply = jest.fn();
+    global.closeSidebar = jest.fn();
+    global.userColor = jest.fn(() => "#abc");
+    global.formatText = jest.fn((t) => t);
+    global._searchChannelLabel = jest.fn((ch) => `label:${ch}`);
+  });
+
+  beforeEach(() => {
+    global.channel = "general";
+    mentionItems = [];
+    document.getElementById("sidebar-dynamic").innerHTML = "";
+    document.getElementById("chat").innerHTML = "";
+    document.getElementById("input").style.display = "";
+  });
+
+  test("renderMentionsSidebar adds a badge with the unread count", () => {
+    mentionItems = [
+      { id: 1, channel: "general", sender: "bob", content: "hi @alice", ts: 1 },
+      { id: 2, channel: "general", sender: "bob", content: "yo @alice", ts: 2 },
+    ];
+    renderMentionsSidebar();
+    const item = document.getElementById("mentions-sidebar-item");
+    expect(item).not.toBeNull();
+    expect(item.dataset.channel).toBe(MENTIONS_CHANNEL);
+    expect(item.querySelector(".unread-badge").textContent).toBe("2");
+  });
+
+  test("renderMentionsSidebar removes the entry when there are no mentions", () => {
+    mentionItems = [
+      { id: 1, channel: "general", sender: "bob", content: "hi", ts: 1 },
+    ];
+    renderMentionsSidebar();
+    expect(document.getElementById("mentions-sidebar-item")).not.toBeNull();
+    mentionItems = [];
+    renderMentionsSidebar();
+    expect(document.getElementById("mentions-sidebar-item")).toBeNull();
+  });
+
+  test("renderMentionsSidebar pins the entry to the top of the sidebar", () => {
+    const sb = document.getElementById("sidebar-dynamic");
+    sb.appendChild(document.createElement("b")); // pre-existing content
+    mentionItems = [
+      { id: 1, channel: "general", sender: "bob", content: "hi @alice", ts: 1 },
+    ];
+    renderMentionsSidebar();
+    expect(sb.firstChild.id).toBe("mentions-sidebar-item");
+  });
+
+  test("renderMentionsView lists each mention as a clickable card", () => {
+    mentionItems = [
+      {
+        id: 7,
+        channel: "general",
+        sender: "bob",
+        content: "look @alice",
+        ts: 1,
+      },
+    ];
+    renderMentionsView();
+    const cards = document.querySelectorAll(".mention-list-item");
+    expect(cards.length).toBe(1);
+    expect(cards[0].textContent).toContain("bob");
+    expect(cards[0].textContent).toContain("label:general");
+    cards[0].onclick();
+    expect(switchChannel).toHaveBeenCalledWith("general");
+  });
+
+  test("renderMentionsView shows an empty state when there are no mentions", () => {
+    mentionItems = [];
+    renderMentionsView();
+    expect(document.querySelector(".mentions-empty")).not.toBeNull();
+  });
+
+  test("_goToMention switches channel then scrolls to the message", () => {
+    jest.useFakeTimers();
+    _goToMention("dm:alice:bob", 42);
+    expect(switchChannel).toHaveBeenCalledWith("dm:alice:bob");
+    jest.runAllTimers();
+    expect(scrollToMsg).toHaveBeenCalledWith(42);
+    jest.useRealTimers();
+  });
+
+  test("openMentionsChannel hides the composer and renders the view", () => {
+    mentionItems = [
+      { id: 1, channel: "general", sender: "bob", content: "hi @alice", ts: 1 },
+    ];
+    openMentionsChannel();
+    expect(channel).toBe(MENTIONS_CHANNEL);
+    expect(document.getElementById("input").style.display).toBe("none");
+    expect(document.getElementById("chan").innerText).toBe("Mentions");
+    expect(document.querySelectorAll(".mention-list-item").length).toBe(1);
+  });
+
+  test("fetchMentions caches the payload and refreshes the sidebar", async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve([
+          {
+            id: 1,
+            channel: "general",
+            sender: "bob",
+            content: "@alice",
+            ts: 1,
+          },
+        ]),
+    });
+    await fetchMentions();
+    expect(mentionItems.length).toBe(1);
+    expect(document.getElementById("mentions-sidebar-item")).not.toBeNull();
+  });
+});

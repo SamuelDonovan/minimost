@@ -80,6 +80,9 @@ async function loadSidebar() {
       sidebarEntry(label, dm.channel);
     });
 
+    // Re-pin the "Mentions" entry at the top — loadSidebar cleared it above.
+    renderMentionsSidebar();
+
     // ensure highlight is correct after rebuild
     updateSidebarActive();
 
