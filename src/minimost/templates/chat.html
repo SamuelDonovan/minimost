@@ -149,7 +149,7 @@
             <textarea
                 id="msg"
                 rows="3"
-                placeholder="Type a message…"
+                placeholder="Type a message to #general…"
             ></textarea>
 
             <input
@@ -1519,6 +1519,9 @@ function switchChannel(c) {
         nameBar.style.display = isPrivate ? "flex" : "none";
         if (isPrivate) document.getElementById("private-ch-name-bar-text").textContent = channelDisplayName;
     }
+
+    const msgPrefix = isDM ? "@" : (isPrivate ? "" : "#");
+    document.getElementById("msg").placeholder = `Type a message to ${msgPrefix}${channelDisplayName}…`;
 
     forceScrollToBottom = true;
 
