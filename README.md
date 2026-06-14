@@ -1,9 +1,10 @@
 <p align="center">
-    <img src="src/minimost/static/minimost-logo.svg" alt="MiniMost" width="360">
+    <img src="https://raw.githubusercontent.com/SamuelDonovan/minimost/main/src/minimost/static/minimost-logo.png" alt="MiniMost" width="360">
 </p>
 
 ---
 
+[![PyPI](https://img.shields.io/pypi/v/minimost.svg)](https://pypi.org/project/minimost/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.6+](https://img.shields.io/badge/python-3.6%20%7C%203.7%20%7C%203.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![Built with Flask](https://img.shields.io/badge/built%20with-Flask-000000.svg?logo=flask)](https://flask.palletsprojects.com/)
@@ -82,6 +83,12 @@ That's it!
 
 ## Installation
 
+### From PyPI (recommended)
+
+```bash
+pip install minimost
+```
+
 ### From source
 
 ```bash
@@ -90,7 +97,7 @@ cd minimost
 pip install -e .
 ```
 
-### From wheel (latest build)
+### From wheel (latest dev build)
 
 Download the latest `.whl` from the [releases page](https://github.com/SamuelDonovan/minimost/releases/tag/dev), then:
 
