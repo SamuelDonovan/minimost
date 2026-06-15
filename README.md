@@ -5,7 +5,8 @@
 ---
 
 [![PyPI](https://img.shields.io/pypi/v/minimost.svg)](https://pypi.org/project/minimost/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Downloads](https://static.pepy.tech/badge/minimost)](https://pepy.tech/project/minimost)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/SamuelDonovan/minimost/blob/main/LICENSE)
 [![Python: 3.6+](https://img.shields.io/badge/python-3.6%20%7C%203.7%20%7C%203.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![Built with Flask](https://img.shields.io/badge/built%20with-Flask-000000.svg?logo=flask)](https://flask.palletsprojects.com/)
 [![Database: SQLite](https://img.shields.io/badge/database-SQLite%20only-003b57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
@@ -29,13 +30,13 @@
 
 ## Screenshots
 
-![Login page](docs/_static/screenshot-login.png)
+![Login page](https://raw.githubusercontent.com/SamuelDonovan/minimost/main/docs/_static/screenshot-login.png)
 _The login page — clean, minimal, and version-tagged._
 
-![Chat interface](docs/_static/screenshot-chat.png)
+![Chat interface](https://raw.githubusercontent.com/SamuelDonovan/minimost/main/docs/_static/screenshot-chat.png)
 _The main chat interface — channel list, direct messages, inline image attachments, and real-time typing indicators._
 
-![Message search](docs/_static/screenshot-message-search.png)
+![Message search](https://raw.githubusercontent.com/SamuelDonovan/minimost/main/docs/_static/screenshot-message-search.png)
 _Full-text message search with highlighted results._
 
 ---
@@ -64,7 +65,7 @@ _Full-text message search with highlighted results._
 
 ## Free, MIT licensed, and fully auditable
 
-MiniMost is released under the [MIT License](LICENSE) — free to use, free to modify, and free to redistribute, with no strings attached.
+MiniMost is released under the [MIT License](https://github.com/SamuelDonovan/minimost/blob/main/LICENSE) — free to use, free to modify, and free to redistribute, with no strings attached.
 
 - 💯 **Truly free** — there's no license to set up, no activation key, no seat count to track, and no paid tier hiding features behind a paywall.
 - 👥 **No user limit** — invite your whole team, your whole company, or your whole LAN. The software never counts heads or asks you to upgrade.
@@ -151,7 +152,7 @@ To reach the server from another machine, navigate to `https://<server-ip>:<port
 | `3478`                                | UDP      | Server (inbound) | Voice/video calls & screen sharing                      | Bundled STUN server. Set via `stun_port` in `settings.json`.                                       |
 | Ephemeral UDP (Linux `32768`–`60999`) | UDP      | Between clients  | WebRTC media (audio/video/screen)                       | Peer-to-peer, browser-chosen; only matters if clients run host firewalls or sit on segmented LANs. |
 
-No outbound internet access is required (no external database, no public STUN/TURN) — MiniMost runs fully air-gapped. There is **no TURN relay**, so peers must be on the same LAN/subnet, and SQLite is file-based so there is no database port. See the [deployment docs](docs/deployment.rst) for an administrator setup checklist plus `firewalld` / `ufw` examples.
+No outbound internet access is required (no external database, no public STUN/TURN) — MiniMost runs fully air-gapped. There is **no TURN relay**, so peers must be on the same LAN/subnet, and SQLite is file-based so there is no database port. See the [deployment docs](https://github.com/SamuelDonovan/minimost/blob/main/docs/deployment.rst) for an administrator setup checklist plus `firewalld` / `ufw` examples.
 
 ### Production deployment
 
