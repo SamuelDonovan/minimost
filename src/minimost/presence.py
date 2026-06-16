@@ -251,6 +251,24 @@ def _init_tables():
 _init_tables()
 
 
+def _can_access_channel(channel: str, user: str) -> bool:
+    """Return ``True`` if *user* may use *channel*.
+
+    Defers to :func:`minimost.chat.is_valid_channel` (public channels, private
+    channels they belong to, DMs they participate in). Imported lazily because
+    ``chat`` imports this module at load time, so a top-level import would be
+    circular. If the check itself raises (a wiring bug, never attacker input)
+    we fail open so typing indicators keep working — the data at stake is only
+    a transient "X is typing…" hint.
+    """
+    try:
+        from .chat import is_valid_channel
+
+        return is_valid_channel(channel, user)
+    except Exception:
+        return True
+
+
 @presence_bp.route("/typing/<channel>", methods=["POST"])
 def typing_start(channel):
     """Record that the current user is typing in a channel.
@@ -273,7 +291,7 @@ def typing_start(channel):
     :rtype: flask.Response
     """
     user = session.get("user")
-    if user:
+    if user and _can_access_channel(channel, user):
         now = int(time.time())
         db = sqlite3.connect(PRESENCE_DB)
         db.execute(_WAL)
@@ -307,7 +325,7 @@ def typing_get(channel):
     :rtype: flask.Response (application/json)
     """
     user = session.get("user")
-    if not user:
+    if not user or not _can_access_channel(channel, user):
         return []
     cutoff = int(time.time()) - 5
     db = sqlite3.connect(PRESENCE_DB)

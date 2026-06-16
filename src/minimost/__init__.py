@@ -203,6 +203,17 @@ def create_app():
     _stun = _stun_port()
     app.config["MAX_CONTENT_LENGTH"] = _upload_mb * 1024 * 1024
 
+    # Session-cookie hardening. SameSite=Lax stops the cookie riding along on
+    # cross-site POSTs, which is the real defence behind the chat/calls/presence
+    # blueprints being CSRF-exempt (only the auth HTML forms carry a CSRF token).
+    # HttpOnly keeps the cookie out of reach of any (e.g. injected) JavaScript.
+    # Secure is set only when we actually serve TLS — the test suite and any
+    # plain-HTTP reverse-proxy setup set MINIMOST_SKIP_TLS, where a Secure cookie
+    # would never be sent and would break the session entirely.
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SECURE"] = not os.environ.get("MINIMOST_SKIP_TLS")
+
     def _csrf_token() -> str:
         """Return a per-session CSRF token, generating one if absent."""
         if "_csrf_token" not in session:
@@ -234,6 +245,7 @@ def create_app():
             "app_version": _APP_VERSION,
             "max_upload_mb": _upload_mb,
             "max_avatar_mb": _avatar_mb,
+            "max_message_chars": chat_mod.MAX_MESSAGE_LEN,
             "stun_port": _stun,
         }
 

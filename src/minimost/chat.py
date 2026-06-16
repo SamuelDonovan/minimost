@@ -166,6 +166,11 @@ def _load_channels() -> List[str]:
 
 CHANNELS = _load_channels()
 MAX_CHANNEL_NAME_LEN = 80
+# Upper bound on a single message body. Bounds per-message storage so a user
+# can't post a multi-megabyte body (up to MAX_CONTENT_LENGTH) that bloats the
+# shared message DB — and, where a size cap is configured, evicts other users'
+# history. Generous enough for long pastes/code blocks.
+MAX_MESSAGE_LEN = 10000
 
 # Matches an ``@username`` mention.  The negative lookbehind for word
 # characters, ``@`` and ``/`` prevents matching inside email addresses
@@ -1377,6 +1382,8 @@ def send(channel):
         return "forbidden", 403
 
     text = (request.form.get("text") or "").rstrip()
+    if len(text) > MAX_MESSAGE_LEN:
+        return f"message too long (max {MAX_MESSAGE_LEN} characters)", 413
     reply_to_id_raw = request.form.get("reply_to_id")
     try:
         reply_to_id = int(reply_to_id_raw) if reply_to_id_raw else None
@@ -1430,15 +1437,24 @@ def get_message(msg_id):
     :raises: ``404 not found`` — if no message with *msg_id* exists in the
         current user's database.
     """
+    user = session["user"]
     db = get_db()
     row = db.execute(
-        "SELECT id, sender, content, filename, deleted FROM messages WHERE id = ?",
+        "SELECT id, channel, sender, content, filename, deleted FROM messages WHERE id = ?",
         (msg_id,),
     ).fetchone()
     db.close()
     if not row:
         return "not found", 404
-    return jsonify(dict(row))
+    # With one shared message table the per-user-DB scoping that used to bound
+    # this lookup is gone, so gate on channel visibility explicitly — otherwise
+    # any id could read messages from private channels/DMs the caller isn't in.
+    # Return 404 (not 403) so the endpoint doesn't confirm a message exists.
+    if not is_valid_channel(row["channel"], user):
+        return "not found", 404
+    result = dict(row)
+    result.pop("channel", None)
+    return jsonify(result)
 
 
 @chat_bp.route("/files/<path:filename>", methods=["GET"])
@@ -1668,6 +1684,8 @@ def edit(msg_id):
     """
     editor = session["user"]
     new_text = request.form.get("text", "").strip()
+    if len(new_text) > MAX_MESSAGE_LEN:
+        return f"message too long (max {MAX_MESSAGE_LEN} characters)", 413
 
     db = get_db()
     row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
@@ -2314,6 +2332,13 @@ def react(msg_id):
         db.close()
         return "not found", 404
 
+    # The message lives in the shared table, so confirm the caller can actually
+    # see its channel before letting them react — otherwise they could react to
+    # (and thereby probe/intrude on) private channels and DMs they're not in.
+    if not is_valid_channel(row["channel"], user):
+        db.close()
+        return "not found", 404
+
     # Toggle the reaction on the canonical message row. Reactions key on the real
     # message id, so this is a single atomic insert/delete — no per-user fan-out
     # and no read-modify-write race.
@@ -2384,6 +2409,8 @@ def mark_read(channel):
     :rtype: flask.Response
     """
     user = session["user"]
+    if not is_valid_channel(channel, user):
+        return "forbidden", 403
     db = get_db()
 
     # Advance the read watermark to the newest message in the channel. Unread
@@ -2423,6 +2450,9 @@ def read_receipts(channel):
         (epoch seconds), e.g. ``{"alice": 1716000001.4, "bob": 1716000000.1}``.
     :rtype: flask.Response (application/json)
     """
+    user = session["user"]
+    if not is_valid_channel(channel, user):
+        return "forbidden", 403
     db = get_db()
     states = db.execute(
         "SELECT user, last_read_ts FROM read_state WHERE channel = ?", (channel,)

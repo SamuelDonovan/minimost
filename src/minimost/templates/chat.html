@@ -18,6 +18,7 @@
     const CURRENT_USER = "{{ session.user }}";
     const MAX_UPLOAD_MB = {{ max_upload_mb }};
     const MAX_AVATAR_MB = {{ max_avatar_mb }};
+    const MAX_MESSAGE_CHARS = {{ max_message_chars }};
     const STUN_PORT = {{ stun_port }};
     const CSRF_TOKEN = "{{ csrf_token() }}";
 </script>
@@ -178,6 +179,7 @@
                     </button>
                 </div>
                 <div id="input-actions-main">
+                <span id="char-count" class="char-count hidden" aria-live="polite"></span>
                 <button type="button" onclick="openEmojiPicker(event)" id="emoji-btn" class="icon-btn" title="Add emoji">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4.285 9.567a.5.5 0 0 1 .683.183A3.5 3.5 0 0 0 8 11.5c1.495 0 2.674-.978 3.032-1.75a.5.5 0 1 1 .906.422A4.5 4.5 0 0 1 8 12.5a4.5 4.5 0 0 1-3.938-2.25.5.5 0 0 1 .223-.683zM7 6.5C7 7.328 6.552 8 6 8s-1-.672-1-1.5S5.448 5 6 5s1 .672 1 1.5zm4 0c0 .828-.552 1.5-1 1.5s-1-.672-1-1.5S9.448 5 10 5s1 .672 1 1.5z"/></svg>
                     <span class="icon-text">Emoji</span>
@@ -711,10 +713,30 @@ msgBox.addEventListener("input", () => {
 });
 
 // Send button is greyed out until there's something to send
-// (message text or an attached file).
+// (message text or an attached file), and disabled while the message is over
+// the server's length limit (which would otherwise be silently rejected).
 function updateSendState() {
-    const hasContent = msgBox.value.trim().length > 0 || pendingFiles.length > 0;
-    sendBtn.classList.toggle("inactive", !hasContent);
+    const len = msgBox.value.trim().length;
+    const overLimit = len > MAX_MESSAGE_CHARS;
+    const hasContent = len > 0 || pendingFiles.length > 0;
+    sendBtn.classList.toggle("inactive", !hasContent || overLimit);
+    updateCharCount();
+}
+
+// Show a live character counter as the message nears the limit, turning red
+// once it's over. Hidden until ~90% of the limit so it stays out of the way.
+const _CHAR_COUNT_SHOW_AT = Math.floor(MAX_MESSAGE_CHARS * 0.9);
+function updateCharCount() {
+    const counter = document.getElementById("char-count");
+    if (!counter) return;
+    const len = msgBox.value.trim().length;
+    if (len < _CHAR_COUNT_SHOW_AT) {
+        counter.classList.add("hidden");
+        return;
+    }
+    counter.classList.remove("hidden");
+    counter.textContent = `${len} / ${MAX_MESSAGE_CHARS}`;
+    counter.classList.toggle("over-limit", len > MAX_MESSAGE_CHARS);
 }
 
 function fetchTyping() {
@@ -1897,6 +1919,14 @@ function send() {
 
     if (!text && pendingFiles.length === 0) return;
 
+    // Block over-limit sends up front so the text isn't silently dropped by the
+    // server's 413; the counter (now red) already shows why.
+    if (text.length > MAX_MESSAGE_CHARS) {
+        updateCharCount();
+        msgBox.focus();
+        return;
+    }
+
     const form = new FormData();
     form.append("text", text);
 
@@ -1921,6 +1951,16 @@ function send() {
             updateSendState();
             cancelReply();
             fetchMessages();
+        } else if (r.status === 413) {
+            // Server rejected the message (too long, or a slipped-through paste).
+            // Keep the text and flag the counter red so the failure is visible
+            // instead of the message just vanishing.
+            updateCharCount();
+            const counter = document.getElementById("char-count");
+            if (counter) {
+                counter.classList.remove("hidden");
+                counter.classList.add("over-limit");
+            }
         }
     });
 }

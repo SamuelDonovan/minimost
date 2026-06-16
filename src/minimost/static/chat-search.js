@@ -1,12 +1,16 @@
 let visualMode = false;
 let visualMsgId = null;
 
-// Prevent HTML injection when re-inserting text
+// Prevent HTML injection when re-inserting text. Quotes are escaped too so the
+// result is safe to interpolate into an HTML *attribute* (e.g. an href), not
+// just element text.
 function escapeHtml(text) {
   return text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 // Fuzzy-matches query against text as a subsequence (case-insensitive).
@@ -261,10 +265,12 @@ globalThis.onclick = (e) => {
 
 // Clickable links
 function linkify(text) {
-  // Escape HTML first (important for security)
+  // Escape HTML first (important for security). textContent->innerHTML escapes
+  // &, < and > but NOT quotes, so a URL containing a double quote could break
+  // out of the href="" attribute built below — escape quotes too.
   const div = document.createElement("div");
   div.textContent = text;
-  let safe = div.innerHTML;
+  let safe = div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
   // Regex for URLs
   const urlRegex = /((https?:\/\/|www\.)[^\s]+)/g;
@@ -327,10 +333,12 @@ function formatText(text) {
     },
   );
 
-  // 2. Escape HTML for the non-code portions
+  // 2. Escape HTML for the non-code portions. Quotes are escaped along with
+  // &, < and > so a URL containing a double quote can't break out of the
+  // href="" attribute the link step (5) builds and inject markup.
   const div = document.createElement("div");
   div.textContent = s;
-  let safe = div.innerHTML;
+  let safe = div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
   // 3. Inline code
   safe = safe.replace(

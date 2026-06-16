@@ -62,6 +62,7 @@ _PRIVATE_RANGES : re.Pattern
 import re
 import ipaddress
 import socket
+import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
@@ -365,6 +366,37 @@ def _resolves_to_public_ip(hostname):
     return True
 
 
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validate every redirect hop against the SSRF allowlist.
+
+    ``urlopen`` follows 3xx redirects automatically and re-resolves the new
+    host *without* the public-IP check that guards the initial request. Without
+    this, a public URL could ``302`` to ``http://127.0.0.1/`` (or any LAN
+    address) and the server would happily fetch it — turning the preview
+    endpoint into an SSRF pivot. Each redirect target is held to the same
+    scheme and public-IP rules as the first request; anything else aborts the
+    fetch.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urllib.parse.urlparse(newurl)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise urllib.error.HTTPError(
+                newurl, code, "unsafe redirect target", headers, fp
+            )
+        if not _resolves_to_public_ip(parsed.hostname):
+            raise urllib.error.HTTPError(
+                newurl, code, "unsafe redirect target", headers, fp
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+# Opener that enforces the redirect allowlist above. Used instead of the bare
+# ``urllib.request.urlopen`` (which installs the default, unchecked redirect
+# handler) for every outbound preview fetch.
+_OPENER = urllib.request.build_opener(_SafeRedirectHandler)
+
+
 def _fetch(url, max_bytes=65536):
     """Fetch the body of an HTTP/HTTPS URL with safety limits.
 
@@ -411,7 +443,9 @@ def _fetch(url, max_bytes=65536):
     )
 
     req = urllib.request.Request(safe_url, headers=_HEADERS)
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310
+    # _OPENER re-checks every redirect hop (see _SafeRedirectHandler) so a
+    # public URL can't bounce the request to an internal address.
+    with _OPENER.open(req, timeout=_TIMEOUT) as resp:  # nosec B310
         return resp.read(max_bytes)
 
 

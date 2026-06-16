@@ -174,7 +174,7 @@ def test_fetch_any_public_host_allowed():
     mock_resp.read.return_value = b"data"
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(preview._OPENER, "open", return_value=mock_resp):
             result = preview._fetch("https://example.com/")
     assert result == b"data"
 
@@ -186,7 +186,7 @@ def test_fetch_success():
     mock_resp.read.return_value = b"hello"
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(preview._OPENER, "open", return_value=mock_resp):
             result = preview._fetch("https://bitbucket.org/ws/r/src/main/f.py")
     assert result == b"hello"
 
@@ -198,7 +198,7 @@ def test_fetch_respects_max_bytes():
     mock_resp.read.return_value = b"x" * 100
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(preview._OPENER, "open", return_value=mock_resp):
             preview._fetch("https://bitbucket.org/ws/r/src/main/f.py", max_bytes=100)
 
     mock_resp.read.assert_called_once_with(100)
@@ -211,7 +211,7 @@ def test_fetch_with_explicit_port():
     mock_resp.read.return_value = b"data"
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(preview._OPENER, "open", return_value=mock_resp):
             result = preview._fetch("https://bitbucket.org:443/ws/r/src/main/f.py")
     assert result == b"data"
 
@@ -467,7 +467,7 @@ def test_text_file_preview_known_extension():
     mock_resp.read.return_value = b"x = 1\ny = 2\n"
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(preview._OPENER, "open", return_value=mock_resp):
             result = preview._text_file_preview("https://example.com/src/foo.py")
 
     assert result["type"] == "code"
@@ -493,7 +493,7 @@ def test_text_file_preview_known_filename():
     mock_resp.read.return_value = b"FROM ubuntu\nRUN apt-get update\n"
 
     with patch.object(preview, "_resolves_to_public_ip", return_value=True):
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(preview._OPENER, "open", return_value=mock_resp):
             result = preview._text_file_preview("https://example.com/repo/Dockerfile")
 
     assert result["type"] == "code"

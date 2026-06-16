@@ -1298,7 +1298,21 @@ textarea {
 #input-actions-main {
   display: flex;
   flex-direction: row;
+  align-items: center;
   gap: 4px;
+}
+/* Live message-length counter — hidden until the message nears the limit, red
+   once over it (see updateCharCount in chat.html). */
+.char-count {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.char-count.over-limit {
+  color: var(--danger, #e53e3e);
+  font-weight: 600;
 }
 .format-btn .icon-text {
   display: none;
@@ -1569,10 +1583,16 @@ a {
 }
 .msg-code-header {
   display: flex;
-  justify-content: space-between;
+  /* Keep the language label and Copy button on the LEFT so they never sit
+     under the message's hover action toolbar (edit/delete/reply/react), which
+     floats at the message's top-right. On a grouped message whose first line is
+     a code block, a right-aligned Copy button would be covered by — and
+     unclickable beneath — that toolbar. */
+  justify-content: flex-start;
+  gap: 12px;
   align-items: center;
   background: #252526;
-  padding: 3px 6px 3px 10px;
+  padding: 3px 10px;
   border-bottom: 1px solid #3a3a3a;
 }
 .msg-code-lang {

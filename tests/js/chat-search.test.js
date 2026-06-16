@@ -68,7 +68,7 @@ describe("escapeHtml()", () => {
   });
   test("escapes multiple entities", () => {
     expect(escapeHtml('<a href="x">foo & bar</a>')).toBe(
-      '&lt;a href="x"&gt;foo &amp; bar&lt;/a&gt;',
+      "&lt;a href=&quot;x&quot;&gt;foo &amp; bar&lt;/a&gt;",
     );
   });
 });
