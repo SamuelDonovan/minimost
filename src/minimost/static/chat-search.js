@@ -80,8 +80,9 @@ let searchSelectedIndex = -1;
 // Mirror a channel identifier to its sidebar display name (e.g. a DM or
 // private-channel id → its friendly label). Falls back to the raw id.
 function _searchChannelLabel(ch) {
+  const escaped = (ch || "").replaceAll('"', String.raw`\"`);
   const item = document.querySelector(
-    `#sidebar-dynamic .sidebar-item[data-channel="${(ch || "").replaceAll('"', String.raw`\"`)}"]`,
+    `#sidebar-dynamic .sidebar-item[data-channel="${escaped}"]`,
   );
   return item?.querySelector(".label")?.textContent || ch;
 }
@@ -104,19 +105,19 @@ function populateSearchChannels() {
 }
 
 // ── "From" user fuzzy finder ──────────────────────────────────────────────────
-// Reuses the shared window.allUsers/window.usersLoaded cache (populated by the DM modal) and
+// Reuses the shared globalThis.allUsers/globalThis.usersLoaded cache (populated by the DM modal) and
 // the same fuzzySearch/highlight helpers as the @mention and DM autocompletes.
 
 let searchFromMatches = [];
 let searchFromIndex = -1;
 
 async function ensureSearchUsersLoaded() {
-  if (window.usersLoaded) return;
+  if (globalThis.usersLoaded) return;
   try {
     const resp = await fetch("/users");
     if (resp.ok) {
-      window.allUsers = await resp.json();
-      window.usersLoaded = true;
+      globalThis.allUsers = await resp.json();
+      globalThis.usersLoaded = true;
     }
   } catch {
     /* offline — finder stays empty, typed text still filters */

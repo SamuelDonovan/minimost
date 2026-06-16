@@ -1,7 +1,7 @@
 let userColorOverrides = {};
 // Shared with chat-settings.js and chat.html (its `.has()` reads live there);
 // kept on `window` so the cross-file global is referenced explicitly.
-window.usersWithAvatars = new Set();
+globalThis.usersWithAvatars = new Set();
 let presenceMapCache = {};
 let hasUnreadChannels = false;
 let privateChannelUnreadCount = 0;
@@ -22,7 +22,7 @@ async function loadSidebar() {
     ]);
   {
     userColorOverrides = colors;
-    window.usersWithAvatars = new Set(avatars);
+    globalThis.usersWithAvatars = new Set(avatars);
     presenceMapCache = onlineUsers;
 
     // Public channels
@@ -374,7 +374,7 @@ function sendDesktopNotification(count) {
 // window after load suppresses alerts for messages that were already unread
 // before this tab opened (the three counts arrive from separate pollers).
 let lastNotifiedTotal = 0;
-let lastMentionNotifAt = 0;
+globalThis.lastMentionNotifAt = 0;
 const notifReadyAt = Date.now() + 6000;
 
 function grandTotalUnread() {
@@ -391,7 +391,8 @@ function maybeNotifyUnread() {
     playNotifSound();
     // Skip the generic notification if a specific mention notification just
     // fired for the same message (avoids stacking two notifications).
-    if (Date.now() - lastMentionNotifAt > 2000) sendDesktopNotification(total);
+    if (Date.now() - globalThis.lastMentionNotifAt > 2000)
+      sendDesktopNotification(total);
   }
   lastNotifiedTotal = total;
 }

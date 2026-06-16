@@ -143,15 +143,15 @@ def shared_db_path() -> Path:
     return DB_DIR / "messages.db"
 
 
-def init_user_db(username: Optional[str] = None):
+def init_user_db(_username: Optional[str] = None):
     """Backwards-compatible alias for :func:`init_messages_db`.
 
     Historically each account had its own database, initialised here. The data
-    model is now a single shared database, so *username* is ignored and this
+    model is now a single shared database, so *_username* is ignored and this
     simply ensures the shared schema exists. Kept as a named entry point because
     the signup and account-recovery flows still call it per account.
 
-    :param username: Ignored. Retained for call-site compatibility.
+    :param _username: Ignored. Retained for call-site compatibility.
     :returns: None
     """
     init_messages_db()

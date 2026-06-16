@@ -343,14 +343,14 @@ document
       fd.append("avatar", _pendingAvatarBlob, "avatar.jpg");
       const r = await fetch("/avatar", { method: "POST", body: fd });
       if (r.ok) {
-        window.usersWithAvatars.add(CURRENT_USER);
+        globalThis.usersWithAvatars.add(CURRENT_USER);
         _refreshUserAvatar(CURRENT_USER);
       }
       _pendingAvatarBlob = null;
     } else if (_removeAvatar) {
       const r = await fetch("/avatar", { method: "DELETE" });
       if (r.ok) {
-        window.usersWithAvatars.delete(CURRENT_USER);
+        globalThis.usersWithAvatars.delete(CURRENT_USER);
         _refreshUserAvatar(CURRENT_USER);
       }
       _removeAvatar = false;
@@ -621,12 +621,12 @@ async function openUsersModal() {
   if (isPrivate) {
     document.getElementById("add-member-input").value = "";
     document.getElementById("add-member-suggestions").style.display = "none";
-    if (!window.usersLoaded) {
+    if (!globalThis.usersLoaded) {
       fetch("/users")
         .then((r) => r.json())
         .then((u) => {
-          window.allUsers = u;
-          window.usersLoaded = true;
+          globalThis.allUsers = u;
+          globalThis.usersLoaded = true;
         });
     }
   }

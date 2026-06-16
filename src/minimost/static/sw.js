@@ -28,7 +28,7 @@ globalThis.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { body: event.data && event.data.text() };
+    data = { body: event.data?.text() };
   }
   event.waitUntil(
     globalThis.registration.showNotification(data.title || "MiniMost", {

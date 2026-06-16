@@ -364,63 +364,79 @@ def _start_cleanup_scheduler(
     users_dir = common.DB_DIR
     settings_file = _HERE / "settings.json"
 
-    def _read_retention() -> tuple:
-        with suppress(Exception):
-            import json
-
-            data = json.loads(settings_file.read_text())
-            img = data.get("image_retention_days")
-            fil = data.get("file_retention_days")
-            msg = data.get("message_retention_days")
-            upload_mb = data.get("max_upload_dir_size_mb")
-            db_mb = data.get("max_message_db_size_mb")
-            img = img if isinstance(img, int) and img > 0 else days
-            fil = fil if isinstance(fil, int) and fil > 0 else days
-            msg = msg if isinstance(msg, int) and msg > 0 else message_days
-
-            # A size cap of 0 / absent / invalid disables that cap (None).
-            def _cap(value):
-                return value if isinstance(value, (int, float)) and value > 0 else None
-
-            return img, fil, msg, _cap(upload_mb), _cap(db_mb)
-        return days, days, message_days, None, None
-
     def _loop() -> None:
         time.sleep(initial_delay_seconds)  # let the server finish starting
         while True:
-            try:
-                from .clean import (
-                    delete_files_older_than,
-                    delete_files_over_size,
-                    delete_messages_older_than,
-                    delete_messages_over_size,
-                )
-
-                (
-                    image_days,
-                    file_days,
-                    msg_days,
-                    max_upload_mb,
-                    max_db_mb,
-                ) = _read_retention()
-                # Age-based cleanup first, then trim by size whatever remains.
-                delete_files_older_than(
-                    str(upload_dir),
-                    image_days=image_days,
-                    file_days=file_days,
-                )
-                if max_upload_mb:
-                    delete_files_over_size(str(upload_dir), max_size_mb=max_upload_mb)
-                delete_messages_older_than(str(users_dir), days=msg_days)
-                if max_db_mb:
-                    delete_messages_over_size(
-                        str(common.shared_db_path()), max_size_mb=max_db_mb
-                    )
-            except (
-                Exception
-            ):  # nosec B110 — cleanup failure must not crash the daemon thread
-                pass
+            # A cleanup failure must not crash the daemon thread.
+            with suppress(Exception):
+                retention = _read_retention(settings_file, days, message_days)
+                _run_cleanup_once(upload_dir, users_dir, retention)
             time.sleep(interval_hours * 3600)
 
     thread = threading.Thread(target=_loop, daemon=True, name="minimost-cleanup")
     thread.start()
+
+
+def _cap(value):
+    """Normalise a configured size cap: positive numbers pass, else ``None``.
+
+    A cap of ``0``, a missing key, or a non-numeric value all disable the
+    corresponding size check.
+    """
+    return value if isinstance(value, (int, float)) and value > 0 else None
+
+
+def _read_retention(settings_file, days: int, message_days: int) -> tuple:
+    """Read retention/size-cap settings from ``settings.json`` for one run.
+
+    Re-read on every cleanup run so edits to the file take effect without a
+    restart. Any read/parse error falls back to the supplied defaults.
+
+    :returns: ``(image_days, file_days, message_days, max_upload_mb, max_db_mb)``.
+    :rtype: tuple
+    """
+    with suppress(Exception):
+        import json
+
+        data = json.loads(settings_file.read_text())
+        img = data.get("image_retention_days")
+        fil = data.get("file_retention_days")
+        msg = data.get("message_retention_days")
+        img = img if isinstance(img, int) and img > 0 else days
+        fil = fil if isinstance(fil, int) and fil > 0 else days
+        msg = msg if isinstance(msg, int) and msg > 0 else message_days
+        return (
+            img,
+            fil,
+            msg,
+            _cap(data.get("max_upload_dir_size_mb")),
+            _cap(data.get("max_message_db_size_mb")),
+        )
+    return days, days, message_days, None, None
+
+
+def _run_cleanup_once(upload_dir, users_dir, retention: tuple) -> None:
+    """Perform one cleanup pass: age-based purge first, then size caps.
+
+    :param upload_dir: The ``uploads/`` directory to prune.
+    :param users_dir: Directory holding the shared message database.
+    :param retention: The tuple returned by :func:`_read_retention`.
+    """
+    from .clean import (
+        delete_files_older_than,
+        delete_files_over_size,
+        delete_messages_older_than,
+        delete_messages_over_size,
+    )
+
+    image_days, file_days, msg_days, max_upload_mb, max_db_mb = retention
+    delete_files_older_than(
+        str(upload_dir),
+        image_days=image_days,
+        file_days=file_days,
+    )
+    if max_upload_mb:
+        delete_files_over_size(str(upload_dir), max_size_mb=max_upload_mb)
+    delete_messages_older_than(str(users_dir), days=msg_days)
+    if max_db_mb:
+        delete_messages_over_size(str(common.shared_db_path()), max_size_mb=max_db_mb)

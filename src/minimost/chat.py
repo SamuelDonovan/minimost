@@ -125,6 +125,10 @@ _WAL = "PRAGMA journal_mode=WAL"
 _SQL_AVATAR = "SELECT avatar_file FROM user_settings WHERE username = ?"
 _SQL_ENSURE_SETTINGS = "INSERT OR IGNORE INTO user_settings (username) VALUES (?)"
 _MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
+# Identifier prefix for private channels (``"private:<id>"``); see module docstring.
+PRIVATE_CHANNEL_PREFIX = "private:"
+# Reused JSON error body for missing-message responses.
+_NOT_FOUND = "not found"
 _INSERT_MSG_SQL = (
     "INSERT INTO messages (channel, sender, content, content_type, ts)"
     " VALUES (?, ?, ?, ?, ?)"
@@ -327,7 +331,7 @@ def _history_start(channel: str, user: str):
     they don't see the backlog. Returns ``None`` when there is no cutoff (public
     channels, DMs, founding members).
     """
-    if not channel.startswith("private:"):
+    if not channel.startswith(PRIVATE_CHANNEL_PREFIX):
         return None
     try:
         channel_id = int(channel.split(":")[1])
@@ -362,7 +366,7 @@ def _search_access(user):
     ).fetchall()
     pdb.close()
     for r in rows:
-        ch = f"private:{r['channel_id']}"
+        ch = f"{PRIVATE_CHANNEL_PREFIX}{r['channel_id']}"
         allowed.append(ch)
         if r["history_start_ts"] is not None:
             history_starts[ch] = r["history_start_ts"]
@@ -450,7 +454,7 @@ def channel_users(channel: str) -> List[str]:
     """
     if channel.startswith("dm:"):
         return channel.split(":")[1:]
-    if channel.startswith("private:"):
+    if channel.startswith(PRIVATE_CHANNEL_PREFIX):
         try:
             return get_private_channel_members(int(channel.split(":")[1]))
         except (ValueError, IndexError):
@@ -494,7 +498,7 @@ def is_valid_channel(channel: str, user: str) -> bool:
     if channel.startswith("dm:"):
         parts = channel.split(":")
         return len(parts) >= 3 and user in parts[1:]
-    if channel.startswith("private:"):
+    if channel.startswith(PRIVATE_CHANNEL_PREFIX):
         try:
             return user in get_private_channel_members(int(channel.split(":")[1]))
         except (ValueError, IndexError):
@@ -1445,13 +1449,13 @@ def get_message(msg_id):
     ).fetchone()
     db.close()
     if not row:
-        return "not found", 404
+        return _NOT_FOUND, 404
     # With one shared message table the per-user-DB scoping that used to bound
     # this lookup is gone, so gate on channel visibility explicitly — otherwise
     # any id could read messages from private channels/DMs the caller isn't in.
     # Return 404 (not 403) so the endpoint doesn't confirm a message exists.
     if not is_valid_channel(row["channel"], user):
-        return "not found", 404
+        return _NOT_FOUND, 404
     result = dict(row)
     result.pop("channel", None)
     return jsonify(result)
@@ -1516,6 +1520,48 @@ def file_preview(filename):
         raw, display_name, None, None, f"/files/{filename}"
     )
     return jsonify(result)
+
+
+def _compose_search_sql(query, clauses, params):
+    """Build the SQL statement and bound parameters for :func:`search_messages`.
+
+    Picks the trigram FTS5 path for keyword queries long enough for the index
+    and falls back to a plain ``LIKE`` scan otherwise (or when there is no
+    keyword at all). Only constant clause strings are concatenated; every user
+    value is passed as a ``?`` placeholder, so this is not an injection vector.
+
+    :param query: The (already stripped) keyword, possibly empty.
+    :param clauses: The ``WHERE`` clause fragments accumulated so far.
+    :param params: The bound parameters matching *clauses*.
+    :returns: A ``(sql, params)`` tuple ready for execution.
+    :rtype: tuple[str, list]
+    """
+    if query and len(query) >= common.SEARCH_MIN_TOKEN:
+        # Trigram-indexed substring match: the MATCH is served from messages_fts
+        # in sub-millisecond time however large the history is. Wrapping the query
+        # in a quoted FTS5 phrase (doubling any embedded quote) makes it a literal
+        # substring with no special-character handling, matching LIKE semantics.
+        # `id` is AUTOINCREMENT and so monotonic with `ts`, so ordering by the FTS
+        # rowid descending is newest-first and lets FTS5 stop after 50 rows
+        # instead of sorting the full match set.
+        match = '"' + query.replace('"', '""') + '"'
+        sql = (
+            "SELECT m.id, m.channel, m.sender, m.content, m.ts "  # nosec B608
+            "FROM messages_fts f JOIN messages m ON m.id = f.rowid "
+            "WHERE f.content MATCH ? AND " + " AND ".join(clauses) + " "
+            "ORDER BY f.rowid DESC LIMIT 50"
+        )
+        return sql, [match, *params]
+
+    # No keyword, or one too short for the trigram index (< 3 chars): a plain scan.
+    if query:
+        clauses.append("m.content LIKE ?")
+        params.append(f"%{query}%")
+    sql = (
+        "SELECT m.id, m.channel, m.sender, m.content, m.ts FROM messages m "  # nosec B608
+        "WHERE " + " AND ".join(clauses) + " ORDER BY m.ts DESC LIMIT 50"
+    )
+    return sql, params
 
 
 @chat_bp.route("/search_messages", methods=["GET"])
@@ -1602,33 +1648,7 @@ def search_messages():
         clauses.append("m.ts < ?")
         params.append(end_ts)
 
-    if query and len(query) >= common.SEARCH_MIN_TOKEN:
-        # Trigram-indexed substring match: the MATCH is served from messages_fts
-        # in sub-millisecond time however large the history is. Wrapping the query
-        # in a quoted FTS5 phrase (doubling any embedded quote) makes it a literal
-        # substring with no special-character handling, matching LIKE semantics.
-        # `id` is AUTOINCREMENT and so monotonic with `ts`, so ordering by the FTS
-        # rowid descending is newest-first and lets FTS5 stop after 50 rows
-        # instead of sorting the full match set.
-        match = '"' + query.replace('"', '""') + '"'
-        sql = (
-            "SELECT m.id, m.channel, m.sender, m.content, m.ts "  # nosec B608
-            "FROM messages_fts f JOIN messages m ON m.id = f.rowid "
-            "WHERE f.content MATCH ? AND " + " AND ".join(clauses) + " "
-            "ORDER BY f.rowid DESC LIMIT 50"
-        )
-        params = [match, *params]
-    else:
-        # No keyword, or one too short for the trigram index (< 3 chars): a plain
-        # scan. Only constant clause strings are concatenated; every user value is
-        # bound via a ? placeholder, so this is not an injection vector.
-        if query:
-            clauses.append("m.content LIKE ?")
-            params.append(f"%{query}%")
-        sql = (
-            "SELECT m.id, m.channel, m.sender, m.content, m.ts FROM messages m "  # nosec B608
-            "WHERE " + " AND ".join(clauses) + " ORDER BY m.ts DESC LIMIT 50"
-        )
+    sql, params = _compose_search_sql(query, clauses, params)
 
     db = get_db()
     cur = db.execute(sql, params)
@@ -2330,14 +2350,14 @@ def react(msg_id):
 
     if not row:
         db.close()
-        return "not found", 404
+        return _NOT_FOUND, 404
 
     # The message lives in the shared table, so confirm the caller can actually
     # see its channel before letting them react — otherwise they could react to
     # (and thereby probe/intrude on) private channels and DMs they're not in.
     if not is_valid_channel(row["channel"], user):
         db.close()
-        return "not found", 404
+        return _NOT_FOUND, 404
 
     # Toggle the reaction on the canonical message row. Reactions key on the real
     # message id, so this is a single atomic insert/delete — no per-user fan-out
@@ -2592,7 +2612,13 @@ def create_private_channel():
     pdb.commit()
     pdb.close()
 
-    return jsonify({"id": channel_id, "channel": f"private:{channel_id}", "name": name})
+    return jsonify(
+        {
+            "id": channel_id,
+            "channel": f"{PRIVATE_CHANNEL_PREFIX}{channel_id}",
+            "name": name,
+        }
+    )
 
 
 @chat_bp.route("/private_channels", methods=["GET"])
@@ -2623,7 +2649,7 @@ def list_private_channels():
     result = []
     db = get_db()
     for row in rows:
-        ch = f"private:{row['id']}"
+        ch = f"{PRIVATE_CHANNEL_PREFIX}{row['id']}"
         count = db.execute(
             "SELECT COUNT(*) AS c FROM messages m "
             "LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel "
@@ -2674,7 +2700,7 @@ def rename_private_channel(channel_id):
     pdb.commit()
     pdb.close()
 
-    ch = f"private:{channel_id}"
+    ch = f"{PRIVATE_CHANNEL_PREFIX}{channel_id}"
     sys_content = f'{user} has renamed the channel to "{name}"'
     db = get_db()
     db.execute(_INSERT_MSG_SQL, (ch, "system", sys_content, "system", time()))
@@ -2714,7 +2740,7 @@ def add_private_channel_member(channel_id):
         return "already a member", 409
 
     now = time()
-    ch = f"private:{channel_id}"
+    ch = f"{PRIVATE_CHANNEL_PREFIX}{channel_id}"
 
     pdb = _get_private_db()
     pdb.execute(
@@ -2761,7 +2787,7 @@ def leave_private_channel(channel_id):
 
     remaining = [m for m in members if m != user]
     if remaining:
-        ch = f"private:{channel_id}"
+        ch = f"{PRIVATE_CHANNEL_PREFIX}{channel_id}"
         sys_content = f"{user} has left the channel"
         db = get_db()
         db.execute(_INSERT_MSG_SQL, (ch, "system", sys_content, "system", time()))

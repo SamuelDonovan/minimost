@@ -21,7 +21,7 @@
         <form method="post" autocomplete="on">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="auth-field">
-                <input id="username" type="text" name="username" placeholder="Username" required autocomplete="username" autofocus value="{{ username or '' }}">
+                <input id="username" type="text" name="username" placeholder="Username" aria-label="Username" required autocomplete="username" autofocus value="{{ username or '' }}">
                 {{ password_fields("Password", "Confirm password") }}
             </div>
 

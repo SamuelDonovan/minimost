@@ -16,7 +16,7 @@ let pcCurrentSuggestions = [];
 let addMemberSuggIndex = -1;
 let addMemberCurrentSuggestions = [];
 
-// `window.allUsers` / `window.usersLoaded` are declared globally in chat-dm.js (loaded first)
+// `globalThis.allUsers` / `globalThis.usersLoaded` are declared globally in chat-dm.js (loaded first)
 // and shared across the member-picker suggestions here.
 
 const MAX_CHANNEL_NAME_LEN = 80;
@@ -27,12 +27,12 @@ function openCreatePrivateChannel() {
   privateChMembersInput.value = "";
   privateChSuggestions.style.display = "none";
   document.getElementById("private-ch-name-error").textContent = "";
-  if (!window.usersLoaded) {
+  if (!globalThis.usersLoaded) {
     fetch("/users")
       .then((r) => r.json())
       .then((u) => {
-        window.allUsers = u;
-        window.usersLoaded = true;
+        globalThis.allUsers = u;
+        globalThis.usersLoaded = true;
       });
   }
   privateChNameInput.focus();
@@ -82,7 +82,7 @@ document.getElementById("private-ch-create-btn").onclick = async () => {
 };
 
 privateChMembersInput.addEventListener("input", () => {
-  if (!window.usersLoaded) return;
+  if (!globalThis.usersLoaded) return;
   const raw = privateChMembersInput.value;
   const parts = raw.split(",").map((p) => p.trim());
   const lastPart = parts[parts.length - 1].toLowerCase();
@@ -92,7 +92,7 @@ privateChMembersInput.addEventListener("input", () => {
     return;
   }
   const already = parts.slice(0, -1);
-  const matches = window.allUsers
+  const matches = globalThis.allUsers
     .filter((u) => !already.includes(u))
     .map((u) => ({ user: u, result: fuzzySearch(lastPart, u) }))
     .filter(({ result }) => result !== null)
@@ -243,14 +243,14 @@ async function leaveChannel() {
 }
 
 addMemberInput.addEventListener("input", () => {
-  if (!window.usersLoaded) return;
+  if (!globalThis.usersLoaded) return;
   const q = addMemberInput.value.trim().toLowerCase();
   addMemberSuggIndex = -1;
   if (!q) {
     addMemberSuggestions.style.display = "none";
     return;
   }
-  const matches = window.allUsers
+  const matches = globalThis.allUsers
     .map((u) => ({ user: u, result: fuzzySearch(q, u) }))
     .filter(({ result }) => result !== null)
     .sort((a, b) => b.result.score - a.result.score);

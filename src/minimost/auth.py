@@ -151,7 +151,7 @@ def hash_password(password: str) -> str:
     return generate_password_hash(password)
 
 
-def _seed_channel_history(new_user: str) -> None:
+def _seed_channel_history(_new_user: str) -> None:
     """No-op retained for backwards compatibility.
 
     Messages now live in a single shared database, so a newly registered user
@@ -159,10 +159,9 @@ def _seed_channel_history(new_user: str) -> None:
     exists — there is nothing to copy. This stub remains only so existing
     callers and imports keep working.
 
-    :param new_user: Ignored.
+    :param _new_user: Ignored.
     :returns: None
     """
-    return
 
 
 def login_required(fn):

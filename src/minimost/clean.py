@@ -98,6 +98,32 @@ def delete_files_older_than(
             _maybe_delete_file(path, image_cutoff, file_cutoff, dry_run)
 
 
+def _snapshot_files(dirpath: Path):
+    """Snapshot ``(mtime, size, path)`` for every regular file in *dirpath*.
+
+    ``stat()`` can race with another worker's cleanup removing the file, so a
+    file that disappears mid-scan is simply skipped.
+
+    :param dirpath: Directory to scan (non-recursively).
+    :type dirpath: pathlib.Path
+    :returns: A tuple ``(entries, total_bytes)`` where *entries* is a list of
+        ``(mtime, size, path)`` tuples and *total_bytes* is their summed size.
+    :rtype: tuple[list, int]
+    """
+    entries = []
+    total = 0
+    for path in dirpath.iterdir():
+        if not path.is_file():
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        entries.append((stat.st_mtime, stat.st_size, path))
+        total += stat.st_size
+    return entries, total
+
+
 def delete_files_over_size(
     directory: str,
     max_size_mb: float,
@@ -135,20 +161,7 @@ def delete_files_over_size(
         raise ValueError(f"{directory} is not a valid directory")
     max_bytes = int(max_size_mb * 1024 * 1024)
 
-    # Snapshot (mtime, size, path) for every regular file. stat() can race with
-    # another worker's cleanup removing the file, so tolerate it disappearing.
-    entries = []
-    total = 0
-    for path in dirpath.iterdir():
-        if not path.is_file():
-            continue
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        entries.append((stat.st_mtime, stat.st_size, path))
-        total += stat.st_size
-
+    entries, total = _snapshot_files(dirpath)
     if total <= max_bytes:
         return
 

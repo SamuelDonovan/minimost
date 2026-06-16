@@ -68,7 +68,7 @@ function notifyMention(m) {
   if (!nativeNotifEnabled) return;
   if (!("Notification" in globalThis) || Notification.permission !== "granted")
     return;
-  lastMentionNotifAt = Date.now();
+  globalThis.lastMentionNotifAt = Date.now();
   const n = new Notification(`${m.sender} mentioned you — MiniMost`, {
     body: (m.content || "").slice(0, 140),
     icon: "/static/web-app-manifest-192x192.png",
@@ -314,12 +314,12 @@ function renderMentionsSidebar() {
 // Switch the main pane to the read-only Mentions list. Hides the composer and
 // channel-specific controls (you can't post to or call within Mentions).
 function openMentionsChannel() {
-  if (fetchController) {
-    fetchController.abort();
-    fetchController = null;
+  if (globalThis.fetchController) {
+    globalThis.fetchController.abort();
+    globalThis.fetchController = null;
   }
   cancelReply();
-  channel = MENTIONS_CHANNEL;
+  setChannel(MENTIONS_CHANNEL);
   closeSidebar();
 
   document.getElementById("chat").innerHTML = "";

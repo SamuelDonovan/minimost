@@ -69,7 +69,7 @@
                 <svg class="topbar-search-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85zm-5.242 1.106a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/>
                 </svg>
-                <input type="text" id="msg-search-input" placeholder="Search messages…" autocomplete="off">
+                <input type="text" id="msg-search-input" placeholder="Search messages…" aria-label="Search messages" autocomplete="off">
                 <div id="msg-search-panel">
                     <div class="search-filters">
                         <label class="search-filter">
@@ -151,11 +151,13 @@
                 id="msg"
                 rows="3"
                 placeholder="Type a message to #general…"
+                aria-label="Type a message"
             ></textarea>
 
             <input
                 type="file"
                 id="fileInput"
+                aria-label="Attach files"
                 multiple
                 hidden
             >
@@ -239,7 +241,7 @@
             <div class="settings-row" style="display:flex;align-items:center;gap:16px">
                 <div id="settings-avatar-preview" style="flex-shrink:0"></div>
                 <div>
-                    <input type="file" id="settings-avatar-file" accept="image/*" hidden>
+                    <input type="file" id="settings-avatar-file" accept="image/*" aria-label="Upload avatar image" hidden>
                     <button type="button" class="icon-btn" id="settings-avatar-btn">Upload Image</button>
                     <div style="margin-top:6px">
                         <button type="button" class="settings-reset-btn" id="settings-avatar-remove">Remove avatar</button>
@@ -314,6 +316,7 @@
                         id="change-current-password"
                         type="password"
                         placeholder="Current password"
+                        aria-label="Current password"
                         autocomplete="current-password"
                         maxlength="1024"
                     >
@@ -341,6 +344,7 @@
             <input
                 id="dm-users"
                 placeholder="Enter usernames (comma separated)"
+                aria-label="Enter usernames (comma separated)"
             />
             <div id="dm-suggestions" class="autocomplete-suggestions"></div>
         </div>
@@ -375,7 +379,7 @@
 <div id="rename-private-ch-modal" class="modal">
     <div class="modal-content">
         <h3>Rename Channel</h3>
-        <input type="text" id="rename-ch-input" placeholder="New channel name" maxlength="80" style="width:90%; margin-bottom:4px">
+        <input type="text" id="rename-ch-input" placeholder="New channel name" aria-label="New channel name" maxlength="80" style="width:90%; margin-bottom:4px">
         <div id="rename-ch-name-error" style="color:var(--danger,#e53e3e); font-size:0.82em; min-height:1.2em; margin-bottom:6px"></div>
         <div class="modal-actions">
             <button id="rename-ch-submit-btn">Rename</button>
@@ -457,7 +461,7 @@
             <h3 id="users-modal-title" style="margin:0">Members</h3>
             <button class="modal-close-x" onclick="closeUsersModal()" title="Close">&#x2715;</button>
         </div>
-        <input id="users-modal-search" type="text" placeholder="Search members…"
+        <input id="users-modal-search" type="text" placeholder="Search members…" aria-label="Search members"
                autocomplete="off" oninput="filterUsersModal(this.value)"
                style="width:100%;margin-bottom:10px">
         <div id="users-list"></div>
@@ -468,7 +472,7 @@
             <h4 style="margin:8px 0">Add Member</h4>
             <div id="add-member-row">
                 <div class="input-suggest-wrap">
-                    <input type="text" id="add-member-input" placeholder="Username" autocomplete="off">
+                    <input type="text" id="add-member-input" placeholder="Username" aria-label="Username" autocomplete="off">
                     <div id="add-member-suggestions" class="autocomplete-suggestions"></div>
                 </div>
                 <button id="add-member-submit-btn">Add</button>
@@ -485,19 +489,19 @@
 
 <!-- Reaction Picker -->
 <div id="reaction-picker" style="display:none;">
-    <input type="text" id="reaction-search" placeholder="Search reactions…" autocomplete="off">
+    <input type="text" id="reaction-search" placeholder="Search reactions…" aria-label="Search reactions" autocomplete="off">
     <div class="reaction-picker-grid" id="reaction-picker-grid"></div>
 </div>
 
 <!-- Emoji Picker (insert into message box) -->
 <div id="emoji-picker" style="display:none;">
-    <input type="text" id="emoji-search" placeholder="Search emoji…" autocomplete="off">
+    <input type="text" id="emoji-search" placeholder="Search emoji…" aria-label="Search emoji" autocomplete="off">
     <div class="emoji-picker-grid" id="emoji-picker-grid"></div>
 </div>
 
 <!-- Code block language picker (insert fenced block into message box) -->
 <div id="codeblock-picker" style="display:none;">
-    <input type="text" id="codeblock-search" placeholder="Search language…" autocomplete="off">
+    <input type="text" id="codeblock-search" placeholder="Search language…" aria-label="Search language" autocomplete="off">
     <div class="codeblock-picker-list" id="codeblock-picker-list"></div>
 </div>
 
@@ -687,7 +691,7 @@
     </div>
     <!-- Invite dropdown -->
     <div id="call-invite-panel" style="display:none;">
-        <input id="call-invite-search" type="text" placeholder="Search users…" oninput="filterCallInviteList(this.value)">
+        <input id="call-invite-search" type="text" placeholder="Search users…" aria-label="Search users" oninput="filterCallInviteList(this.value)">
         <div id="call-invite-list"></div>
     </div>
 </div>
@@ -1089,12 +1093,15 @@ document.addEventListener("keydown", e => userInput(e));
 
 // Core state
 let channel = "general";
+// Setter so other script files can update the current channel without writing
+// to this cross-file global directly (keeps `channel` an explicit `let` here).
+function setChannel(c) { channel = c; }
 let lastTs = 0;
 let unread = new Set();
 let lastRenderedDate = null;
 let forceScrollToBottom = false;
 let pendingFiles = [];
-let fetchController = null;
+globalThis.fetchController = null;
 let privateChannelMap = {};
 let privateChannelMembers = {};
 let readReceiptsMap = {};
@@ -1511,9 +1518,9 @@ function switchChannel(c) {
     closeSidebar();
 
     // 🚫 Cancel any in-flight fetch
-    if (fetchController) {
-        fetchController.abort();
-        fetchController = null;
+    if (globalThis.fetchController) {
+        globalThis.fetchController.abort();
+        globalThis.fetchController = null;
     }
 
     cancelReply();
@@ -1740,8 +1747,8 @@ function fetchMessages() {
     // (fetchMentions) refreshes the view instead.
     if (channel === MENTIONS_CHANNEL) return;
 
-    fetchController = new AbortController();
-    const signal = fetchController.signal;
+    globalThis.fetchController = new AbortController();
+    const signal = globalThis.fetchController.signal;
 
     // 🔒 Capture channel at request time
     const requestedChannel = channel;

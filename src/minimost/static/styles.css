@@ -2140,8 +2140,8 @@ a {
   line-height: 1;
 }
 #account-signout-btn:hover {
-  background: var(--danger, #e53e3e);
-  border-color: var(--danger, #e53e3e);
+  background: var(--danger-strong, #c0392b);
+  border-color: var(--danger-strong, #c0392b);
   color: #fff;
 }
 

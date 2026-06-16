@@ -20,8 +20,8 @@
         <form method="post" autocomplete="on">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="auth-field">
-                <input id="username" type="text" name="username" placeholder="Username" required autocomplete="username" {% if not error %}autofocus{% endif %} value="{{ username or '' }}">
-                <input name="password" type="password" placeholder="Password" required autocomplete="current-password" maxlength="1024" {% if error %}autofocus{% endif %}>
+                <input id="username" type="text" name="username" placeholder="Username" aria-label="Username" required autocomplete="username" {% if not error %}autofocus{% endif %} value="{{ username or '' }}">
+                <input id="password" name="password" type="password" placeholder="Password" aria-label="Password" required autocomplete="current-password" maxlength="1024" {% if error %}autofocus{% endif %}>
             </div>
             <button type="submit">Log in</button>
         </form>

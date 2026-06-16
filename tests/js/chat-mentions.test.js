@@ -214,6 +214,11 @@ describe("mentions channel", () => {
     global.updateSidebarActive = jest.fn();
     global.cancelReply = jest.fn();
     global.closeSidebar = jest.fn();
+    // setChannel lives in chat.html's inline script; mirror its behaviour of
+    // updating the shared `channel` global so assertions can read it back.
+    global.setChannel = jest.fn((c) => {
+      global.channel = c;
+    });
     global.userColor = jest.fn(() => "#abc");
     global.formatText = jest.fn((t) => t);
     global._searchChannelLabel = jest.fn((ch) => `label:${ch}`);

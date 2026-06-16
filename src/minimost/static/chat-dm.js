@@ -67,8 +67,8 @@ function updateActiveSuggestion() {
 // Shared across chat-dm.js, chat-channels.js, and chat-search.js (classic
 // scripts on the same page); kept on `window` so every file references the same
 // binding explicitly rather than relying on an implicit global.
-window.allUsers = [];
-window.usersLoaded = false;
+globalThis.allUsers = [];
+globalThis.usersLoaded = false;
 let suggestionIndex = -1;
 
 function resetDmSuggestions() {
@@ -81,12 +81,12 @@ async function openDmModal() {
   dmUsersInput.focus();
 
   // Fetch users once (or remove this guard if you want to refresh every time)
-  if (!window.usersLoaded) {
+  if (!globalThis.usersLoaded) {
     try {
       const resp = await fetch("/users");
       if (resp.ok) {
-        window.allUsers = await resp.json();
-        window.usersLoaded = true;
+        globalThis.allUsers = await resp.json();
+        globalThis.usersLoaded = true;
       } else {
         console.error("Failed to fetch users");
       }
@@ -108,7 +108,7 @@ document.getElementById("new-dm-btn").onclick = async () => {
 };
 
 function updateSuggestions() {
-  if (!window.usersLoaded) return;
+  if (!globalThis.usersLoaded) return;
 
   const raw = dmUsersInput.value;
   const parts = raw.split(",").map((p) => p.trim());
@@ -122,7 +122,7 @@ function updateSuggestions() {
   }
 
   const alreadyAdded = parts.slice(0, -1);
-  const matches = window.allUsers
+  const matches = globalThis.allUsers
     .filter((u) => !alreadyAdded.includes(u))
     .map((u) => ({ user: u, result: fuzzySearch(lastPart, u) }))
     .filter(({ result }) => result !== null)
