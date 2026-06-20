@@ -170,13 +170,15 @@ def create_app():
     2. **Provision the secret key** — read from ``secret.key`` in the project
        root, generating a fresh 64-character hex token if the file does not
        exist.  The secret key is required for Flask's signed session cookies.
-    3. **Set upload limit** to 16 MiB via ``MAX_CONTENT_LENGTH``.  Requests
-       that exceed this size are rejected by Flask before the route handler
-       runs.
+    3. **Set upload limit** via ``MAX_CONTENT_LENGTH`` from ``max_upload_size_mb``
+       in ``settings.json`` (default 25 MiB).  Requests that exceed this size are
+       rejected by Flask before the route handler runs.
     4. **Inject the version** into every Jinja2 template context via a context
        processor, making ``{{ app_version }}`` available in all templates.
     5. **Register blueprints** — :data:`auth_bp <minimost.auth.auth_bp>`,
-       :data:`chat_bp <minimost.chat.chat_bp>`, and
+       :data:`calls_bp <minimost.calls.calls_bp>`,
+       :data:`chat_bp <minimost.chat.chat_bp>`,
+       :data:`events_bp <minimost.events.events_bp>`, and
        :data:`presence_bp <minimost.presence.presence_bp>`.
 
     The ``auth.db`` and ``presence.db`` databases are also initialised as a

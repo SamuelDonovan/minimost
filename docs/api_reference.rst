@@ -72,6 +72,31 @@ Chat Interface
 
    :resheader Content-Type: text/html
 
+Event Stream
+------------
+
+.. http:get:: /events
+
+   Open the live update stream. A single long-lived `Server-Sent Events
+   <https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events>`_
+   connection per tab replaces the former interval pollers: the server holds the
+   request open and pushes a named event whenever the relevant shared state
+   changes. See :doc:`architecture` for the write-gating and recycle design.
+
+   **Requires authentication.**
+
+   :query channel: The tab's currently-open channel; scopes the ``messages``,
+       ``typing``, ``read_receipts`` and ``screenshares`` events. The client
+       reconnects with a new value when the user switches channels.
+   :query float after: Last-seen message timestamp; the stream sends only newer
+       rows. On reconnect the browser's ``Last-Event-ID`` resumes the cursor.
+   :resheader Content-Type: ``text/event-stream``
+
+   **Named events emitted** — each carries the same JSON its matching REST
+   endpoint returns: ``messages``, ``typing``, ``read_receipts``,
+   ``online_users``, ``dms``, ``channel_unreads``, ``private_channels``,
+   ``mentions``, ``unread_count``, ``incoming_calls``, and ``screenshares``.
+
 Channels
 --------
 
@@ -189,11 +214,14 @@ Messages
    :param channel: Target channel or DM identifier.
    :form text: Message text body (optional if files are provided).
    :form reply_to_id: Integer ID of the parent message (optional).
-   :form files: One or more image files (multipart). Accepted extensions:
-       ``.jpg``, ``.jpeg``, ``.png``, ``.gif``, ``.webp``.
+   :form files: One or more files of any type (multipart). Images (``.jpg``,
+       ``.jpeg``, ``.png``, ``.gif``, ``.webp``) are shown inline; all other
+       types are served as downloads with the original filename preserved.
    :status 200: Returns the string ``"ok"``.
-   :status 400: Empty message (no text and no valid files).
+   :status 400: Empty message (no text and no files).
    :status 403: User is not permitted to post to the channel.
+   :status 413: A file exceeds ``max_upload_size_mb`` or the message text
+       exceeds the maximum length.
 
 .. http:get:: /message/(msg_id)
 
@@ -384,8 +412,9 @@ Direct Messages
    message is received after the hidden timestamp.
 
    :<json string channel: DM channel identifier to hide.
-   :status 204: Conversation hidden.
+   :status 200: Returns ``"ok"``; conversation hidden.
    :status 400: Missing or invalid channel.
+   :status 403: Caller is not a participant in the DM.
 
 .. http:get:: /unread_count
 
@@ -441,17 +470,18 @@ User Settings
    **Requires authentication.**
 
    :>json string name_color: CSS hex colour string, or ``null`` if not set.
-   :>json string avatar_file: Avatar filename, or ``null`` if not set.
+   :>json string bio: Profile bio text, or ``null`` if not set.
 
 .. http:post:: /settings
 
    Update the current user's settings.
 
-   **Requires authentication.**
+   **Requires authentication.** Accepts a JSON body.
 
-   :form name_color: CSS hex colour in ``#rrggbb`` format (optional). Pass an
-       empty string to clear the colour.
-   :status 204: Settings saved.
+   :<json string name_color: CSS hex colour in ``#rrggbb`` format (optional).
+       Pass ``null`` to reset to the default hash-derived colour.
+   :<json string bio: Profile bio text (optional); trimmed to 160 characters.
+   :status 200: Returns ``"ok"``.
    :status 400: Invalid colour format.
 
 Avatars
@@ -477,10 +507,11 @@ Avatars
    upload (the frontend uses the Canvas API for this). The server stores the
    file as-is.
 
-   :form avatar: Image file (``multipart/form-data``). Accepted extensions:
-       ``.jpg``, ``.jpeg``, ``.png``, ``.gif``, ``.webp``.
-   :status 204: Avatar saved.
-   :status 400: No file provided or invalid file type.
+   :form avatar: Image file (``multipart/form-data``). Stored as-is as a
+       ``.jpg`` (the client pre-resizes to 128 × 128 px).
+   :status 200: Returns ``"ok"``; avatar saved.
+   :status 400: No file provided.
+   :status 413: File exceeds ``max_avatar_size_mb``.
 
 .. http:delete:: /avatar
 
@@ -489,7 +520,7 @@ Avatars
 
    **Requires authentication.**
 
-   :status 204: Avatar removed.
+   :status 200: Returns ``"ok"``; avatar removed.
 
 Private Channels
 ----------------
@@ -504,21 +535,22 @@ Private Channels
    If the leaving user is the last member, the channel is not automatically
    deleted — it becomes an empty room.
 
-   :param channel_id: Private channel identifier (``private:<name>`` form).
-   :status 204: User removed from channel.
+   :param int channel_id: Numeric private-channel id (the ``<id>`` in the
+       ``private:<id>`` channel identifier).
+   :status 200: Returns ``"ok"``; user removed from channel.
    :status 403: User is not a member of the channel.
-   :status 404: Channel not found.
 
 Files
 -----
 
 .. http:get:: /files/(filename)
 
-   Serve an uploaded image file.
+   Serve an uploaded file. Images are served inline; all other file types are
+   served as attachments (download) with the original filename restored.
 
    **Requires authentication.**
 
-   :param filename: UUID-based image filename (as stored in the database).
+   :param filename: UUID-based stored filename (as stored in the database).
    :resheader Content-Type: Inferred from the file extension.
    :status 404: File not found.
 

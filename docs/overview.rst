@@ -46,8 +46,8 @@ Features
 Messaging
 ~~~~~~~~~
 
-- **Public channels** — configurable via ``channels.json``; visible to all
-  users.
+- **Public channels** — configurable via the ``channels`` key in
+  ``settings.json``; visible to all users.
 - **Private channels** — invite-only rooms; members can be added or removed,
   the channel can be renamed (with a system message recording each rename),
   and any member can leave at any time.
@@ -108,8 +108,10 @@ Real-time Interaction
 Media
 ~~~~~
 
-- **Image attachments** — paste from clipboard, drag-and-drop, or use the
-  paperclip button; supports JPEG, PNG, GIF, and WebP.
+- **File attachments** — paste from clipboard, drag-and-drop, or use the
+  paperclip button; any file type is accepted. Images (JPEG, PNG, GIF, WebP)
+  are shown inline; all other file types appear as a download link preserving
+  the original filename.
 - **Link previews** — automatically generated preview cards for URLs, with
   special support for Bitbucket Cloud and Bitbucket Server code file URLs
   (showing the file content with line-number highlighting).
@@ -120,7 +122,8 @@ Interface
 ~~~~~~~~~
 
 - **Single-page application** — the entire chat interface is a zero-framework
-  vanilla JavaScript SPA that loads once and polls for updates.
+  vanilla JavaScript SPA that loads once and receives live updates over a single
+  Server-Sent Events stream.
 - **User avatars** — every account has a circular avatar showing the user's
   first two initials by default. Users can upload a custom image via the
   Settings menu; images are resized client-side to 128 × 128 px before
@@ -192,8 +195,8 @@ Project Structure
     minimost/
     ├── pyproject.toml              # Package metadata and dependencies
     ├── gunicorn.conf.py            # Production WSGI server configuration
-    ├── channels.json               # Public channel definitions
     ├── secret.key                  # Auto-generated Flask session secret
+    ├── ca.pem                      # Auto-generated local CA certificate
     ├── cert.pem                    # Auto-generated TLS certificate (self-signed)
     ├── key.pem                     # Auto-generated TLS private key
     ├── auth.db                     # Shared authentication database
@@ -205,12 +208,14 @@ Project Structure
     └── src/minimost/
         ├── __init__.py             # Flask app factory
         ├── __main__.py             # CLI entry point
+        ├── settings.json           # Bundled configuration (channels, limits, …)
         ├── auth.py                 # Authentication routes & utilities
         ├── calls.py                # Voice/video calling: lifecycle + WebRTC signalling
+        ├── events.py               # Server-Sent Events push stream (GET /events)
         ├── stun.py                 # Bundled stdlib STUN server for LAN WebRTC
         ├── chat.py                 # Messaging routes & channel logic
-        ├── presence.py             # Presence, typing, reactions
-        ├── common.py               # Database path helpers
+        ├── presence.py             # Presence, typing, private channels
+        ├── common.py               # Database path helpers + message schema
         ├── database.py             # Schema bootstrap (auth.db)
         ├── preview.py              # Link preview generation
         ├── clean.py                # Retention cleanup (old files and messages)

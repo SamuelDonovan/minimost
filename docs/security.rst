@@ -96,8 +96,8 @@ redirected to ``/login``.
 :func:`minimost.chat.is_valid_channel` enforces two rules:
 
 - **Public channels** — the channel name must be in the :data:`CHANNELS`
-  list defined in ``channels.json``. Users cannot post to arbitrary channel
-  names.
+  list loaded from the ``channels`` key of ``settings.json``. Users cannot post
+  to arbitrary channel names.
 - **DM channels** — the authenticated user's username must appear in the
   ``dm:user1:user2`` channel string. Users cannot read or write to other
   users' DM conversations.
@@ -116,9 +116,11 @@ Injection Prevention
 
 All database queries use parameterized statements (``?`` placeholders).
 There are no string-interpolated SQL queries in user-controlled data paths.
-The two places where table/column names are interpolated (the ``channel IN
-(?, ?, ?)`` placeholder list in :func:`minimost.chat.channel_unreads`) use
-only values from the server-controlled ``CHANNELS`` list, not user input.
+Where a query builds a dynamic ``IN (?, ?, …)`` list (e.g. the channel-access
+filters in :func:`minimost.chat.channel_unreads`, ``search_messages`` and
+``list_private_channels``), only the *number* of ``?`` markers is generated from
+the data — every actual value is still passed as a bound parameter, never
+interpolated into the SQL text.
 
 **XSS (Cross-Site Scripting)**
 
@@ -152,22 +154,27 @@ Uploaded images are served with :func:`flask.send_from_directory` using
 that the resolved path is within the root directory, preventing
 ``../../../etc/passwd``-style traversal.
 
-Uploaded image names are generated using UUID4 (``uuid.uuid4().hex``), so
-the original filename submitted by the client is never used on the filesystem.
+Every stored filename begins with a fresh UUID4 (``uuid.uuid4().hex``). Images
+are stored as ``<uuid>.<ext>``; all other files as
+``<uuid>_<secure_filename(original)>`` — the original name is passed through
+:func:`werkzeug.utils.secure_filename` before being appended, so a crafted name
+can neither collide nor escape the uploads directory.
 
 File Upload Security
 --------------------
 
-Only files with extensions in ``{".jpg", ".jpeg", ".png", ".gif", ".webp"}``
-are accepted. Files with other extensions are silently skipped. However,
-note that MiniMost does **not** validate the actual file content (magic bytes)
-— a file named ``malicious.jpg`` with non-image content would be stored and
-served. This is considered acceptable for a private LAN tool; add content
-validation if deploying in a less-trusted environment.
+Files of **any** type are accepted. Images (``.jpg``, ``.jpeg``, ``.png``,
+``.gif``, ``.webp``) are served inline; every other type is served as an
+attachment (download), so the browser never renders it in the page's origin.
+MiniMost does **not** validate file *content* (magic bytes) — a file named
+``photo.jpg`` containing non-image bytes would be stored and served. This is
+considered acceptable for a private LAN tool; add content validation if
+deploying in a less-trusted environment.
 
-The upload limit is 16 MiB, enforced by Flask's ``MAX_CONTENT_LENGTH``
-configuration. Requests exceeding this limit are rejected before the route
-handler runs.
+A single upload is capped at ``max_upload_size_mb`` (default 25 MiB) — enforced
+both per file in the route and globally by Flask's ``MAX_CONTENT_LENGTH``, which
+rejects an oversized request before the handler runs. Avatar uploads are capped
+separately by ``max_avatar_size_mb`` (default 5 MiB).
 
 Channel Access Control
 ----------------------
@@ -206,12 +213,14 @@ files are ephemeral and not preserved across checkpoints.
 
 **CSRF protection scope**
 
-CSRF tokens are enforced on the HTML form routes (``/login``, ``/signup``, and
-``/reset-password/<token>``) via a session-stored token rendered as a hidden
-``<input>`` in each form and validated in a ``before_request`` hook. The chat
-and presence API endpoints rely on Flask's signed session cookie for
-authentication; these endpoints do not require CSRF tokens as they are not
-reachable via cross-origin HTML forms.
+CSRF tokens are enforced on every state-changing request to the **auth**
+blueprint — ``/login``, ``/signup``, ``/reset-password/<token>`` and
+``/change-password`` — via a session-stored token (rendered as a hidden
+``<input>`` in each form, or sent by ``fetch``) validated in a
+``before_request`` hook. The chat, presence, and calls API endpoints rely on
+Flask's signed, ``SameSite=Lax`` session cookie for authentication; these
+endpoints do not require CSRF tokens as they are not reachable via cross-origin
+HTML forms.
 
 **No rate limiting on signup**
 

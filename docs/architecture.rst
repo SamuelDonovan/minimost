@@ -41,7 +41,8 @@ paths: the CLI, Gunicorn, and test suites.
 The factory is responsible for:
 
 1. Generating or loading the ``secret.key`` (session signing key).
-2. Setting the 16 MiB upload limit.
+2. Setting the upload-size limit (``MAX_CONTENT_LENGTH``) from
+   ``max_upload_size_mb`` in ``settings.json`` (default 25 MiB).
 3. Injecting the version string into the Jinja2 context.
 4. Registering the four Blueprints:
 
@@ -106,16 +107,17 @@ When ``POST /send/<channel>`` is called:
 
 1. :func:`minimost.chat.is_valid_channel` authorises the sender for the channel.
 2. The message row(s) are inserted into the shared ``messages`` table — one for
-   the text content, one per attached image. Consecutive short messages from the
-   same sender within 300 s are merged into the previous row instead.
+   the text content, one per attached file. Each send is always its own
+   canonical row; consecutive short messages from the same sender are kept
+   separate in the backend and only grouped visually in the frontend.
 3. The sender's ``read_state`` watermark for the channel is advanced to this
    message, so their own message never counts as unread.
 
 :func:`minimost.chat.extract_mentions` scans the text for ``@username`` tokens
 that resolve to real channel members and stores the result (JSON, or the
 ``"@everyone"`` sentinel for a channel-wide mention) in the ``mentions`` column.
-Editing a message re-extracts mentions from the new text. The polling response
-returns ``mentions`` so each client can highlight and notify the mentioned
+Editing a message re-extracts mentions from the new text. Each message payload
+carries ``mentions`` so each client can highlight and notify the mentioned
 viewer.
 
 Because all messages share one table, the read path enforces access control
@@ -179,8 +181,7 @@ Shared State: auth.db and presence.db
 - **Call state** — ``calls`` and ``call_participants`` track the full
   lifecycle of every voice/video call; ``call_signals`` relays WebRTC
   offer/answer/ICE-candidate messages between peers during connection setup.
-  (The legacy ``call_media``/``share_media`` tables are retained but unused now
-  that media flows peer-to-peer over WebRTC.)
+  Media itself flows peer-to-peer over WebRTC and never touches the server.
 - The legacy ``read_receipts`` and ``message_reactions`` tables remain defined
   but are **unused** — read state and reactions now live in ``messages.db``.
 
@@ -190,11 +191,11 @@ Shared State: auth.db and presence.db
 2. Server atomically toggles the row in the shared ``reactions`` table
    (``INSERT`` or ``DELETE``), keyed by the message ``id`` — one statement, no
    read-modify-write race and no per-user fan-out.
-3. Server bumps ``reactions_ts`` on the message row — the signal the polling
+3. Server bumps ``reactions_ts`` on the message row — the signal the change
    query picks up.
-4. Next poll cycle: ``/messages/<channel>?after=<ts>`` returns the message
-   because ``reactions_ts > after``, with its reactions joined in from the
-   ``reactions`` table.
+4. On the next change push (the ``messages`` SSE event, or a ``/messages``
+   poll), the message is re-sent because ``reactions_ts > after``, with its
+   reactions joined in from the ``reactions`` table.
 5. Client receives the updated ``reactions`` JSON and re-renders.
 
 Event Delivery Architecture
@@ -476,9 +477,6 @@ two complementary mechanisms:
      - WebRTC signalling relay: offer/answer/ICE-candidate messages between
        peers, keyed by ``call_id`` (and reused for standalone screen shares,
        keyed by ``share_id``).  Purged when the call/share ends and at startup.
-   * - ``call_media`` / ``share_media``
-     - Legacy HTTP media-relay buffers, retained for one release as a fallback
-       but **no longer used** now that media flows peer-to-peer over WebRTC.
 
 **HTTPS requirement:**
 

@@ -391,8 +391,8 @@ Create the socket directory::
         ssl_certificate     /etc/letsencrypt/live/chat.example.com/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/chat.example.com/privkey.pem;
 
-        # Increase upload limit to match Flask's MAX_CONTENT_LENGTH (16 MiB)
-        client_max_body_size 16M;
+        # Match Flask's MAX_CONTENT_LENGTH (max_upload_size_mb, default 25 MiB)
+        client_max_body_size 25M;
 
         # Serve uploaded images directly (bypasses Gunicorn for static files)
         location /files/ {

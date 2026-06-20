@@ -9,8 +9,9 @@ minimost.common
 Messages Table Schema
 ---------------------
 
-The ``messages`` table created by :func:`minimost.common.init_user_db`
-has the following columns:
+The ``messages`` table created by :func:`minimost.common.init_messages_db`
+has the following columns. There is one canonical row per message in the single
+shared ``users/messages.db`` — no per-user copies.
 
 .. list-table::
    :header-rows: 1
@@ -21,7 +22,8 @@ has the following columns:
      - Description
    * - ``id``
      - INTEGER PK
-     - Auto-increment primary key (differs across per-user databases).
+     - Auto-increment primary key; the canonical identifier used by edit,
+       delete, reaction, and reply references.
    * - ``channel``
      - TEXT NOT NULL
      - Public channel name or DM identifier (``"dm:user1:user2"``).
@@ -33,24 +35,21 @@ has the following columns:
      - Message text body. ``NULL`` for image-only messages.
    * - ``content_type``
      - TEXT
-     - Always ``'text'``. Reserved for future media types.
+     - ``'text'`` for normal messages; ``'system'`` for system notices
+       (welcome, channel rename, member add/leave) rendered under the
+       "MiniMost" identity.
    * - ``filename``
      - TEXT
-     - UUID-based image filename. ``NULL`` for text-only messages.
+     - Stored attachment filename (UUID-based). ``NULL`` for text-only messages.
    * - ``ts``
      - REAL NOT NULL
-     - Unix timestamp (seconds, floating-point). Shared across all user
-       copies of the same message.
+     - Unix timestamp (seconds, floating-point).
    * - ``edited``
      - INTEGER (0/1)
      - Whether this message has been edited.
    * - ``edited_ts``
      - REAL
      - Timestamp of the most recent edit.
-   * - ``read``
-     - INTEGER (0/1)
-     - Per-user read flag. Sender's copy is inserted as ``read=0``; seeds
-       from :func:`minimost.auth._seed_channel_history` are ``read=1``.
    * - ``deleted``
      - INTEGER (0/1)
      - Soft-delete flag.
@@ -60,15 +59,15 @@ has the following columns:
    * - ``reply_to_id``
      - INTEGER FK
      - Foreign key to ``messages.id`` for threaded replies.
-   * - ``reactions``
-     - TEXT
-     - Legacy column (unused). Reactions are in ``presence.db``.
    * - ``reactions_ts``
      - REAL
-     - Updated when a reaction is toggled; triggers polling pickup.
+     - Bumped when a reaction is toggled (the reactions themselves live in the
+       ``reactions`` table); the change drives re-delivery to viewers.
    * - ``mentions``
      - TEXT
-     - Reserved for future ``@mention`` tracking.
+     - JSON array of the channel members ``@``-mentioned in the message
+       (or the ``"@everyone"`` sentinel); ``NULL`` when none. Set at send/edit
+       time by :func:`minimost.chat.extract_mentions`.
    * - ``metadata``
      - TEXT
      - Reserved for future structured metadata.
