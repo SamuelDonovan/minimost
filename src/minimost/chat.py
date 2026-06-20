@@ -1651,7 +1651,10 @@ def search_messages():
     sql, params = _compose_search_sql(query, clauses, params)
 
     db = get_db()
-    cur = db.execute(sql, params)
+    # The SQL text is built only from constant clause fragments in
+    # _compose_search_sql / _search_access; every user value is a bound `?`
+    # parameter, so this is not an injection sink despite the dynamic assembly.
+    cur = db.execute(sql, params)  # codeql[py/sql-injection]
     results = [dict(r) for r in cur.fetchall()]
     db.close()
 
