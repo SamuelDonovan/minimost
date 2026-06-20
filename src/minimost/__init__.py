@@ -215,6 +215,39 @@ def create_app():
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SECURE"] = not os.environ.get("MINIMOST_SKIP_TLS")
 
+    # Cache static assets instead of serving them with the Flask default of
+    # ``Cache-Control: no-cache``. Under the built-in dev server (the `minimost`
+    # command, used without Gunicorn) every response is sent with
+    # ``Connection: close`` — Werkzeug deliberately disables HTTP keep-alive.
+    # ``no-cache`` forces the browser to *revalidate* every static asset on each
+    # navigation, so a refresh fires a burst of brand-new TLS connections. Chrome
+    # reuses/pre-opens connections aggressively and occasionally sends a request
+    # on one the dev server has already closed; that request resets and the asset
+    # (typically styles.css) silently fails, leaving the page unstyled. Firefox
+    # reuses connections far less aggressively and rarely hits this. A real
+    # max-age lets the browser serve the stylesheet from cache on refresh with no
+    # network request at all, so there is no connection left to lose. One day
+    # bounds how long any unversioned asset (e.g. manifest icons) can be stale.
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400  # seconds (1 day)
+
+    @app.url_defaults
+    def _static_cache_bust(endpoint, values):
+        """Append ``?v=<mtime>`` to ``static`` URLs for cache-busting.
+
+        With assets cached for a day (see ``SEND_FILE_MAX_AGE_DEFAULT``), a
+        plain ``/static/styles.css`` URL could serve a stale copy after an edit
+        or upgrade. Keying the URL on the file's modification time changes it the
+        instant the file changes, so the browser fetches the new bytes
+        immediately while still caching aggressively in between. Applies to every
+        ``url_for('static', filename=...)`` call, so all templates benefit.
+        """
+        static_folder = app.static_folder
+        if endpoint != "static" or "filename" not in values or not static_folder:
+            return
+        with suppress(Exception):
+            asset = Path(static_folder) / values["filename"]
+            values["v"] = int(asset.stat().st_mtime)
+
     def _csrf_token() -> str:
         """Return a per-session CSRF token, generating one if absent."""
         if "_csrf_token" not in session:

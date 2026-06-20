@@ -87,7 +87,18 @@ def main():
     cert = app.config.get("TLS_CERT_FILE")
     key = app.config.get("TLS_KEY_FILE")
     ssl_context = (cert, key) if cert and key else None
-    app.run(host=args.host, port=args.port, debug=False, ssl_context=ssl_context)
+    # threaded=True gives every connection its own thread. Without it the
+    # built-in server handles a single connection at a time, so browsers that
+    # open many parallel keep-alive connections (notably Chrome) can stall or
+    # reset a queued request on a rapid refresh or the post-login redirect —
+    # the stylesheet then silently fails and the page renders unstyled.
+    app.run(
+        host=args.host,
+        port=args.port,
+        debug=False,
+        ssl_context=ssl_context,
+        threaded=True,
+    )
 
 
 def _send_reset_dm(username: str, expires_minutes: int) -> None:

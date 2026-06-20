@@ -87,7 +87,7 @@ def test_main_default_args():
         with patch("sys.argv", ["minimost"]):
             main()
     mock_app.run.assert_called_once_with(
-        host="127.0.0.1", port=5000, debug=False, ssl_context=None
+        host="127.0.0.1", port=5000, debug=False, ssl_context=None, threaded=True
     )
 
 
@@ -100,7 +100,7 @@ def test_main_custom_args():
         with patch("sys.argv", ["minimost", "--host", "0.0.0.0", "--port", "8080"]):
             main()
     mock_app.run.assert_called_once_with(
-        host="0.0.0.0", port=8080, debug=False, ssl_context=None
+        host="0.0.0.0", port=8080, debug=False, ssl_context=None, threaded=True
     )
 
 
@@ -118,4 +118,5 @@ def test_main_uses_tls_paths_from_config():
         port=5000,
         debug=False,
         ssl_context=("cert.pem", "key.pem"),
+        threaded=True,
     )
