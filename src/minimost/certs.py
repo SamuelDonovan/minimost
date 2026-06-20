@@ -30,12 +30,28 @@ on the standard library — there is no longer any dependency on a system
 
 import datetime
 import os
+import secrets
 import socket
 import stat
 import sys
 from pathlib import Path
 
 from . import _pki
+
+# Certificates live in the same data root as the rest of MiniMost's state
+# (``secret.key``, the ``users/`` databases) rather than the process working
+# directory.  ``parents[2]`` of ``src/minimost/certs.py`` is the project root —
+# the same path ``minimost.__init__`` and ``minimost.common`` derive as
+# ``_PROJECT_ROOT`` — and resolves identically under an installed wheel.
+#
+# Anchoring the certs to a fixed location is deliberate: a client that has
+# already imported ``ca.pem`` keeps validating the served leaf no matter which
+# directory the server is later launched from.  When the certs lived in
+# ``Path.cwd()``, launching from a different directory minted a *second* CA;
+# because every CA shared one subject name, browsers matched the stale trusted
+# CA to the new leaf and reported the confusing ``SEC_ERROR_BAD_SIGNATURE``
+# instead of a clean untrusted-issuer error.
+_DATA_DIR = Path(__file__).resolve().parents[2]
 
 # Validity (days) for the served leaf certificate. Chrome rejects any TLS server
 # certificate valid for more than 398 days with NET::ERR_CERT_VALIDITY_TOO_LONG,
@@ -51,6 +67,35 @@ _LEAF_RENEW_DAYS = 30
 
 _CA_COMMON_NAME = "MiniMost local CA"
 _LEAF_COMMON_NAME = "minimost"
+
+
+def default_cert_dir():
+    """Return the canonical directory that holds the CA and leaf certificates.
+
+    This is the project/data root, *not* the process working directory — see the
+    note on :data:`_DATA_DIR`.
+
+    :rtype: pathlib.Path
+    """
+    return _DATA_DIR
+
+
+def _ca_common_name():
+    """Build a CA subject name unique to this host and instance.
+
+    Every CA used to share the literal subject ``"MiniMost local CA"``.  When a
+    second CA was generated (the server launched from another directory, or a
+    fresh checkout), a browser that already trusted the first CA matched it to
+    the new leaf *by subject name* and rejected the signature
+    (``SEC_ERROR_BAD_SIGNATURE``).  Giving each CA a distinct subject makes a
+    stale trust anchor surface as a clean untrusted-issuer error instead, and
+    lets several instances be trusted at once.
+    """
+    try:
+        host = socket.gethostname() or "host"
+    except OSError:  # pragma: no cover - gethostname failure is rare
+        host = "host"
+    return "{0} ({1} {2})".format(_CA_COMMON_NAME, host, secrets.token_hex(4))
 
 
 def _build_san():
@@ -111,7 +156,7 @@ def _generate_ca(ca_cert, ca_key):
     :rtype: dict
     """
     key = _pki.generate_key()
-    cert_der = _pki.build_ca_cert(key, _CA_COMMON_NAME, _CA_DAYS)
+    cert_der = _pki.build_ca_cert(key, _ca_common_name(), _CA_DAYS)
     ca_cert.write_text(_pki.certificate_pem(cert_der))
     _write_private_key(ca_key, _pki.private_key_pem(key))
     return key
@@ -123,18 +168,23 @@ def _generate_leaf(cert_path, key_path, ca_cert, ca_key):
     The leaf's AuthorityKeyIdentifier is copied from the CA certificate's own
     SubjectKeyIdentifier so the two always match (OpenSSL/browsers reject the
     chain otherwise), even if the CA on disk used an older key-identifier scheme.
+    The leaf's issuer name is likewise read from the CA certificate's actual
+    subject CN (rather than a constant) so it matches byte-for-byte regardless of
+    whether the CA carries a per-instance name or the legacy fixed one.
     """
     dns_names, ip_addresses = _build_san()
-    ca_key_id = _pki.certificate_subject_key_id(_pki.pem_to_der(ca_cert.read_text()))
+    ca_der = _pki.pem_to_der(ca_cert.read_text())
+    ca_key_id = _pki.certificate_subject_key_id(ca_der)
     if ca_key_id is None:
         ca_key_id = _pki.key_identifier(ca_key)
+    ca_name = _pki.certificate_subject_common_name(ca_der) or _CA_COMMON_NAME
     leaf_key = _pki.generate_key()
     cert_der = _pki.build_leaf_cert(
         leaf_key,
         ca_key,
         ca_key_id,
         _LEAF_COMMON_NAME,
-        _CA_COMMON_NAME,
+        ca_name,
         dns_names,
         ip_addresses,
         _LEAF_DAYS,
@@ -158,7 +208,7 @@ def _leaf_needs_renewal(cert_path, ca_key):
     return not_after <= renew_threshold
 
 
-def ensure_certs(directory):
+def ensure_certs(directory=None):
     """Ensure a CA-signed TLS leaf cert exists in ``directory``.
 
     Generates a long-lived local CA (``ca.pem``) once and a short-lived leaf
@@ -167,13 +217,14 @@ def ensure_certs(directory):
     CA creation, instructions for importing ``ca.pem`` are printed too.
 
     :param directory: Directory in which the cert files live / are created.
-    :type directory: str or pathlib.Path
+        Defaults to :func:`default_cert_dir` (the fixed data root) when omitted.
+    :type directory: str or pathlib.Path or None
     :returns: ``(cert_path, key_path)`` as :class:`pathlib.Path` objects on
         success, or ``(None, None)`` if generation is skipped or fails (in which
         case the caller should continue without TLS).
     :rtype: tuple[Path, Path] | tuple[None, None]
     """
-    directory = Path(directory)
+    directory = default_cert_dir() if directory is None else Path(directory)
     cert_path = directory / "cert.pem"
     key_path = directory / "key.pem"
     ca_cert = directory / "ca.pem"

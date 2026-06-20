@@ -21,8 +21,6 @@ everything here, so running from a source checkout behaves identically.
 import logging
 import multiprocessing
 import re as _re
-from pathlib import Path
-
 from minimost.certs import ensure_certs
 
 # --------------------------------------------------------------------
@@ -97,7 +95,7 @@ max_requests_jitter = 50
 # minimost.certs). The leaf renews itself; clients import ca.pem once. If
 # generation fails a warning is printed and gunicorn starts without TLS (calls
 # will not work in that case).
-_cert, _key = ensure_certs(Path.cwd())
+_cert, _key = ensure_certs()
 
 if _cert and _key:
     certfile = str(_cert)

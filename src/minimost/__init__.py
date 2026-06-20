@@ -144,12 +144,13 @@ def _provision_tls(app) -> None:
     """
     if os.environ.get("MINIMOST_SKIP_TLS"):
         return
-    from .certs import ensure_certs
+    from .certs import default_cert_dir, ensure_certs
 
-    # Use the process working directory (matching the Gunicorn config and the
-    # documented data-directory model) so it resolves correctly under an
-    # installed wheel, where the package dir is typically read-only.
-    cert, key = ensure_certs(Path.cwd())
+    # Provision into the fixed data root (the same place secret.key and the
+    # users/ databases live), NOT the process working directory. A fixed
+    # location means the CA a client imported keeps validating the served leaf
+    # no matter which directory the server is later launched from.
+    cert, key = ensure_certs(default_cert_dir())
     if cert and key:
         app.config["TLS_CERT_FILE"] = str(cert)
         app.config["TLS_KEY_FILE"] = str(key)
@@ -274,10 +275,12 @@ def create_app():
         the self-signed TLS leaf MiniMost serves trusted, which clears the
         "Not secure" warning and lets the installed PWA hide the URL bar. Only
         the public CA cert is exposed; the signing key (``ca-key.pem``) never
-        leaves the server. ``ca.pem`` lives in the working directory alongside
-        ``cert.pem``/``key.pem`` (see ``gunicorn.conf.py``).
+        leaves the server. ``ca.pem`` lives in the fixed data root alongside
+        ``cert.pem``/``key.pem`` (see :func:`minimost.certs.default_cert_dir`).
         """
-        ca_path = Path.cwd() / "ca.pem"
+        from .certs import default_cert_dir
+
+        ca_path = default_cert_dir() / "ca.pem"
         if not ca_path.is_file():
             abort(404)
         return send_file(

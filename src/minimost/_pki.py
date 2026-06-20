@@ -716,6 +716,41 @@ def certificate_subject_key_id(cert_der: bytes) -> Optional[bytes]:
         return None
 
 
+def certificate_subject_common_name(cert_der: bytes) -> Optional[str]:
+    """Return the subject commonName (CN) of a certificate, or None if absent.
+
+    Used to copy a CA certificate's exact subject CN into a freshly minted
+    leaf's issuer field, so the two match byte-for-byte even when the CA carries
+    a per-instance name rather than a fixed string.
+    """
+    try:
+        tbs_der, _ = _split_certificate(cert_der)
+        _, content_start, _ = _read_tlv(tbs_der, 0)  # tbsCertificate SEQUENCE
+        offset = content_start
+        tag, _, end = _read_tlv(tbs_der, offset)
+        if tag == 0xA0:  # optional explicit version [0]
+            offset = end
+        for _ in range(4):  # serialNumber, signature, issuer, validity
+            _, _, offset = _read_tlv(tbs_der, offset)
+        _, subject_start, subject_end = _read_tlv(tbs_der, offset)  # subject Name
+        cn_oid = _der_oid(_OID_COMMON_NAME)
+        pointer = subject_start
+        while pointer < subject_end:
+            _, set_start, set_end = _read_tlv(tbs_der, pointer)  # RelativeDN SET
+            inner = set_start
+            while inner < set_end:
+                _, atv_start, atv_end = _read_tlv(tbs_der, inner)  # AttrTypeAndValue
+                _, _, oid_end = _read_tlv(tbs_der, atv_start)  # AttributeType OID
+                if tbs_der[atv_start:oid_end] == cn_oid:
+                    _, value_start, value_end = _read_tlv(tbs_der, oid_end)
+                    return tbs_der[value_start:value_end].decode("utf-8")
+                inner = atv_end
+            pointer = set_end
+        return None
+    except (IndexError, ValueError, UnicodeDecodeError):
+        return None
+
+
 def key_identifier(key: Dict[str, int]) -> bytes:
     """Public accessor for :func:`_key_identifier` (used as a fallback when a CA
     certificate carries no SubjectKeyIdentifier to copy)."""
