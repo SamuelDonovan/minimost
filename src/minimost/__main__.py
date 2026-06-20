@@ -125,17 +125,22 @@ def main():
     # and records the resolved paths in app.config; the dev server just consumes
     # them. Set MINIMOST_SKIP_TLS=1 to serve plain HTTP.
     app = create_app()
+    # Tell templates they are being served by the connection-closing built-in
+    # server so the ``stylesheet`` macro inlines CSS into the page instead of
+    # linking it. Under the dev server a separate stylesheet request can be lost
+    # to a connection reset on heavy refresh; inlining removes the request
+    # entirely. Gunicorn never sets this, so it keeps serving cacheable links.
+    app.config["DEV_SERVER"] = True
     cert = app.config.get("TLS_CERT_FILE")
     key = app.config.get("TLS_KEY_FILE")
     ssl_context = (cert, key) if cert and key else None
-    # threaded=True gives every connection its own thread. Without it the
-    # built-in server handles a single connection at a time, so browsers that
-    # open many parallel keep-alive connections (notably Chrome) can stall or
-    # reset a queued request on a rapid refresh or the post-login redirect —
-    # the stylesheet then silently fails and the page renders unstyled.
     # Swallow the BrokenPipe/SSL-EOF traceback the dev server would otherwise log
     # every time a browser closes the long-lived /events SSE connection.
     _silence_stream_disconnect_logs()
+    # threaded=True gives every connection its own thread. Without it the
+    # built-in server handles one connection at a time — the long-lived /events
+    # SSE stream would then block every other request for that tab, and a burst
+    # of parallel asset/API requests on load would serialise behind it.
     app.run(
         host=args.host,
         port=args.port,

@@ -1,0 +1,64 @@
+{#
+  stylesheet(filename) — emit the page's CSS so it cannot fail to load.
+
+  Two strategies, chosen by deployment:
+
+  * Dev server (``dev_server`` is True — set by minimost.__main__): inline the
+    stylesheet's bytes straight into the document with ``inline_static``. The
+    built-in Werkzeug server sends ``Connection: close`` on every response and
+    cannot keep connections alive (it is hard-coded, no public switch), so under
+    heavy refresh Chrome can still lose a *separate* asset request to a
+    connection reset. A separate request is the only thing that can be lost —
+    the HTML document request is the one the navigation already rode in on and
+    always succeeds, so CSS carried inside it can never fail. This makes the
+    unstyled-page bug impossible even under brute-force refresh stress.
+
+  * Gunicorn / any real WSGI server (``dev_server`` is False): keep a normal
+    cacheable <link>. Production servers keep connections alive and never hit
+    the reset race, so there is no reason to give up HTTP caching by inlining.
+    The link still self-heals (``onerror`` re-requests on a fresh connection,
+    with a window-load sweep for silent failures) as cheap insurance against a
+    flaky proxy or transient blip.
+
+  ``dev_server`` and ``inline_static`` are environment globals (registered in
+  minimost.create_app), so this macro works even though it is imported without
+  context.
+#}
+{% macro stylesheet(filename) -%}
+{%- if dev_server() -%}
+<style>{{ inline_static(filename) | safe }}</style>
+{%- else -%}
+<script>
+(function () {
+  if (window.__cssRetry) return;            // define the helpers once per page
+  var MAX = 10;
+  window.__cssOK = function (link) { link.dataset.loaded = "1"; };
+  window.__cssRetry = function (link) {
+    var attempt = parseInt(link.dataset.attempt || "0", 10) + 1;
+    if (attempt > MAX) return;
+    var fresh = document.createElement("link");
+    fresh.rel = "stylesheet";
+    fresh.dataset.attempt = attempt;
+    // Drop any existing query (?v=mtime) and add a unique one so the retry is
+    // forced onto the network instead of a possibly-incomplete cache entry.
+    fresh.href = link.getAttribute("href").split("?")[0] +
+                 "?retry=" + attempt + "." + Date.now();
+    fresh.onload = function () { window.__cssOK(fresh); };
+    fresh.onerror = function () { window.__cssRetry(fresh); };
+    (document.head || document.documentElement).appendChild(fresh);
+    if (link.parentNode) link.parentNode.removeChild(link);
+  };
+  // Fallback for a silent failure that never fires onerror: once the page has
+  // loaded, retry any stylesheet that neither loaded nor produced a sheet.
+  window.addEventListener("load", function () {
+    document.querySelectorAll('link[rel="stylesheet"]').forEach(function (link) {
+      if (link.dataset.attempt || link.dataset.loaded === "1" || link.sheet) return;
+      window.__cssRetry(link);
+    });
+  });
+}());
+</script>
+<link rel="stylesheet" href="{{ url_for('static', filename=filename) }}"
+      onload="window.__cssOK(this)" onerror="window.__cssRetry(this)">
+{%- endif -%}
+{%- endmacro %}

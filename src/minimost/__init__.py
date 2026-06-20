@@ -249,6 +249,40 @@ def create_app():
             asset = Path(static_folder) / values["filename"]
             values["v"] = int(asset.stat().st_mtime)
 
+    # Inline a static asset's bytes directly into the page (see the
+    # ``stylesheet`` macro in templates/_assets.html). On the built-in dev
+    # server every response carries ``Connection: close`` and Chrome can still
+    # lose a *separate* asset request to a connection reset under heavy refresh
+    # stress — a separate request is the only thing that can be lost. The HTML
+    # document request is the one the navigation is already riding on, so it
+    # never fails; CSS carried *inside* that document therefore cannot fail to
+    # load. The result is keyed on mtime so an edit is picked up immediately,
+    # and only ever used on the dev server (``dev_server`` is True), so Gunicorn
+    # keeps serving cacheable, separately-requested stylesheets.
+    # Returns the raw file text; the template marks it safe with ``| safe`` so
+    # there is no need to import a Markup wrapper.
+    _inline_cache: dict[str, tuple[float, str]] = {}
+
+    def _inline_static(filename: str) -> str:
+        path = Path(app.static_folder or "") / filename
+        mtime = path.stat().st_mtime
+        cached = _inline_cache.get(filename)
+        if cached is None or cached[0] != mtime:
+            cached = (mtime, path.read_text(encoding="utf-8"))
+            _inline_cache[filename] = cached
+        return cached[1]
+
+    # Exposed as environment globals (not a context processor) so the
+    # ``stylesheet`` macro can use them even though it is imported without
+    # context. ``dev_server`` is a *function* read live at render time rather
+    # than a bare value: Jinja caches imported macros and would otherwise freeze
+    # whatever the value happened to be at the first render, so the dev-server
+    # entry point (minimost.__main__) must be able to flip ``app.config`` and
+    # have every subsequent render see it regardless of import timing.
+    app.config.setdefault("DEV_SERVER", False)
+    app.jinja_env.globals["inline_static"] = _inline_static
+    app.jinja_env.globals["dev_server"] = lambda: app.config["DEV_SERVER"]
+
     def _csrf_token() -> str:
         """Return a per-session CSRF token, generating one if absent."""
         if "_csrf_token" not in session:
