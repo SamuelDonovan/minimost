@@ -531,10 +531,10 @@ def channel_unreads():
 
     Route: ``GET /channel_unreads``
 
-    Requires authentication.  Queries the current user's database and counts
-    messages that are unread (``read = 0``), not sent by the user
-    (``sender != user``), and not deleted (``deleted = 0``), grouped by
-    public channel.
+    Requires authentication.  For each public channel, counts messages not
+    sent by the user (``sender != user``) and not deleted (``deleted = 0``)
+    whose ``ts`` is newer than the user's per-channel read watermark
+    (``read_state.last_read_ts``).
 
     All channels in :data:`CHANNELS` are included in the response — those
     with no unread messages are returned with a count of ``0``.
@@ -1236,11 +1236,11 @@ def messages(channel):
 
     Route: ``GET /messages/<channel>?after=<timestamp>``
 
-    Requires authentication.  This is the core polling endpoint: the
-    JavaScript client calls it every 500 ms, passing the timestamp of the
-    last message it received as the ``after`` query parameter.  The server
-    returns only rows that have changed since that point, keeping each
-    response small.
+    Requires authentication.  The client delivers messages through the SSE
+    push stream (:mod:`minimost.events`), which shares the same cursor-based
+    core (:func:`messages_since`); this route exposes that core over plain
+    HTTP, passing the timestamp of the last message seen as the ``after``
+    query parameter so only rows changed since that point are returned.
 
     **What is returned:**
 
@@ -1256,10 +1256,9 @@ def messages(channel):
 
     **Reactions enrichment:**
 
-    After querying the user's database, the function fetches the current
-    reactions for all returned messages from ``presence.db::message_reactions``
-    and merges them into the response as a JSON string under the ``reactions``
-    key.  This overwrites the stale ``reactions`` column from the user DB.
+    After selecting the changed message rows, the current reactions for all of
+    them are fetched from the ``reactions`` table (keyed by message ``id``) and
+    merged into each row as a JSON string under the ``reactions`` key.
 
     **``after`` parameter handling:**
 
@@ -1449,8 +1448,9 @@ def get_message(msg_id):
     message when rendering a reply thread, since the ``reply_to_id`` column
     stores only the ID rather than the full message content.
 
-    The lookup is performed against the **current user's database**, which
-    means the message must exist in that user's records.
+    The message is looked up by ``id`` in the shared database; access is then
+    gated on whether the caller may see its channel, so a 404 is returned both
+    when the message does not exist and when the caller cannot access it.
 
     :param msg_id: The integer primary key of the message to retrieve.
     :type msg_id: int
@@ -1458,8 +1458,8 @@ def get_message(msg_id):
         ``filename``, and ``deleted``.
     :rtype: flask.Response (application/json)
 
-    :raises: ``404 not found`` — if no message with *msg_id* exists in the
-        current user's database.
+    :raises: ``404 not found`` — if no message with *msg_id* exists, or the
+        caller may not access its channel.
     """
     user = session["user"]
     db = get_db()
@@ -1600,9 +1600,11 @@ def search_messages():
     index cannot serve, fall back to a plain ``LIKE`` scan.
 
     Results are returned in descending timestamp order (newest first) and
-    limited to 50 rows to keep responses fast.  The search scope is the
-    **current user's database only**, which means only messages that user has
-    access to (including all public channels and their DMs) are searched.
+    limited to 50 rows to keep responses fast.  The search runs over the single
+    shared database but is constrained by an explicit access clause (see
+    :func:`_search_access`) to only the channels the caller may read — public
+    channels, the private channels they belong to, and their own DMs — with
+    private-channel backlog hidden from late joiners.
 
     Query parameters (all optional, combined with ``AND``):
         **q** (str): Keyword matched as a case-insensitive ``LIKE`` substring
@@ -1706,18 +1708,16 @@ def edit(msg_id):
 
     **Propagation:**
 
-    The edit is applied to every recipient's copy of the message, matched by
-    the combination of ``(channel, sender, ts)`` rather than by ``id``
-    because row IDs differ between per-user databases.  The ``edited`` flag
-    is set to ``1`` and ``edited_ts`` records when the edit occurred so the
-    polling query (:func:`messages`) picks it up for other users.
+    The message is a single canonical row in the shared database, so the edit
+    is one ``UPDATE`` by ``id``.  The ``edited`` flag is set to ``1`` and
+    ``edited_ts`` records when the edit occurred so the change query
+    (:func:`messages_since`) picks it up for every viewer.
 
     Form fields:
         **text** (str): The new message content.  Stripped of leading/trailing
         whitespace.
 
-    :param msg_id: The integer ``id`` of the message to edit (in the
-        current user's database).
+    :param msg_id: The integer ``id`` of the message to edit.
     :type msg_id: int
     :returns: The string ``"ok"`` on success.
     :rtype: flask.Response
@@ -1766,17 +1766,17 @@ def delete_message(msg_id):
 
     The message row is *not* removed from the database.  Instead, ``deleted``
     is set to ``1`` and ``deleted_ts`` records when the deletion occurred.
-    This allows the polling query (:func:`messages`) to return a tombstone
-    to any client that has already cached the message, so they can remove it
-    from their view.  The actual row is preserved for audit/admin purposes.
+    This allows the change query (:func:`messages_since`) to return a
+    tombstone to any client that has already cached the message, so they can
+    remove it from their view.  The actual row is preserved for audit/admin
+    purposes.
 
     **Propagation:**
 
-    Like edits, the soft-delete is applied to every recipient's copy of the
-    message, matched by ``(channel, sender, ts)``.
+    Like edits, the soft-delete is a single ``UPDATE`` by ``id`` on the
+    canonical row in the shared database, so every viewer sees it.
 
-    :param msg_id: The integer ``id`` of the message to delete (in the
-        current user's database).
+    :param msg_id: The integer ``id`` of the message to delete.
     :type msg_id: int
     :returns: The string ``"ok"`` on success.
     :rtype: flask.Response
@@ -2329,29 +2329,25 @@ def react(msg_id):
     user has already reacted with this emoji, the reaction is removed;
     otherwise it is added.
 
-    **Why the shared ``presence.db`` is used:**
+    **Storage:**
 
-    Reactions must be visible to all users instantly and without race
-    conditions.  If reactions were stored in per-user databases, a
-    read-modify-write cycle would be needed on each user's file — which
-    creates TOCTOU races under concurrent requests.  Instead, the
-    ``message_reactions`` table in ``presence.db`` is used with a single
-    atomic ``INSERT OR DELETE`` operation.
+    Reactions live in the ``reactions`` table of the shared message database,
+    keyed by the real message ``id``.  Toggling is a single atomic insert or
+    delete on one ``(message_id, emoji, reactor)`` row — no per-user fan-out
+    and no read-modify-write race.
 
-    **Propagation to user databases:**
+    **Propagation:**
 
-    After updating ``presence.db``, the function bumps the ``reactions_ts``
-    column in every recipient's copy of the message.  This causes the
-    polling query (:func:`messages`) to return the message row again for
-    all users, and the client re-fetches the current reactions from the
-    response.
+    After toggling, the function bumps the ``reactions_ts`` column on the
+    message row.  This causes the change query (:func:`messages_since`) to
+    return the row again to every viewer, and the client re-fetches the
+    current reactions from the response.
 
     Form fields:
         **reaction** (str): The emoji name (SVG filename without extension)
         to toggle.  Must be a member of :data:`VALID_REACTIONS`.
 
-    :param msg_id: The integer ``id`` of the message to react to (in the
-        current user's database).
+    :param msg_id: The integer ``id`` of the message to react to.
     :type msg_id: int
     :returns: JSON object mapping emoji names to lists of reactors, e.g.
         ``{"thumbs_up": ["alice", "bob"], "heart": ["charlie"]}``.
@@ -2359,8 +2355,8 @@ def react(msg_id):
 
     :raises: ``400 invalid reaction`` — if *reaction* is not in
         :data:`VALID_REACTIONS`.
-    :raises: ``404 not found`` — if *msg_id* does not exist in the current
-        user's database.
+    :raises: ``404 not found`` — if *msg_id* does not exist, or the caller may
+        not access its channel.
     """
     user = session["user"]
     reaction = request.form.get("reaction", "").strip()
@@ -2427,24 +2423,19 @@ def mark_read(channel):
     Requires authentication.  Called by the client whenever the user switches
     to a channel or scrolls to the bottom of the message list.
 
-    **Two-step operation:**
+    **How it works:**
 
-    1. Collects the timestamps of every currently-unread message in the
-       channel (sent by other users) so they can be recorded as read
-       receipts.
-    2. Sets ``read = 1`` for all messages in the channel that were not sent
-       by the current user.
+    The user's per-``(user, channel)`` read watermark
+    (``read_state.last_read_ts``) is advanced to the timestamp of the newest
+    message in the channel.  Unread counts and read receipts are both derived
+    from this single row, so there is no per-message write.  The watermark only
+    ever moves forward (see :func:`_advance_read`).
 
     **Read receipts:**
 
-    After marking messages as read in the user's database, a row is inserted
-    into ``presence.db::read_receipts`` for each previously-unread message
-    timestamp.  ``INSERT OR IGNORE`` is used to avoid duplicate entries when
-    the same message is read multiple times (e.g. the user switches to the
-    channel, back, then returns).
-
-    The client polls :func:`read_receipts` to display ``✓`` checkmarks and
-    tooltips showing who has read each message.
+    Other clients read these watermarks via :func:`read_receipts` and derive
+    the per-message ``✓`` checkmarks themselves: a user has read a message iff
+    their watermark is ``>=`` that message's ``ts``.
 
     :param channel: The channel name or DM identifier.
     :type channel: str
@@ -2667,29 +2658,52 @@ def list_private_channels():
         """,
         (user,),
     ).fetchall()
-    pdb.close()
 
-    result = []
+    if not rows:
+        pdb.close()
+        return jsonify([])
+
+    channel_ids = [row["id"] for row in rows]
+
+    # Fetch every channel's membership in a single query (ordered by channel and
+    # insertion rowid to preserve per-channel member order) instead of one
+    # round-trip per channel.
+    placeholders = ",".join("?" * len(channel_ids))
+    member_rows = pdb.execute(
+        f"SELECT channel_id, username FROM private_channel_members "  # nosec B608
+        f"WHERE channel_id IN ({placeholders}) ORDER BY channel_id, rowid",
+        channel_ids,
+    ).fetchall()
+    pdb.close()
+    members_by_channel: dict = {}
+    for m in member_rows:
+        members_by_channel.setdefault(m["channel_id"], []).append(m["username"])
+
+    # Unread counts for all of the user's private channels in one grouped query
+    # rather than a COUNT per channel.
+    channel_names = [f"{PRIVATE_CHANNEL_PREFIX}{cid}" for cid in channel_ids]
     db = get_db()
-    for row in rows:
-        ch = f"{PRIVATE_CHANNEL_PREFIX}{row['id']}"
-        count = db.execute(
-            "SELECT COUNT(*) AS c FROM messages m "
-            "LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel "
-            "WHERE m.channel = ? AND m.sender != ? AND m.deleted = 0 "
-            "AND m.ts > COALESCE(r.last_read_ts, 0)",
-            (user, ch, user),
-        ).fetchone()["c"]
-        result.append(
-            {
-                "id": row["id"],
-                "channel": ch,
-                "name": row["name"],
-                "unread": count,
-                "members": get_private_channel_members(row["id"]),
-            }
-        )
+    count_rows = db.execute(
+        f"SELECT m.channel AS channel, COUNT(*) AS c FROM messages m "  # nosec B608
+        "LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel "
+        f"WHERE m.channel IN ({placeholders}) AND m.sender != ? AND m.deleted = 0 "
+        "AND m.ts > COALESCE(r.last_read_ts, 0) "
+        "GROUP BY m.channel",
+        (user, *channel_names, user),
+    ).fetchall()
     db.close()
+    unread_by_channel = {r["channel"]: r["c"] for r in count_rows}
+
+    result = [
+        {
+            "id": row["id"],
+            "channel": f"{PRIVATE_CHANNEL_PREFIX}{row['id']}",
+            "name": row["name"],
+            "unread": unread_by_channel.get(f"{PRIVATE_CHANNEL_PREFIX}{row['id']}", 0),
+            "members": members_by_channel.get(row["id"], []),
+        }
+        for row in rows
+    ]
 
     return jsonify(result)
 
