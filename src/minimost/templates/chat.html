@@ -2202,17 +2202,17 @@ function scrollToMsg(msgId) {
 }
 
 </script>
-<script src="/static/chat-sidebar.js?v={{ app_version }}"></script>
-<script src="/static/chat-dm.js?v={{ app_version }}"></script>
-<script src="/static/chat-settings.js?v={{ app_version }}"></script>
-<script src="/static/chat-channels.js?v={{ app_version }}"></script>
-<script src="/static/chat-reactions.js?v={{ app_version }}"></script>
-<script src="/static/chat-search.js?v={{ app_version }}"></script>
-<script src="/static/chat-mentions.js?v={{ app_version }}"></script>
-<script src="/static/chat-calls.js?v={{ app_version }}"></script>
-<script src="/static/chat-events.js?v={{ app_version }}"></script>
-<script src="/static/auth-password-rules.js?v={{ app_version }}"></script>
-<script src="/static/auth-password-field.js?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='chat-sidebar.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-dm.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-settings.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-channels.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-reactions.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-search.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-mentions.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-calls.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-events.js') }}"></script>
+<script src="{{ url_for('static', filename='auth-password-rules.js') }}"></script>
+<script src="{{ url_for('static', filename='auth-password-field.js') }}"></script>
 <div id="pc-member-tooltip"></div>
     <script>
       if ('serviceWorker' in navigator) {

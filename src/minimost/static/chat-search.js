@@ -1462,40 +1462,58 @@ function _attachPreviewEl(msgEl, data) {
 
 async function attachPreview(msgEl) {
   if (msgEl.querySelector(".link-preview")) return;
+  // The fetch below is async, but the same message can be scheduled again while
+  // it's in flight: a re-render (e.g. the SSE push echoing a just-sent message)
+  // replaces the message body and re-observes the element, firing a second
+  // attachPreview. Without a flag both calls clear the ".link-preview" guard
+  // above and each append a card, so the preview shows twice. Mark the element
+  // synchronously and bail on re-entry; the flag survives innerHTML rebuilds
+  // because it lives on the message <div>, not its replaced children.
+  if (msgEl.dataset.previewLoading === "1") return;
+  msgEl.dataset.previewLoading = "1";
+  try {
+    // Priority 1: HTTP link in message text (Bitbucket / text-file / OG)
+    const firstLink = msgEl.querySelector(".text a[href^='http']");
+    if (firstLink) {
+      let data;
+      try {
+        const resp = await fetch(
+          `/link_preview?url=${encodeURIComponent(firstLink.href)}`,
+        );
+        data = await resp.json();
+      } catch {
+        return;
+      }
+      if (msgEl.querySelector(".link-preview")) return;
+      _attachPreviewEl(msgEl, data);
+      return;
+    }
 
-  // Priority 1: HTTP link in message text (Bitbucket / text-file / OG)
-  const firstLink = msgEl.querySelector(".text a[href^='http']");
-  if (firstLink) {
+    // Priority 2: uploaded text file attachment
+    const fileLink = msgEl.querySelector("a.file-download[data-fn]");
+    if (!fileLink) return;
+    const fn = fileLink.dataset.fn;
+    if (!_isPreviewableFile(fn)) return;
+
     let data;
     try {
-      const resp = await fetch(
-        `/link_preview?url=${encodeURIComponent(firstLink.href)}`,
-      );
+      const resp = await fetch(`/file_preview/${encodeURIComponent(fn)}`);
       data = await resp.json();
     } catch {
       return;
     }
+    if (msgEl.querySelector(".link-preview")) return;
+    // Fold the standalone download chip into the preview's header so the same
+    // file isn't shown as two separate cards (chip + preview). Re-query it
+    // rather than reusing the pre-fetch reference: a re-render during the fetch
+    // may have replaced the chip node, and folding in a detached one would
+    // leave the fresh chip standing alone beside the card.
+    const chip = msgEl.querySelector("a.file-download[data-fn]");
+    if (data?.type === "code" && chip) data._fileChip = chip;
     _attachPreviewEl(msgEl, data);
-    return;
+  } finally {
+    delete msgEl.dataset.previewLoading;
   }
-
-  // Priority 2: uploaded text file attachment
-  const fileLink = msgEl.querySelector("a.file-download[data-fn]");
-  if (!fileLink) return;
-  const fn = fileLink.dataset.fn;
-  if (!_isPreviewableFile(fn)) return;
-
-  let data;
-  try {
-    const resp = await fetch(`/file_preview/${encodeURIComponent(fn)}`);
-    data = await resp.json();
-  } catch {
-    return;
-  }
-  // Fold the standalone download chip into the preview's header so the same
-  // file isn't shown as two separate cards (chip + preview).
-  if (data?.type === "code") data._fileChip = fileLink;
-  _attachPreviewEl(msgEl, data);
 }
 
 // Pinch-to-zoom adjusts message font size rather than scaling the page.
