@@ -30,12 +30,53 @@ Usage::
 """
 
 import argparse
+import logging
 import secrets
 import sqlite3
 import sys
 import time
 
 from minimost import create_app
+
+
+class _DisconnectLogFilter(logging.Filter):
+    """Suppress the dev server's traceback for client disconnects mid-stream.
+
+    The SSE endpoint (``GET /events``) holds a long-lived response open. When a
+    browser closes it — on tab close, navigation, or the stream's periodic
+    recycle — the dev server's next socket write raises ``BrokenPipeError`` and
+    draining the request then raises ``ssl.SSLError`` (UNEXPECTED_EOF). On
+    OpenSSL 3 that EOF surfaces as a plain ``ssl.SSLError`` rather than the
+    ``ssl.SSLEOFError`` Werkzeug lists in ``connection_dropped_errors``, so
+    ``run_wsgi`` falls through to its generic handler and logs the full
+    traceback via the ``werkzeug`` logger — on *every* disconnect.
+
+    That log call happens inside ``run_wsgi``, so it cannot be intercepted by a
+    request handler; we drop it at the logger instead. Only records that are
+    BOTH an "Error on request" AND carry a client-disconnect signature are
+    suppressed, so genuine application tracebacks are still logged in full.
+    """
+
+    _DISCONNECT_SIGNS = (
+        "UNEXPECTED_EOF_WHILE_READING",
+        "BrokenPipeError",
+        "Broken pipe",
+        "ConnectionResetError",
+        "ConnectionAbortedError",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if "Error on request" not in message:
+            return True
+        return not any(sign in message for sign in self._DISCONNECT_SIGNS)
+
+
+def _silence_stream_disconnect_logs() -> None:
+    """Attach :class:`_DisconnectLogFilter` to the ``werkzeug`` logger once."""
+    logger = logging.getLogger("werkzeug")
+    if not any(isinstance(f, _DisconnectLogFilter) for f in logger.filters):
+        logger.addFilter(_DisconnectLogFilter())
 
 
 def main():
@@ -92,6 +133,9 @@ def main():
     # open many parallel keep-alive connections (notably Chrome) can stall or
     # reset a queued request on a rapid refresh or the post-login redirect —
     # the stylesheet then silently fails and the page renders unstyled.
+    # Swallow the BrokenPipe/SSL-EOF traceback the dev server would otherwise log
+    # every time a browser closes the long-lived /events SSE connection.
+    _silence_stream_disconnect_logs()
     app.run(
         host=args.host,
         port=args.port,

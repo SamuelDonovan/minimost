@@ -42,6 +42,7 @@ from . import common, database, presence
 from .auth import auth_bp
 from .calls import calls_bp
 from .chat import chat_bp
+from .events import events_bp
 from .presence import presence_bp
 
 _HERE = Path(__file__).resolve().parent
@@ -272,6 +273,25 @@ def create_app():
         if not expected or not secrets.compare_digest(expected, submitted):
             abort(403)
 
+    @app.after_request
+    def _signal_state_change(response):
+        """Wake held-open SSE streams after a state-changing request.
+
+        The push stream (:mod:`minimost.events`) watches a shared counter rather
+        than re-querying on a timer; bumping it here is what turns a write into
+        a near-immediate push. Over-signalling is harmless — a stream just
+        re-runs its diff and finds nothing new — so we gate on method, success,
+        and blueprint instead of enumerating every mutating route. ``/events``
+        itself is a GET and never triggers this.
+        """
+        if (
+            request.method in ("POST", "PUT", "PATCH", "DELETE")
+            and response.status_code < 400
+            and request.blueprint in ("chat", "presence", "calls")
+        ):
+            presence.bump_event_signal()
+        return response
+
     @app.context_processor
     def inject_globals():
         """Inject global template variables."""
@@ -326,6 +346,7 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(calls_bp)
     app.register_blueprint(chat_bp)
+    app.register_blueprint(events_bp)
     app.register_blueprint(presence_bp)
 
     presence.reset_all_offline()

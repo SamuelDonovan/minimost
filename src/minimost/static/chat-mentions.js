@@ -262,12 +262,16 @@ let mentionItems = [];
 function fetchMentions() {
   return fetch("/mentions")
     .then((r) => (r.ok ? r.json() : []))
-    .then((items) => {
-      mentionItems = items;
-      renderMentionsSidebar();
-      if (channel === MENTIONS_CHANNEL) renderMentionsView();
-    })
+    .then(applyMentions)
     .catch(() => {});
+}
+
+// Store mentions and refresh the Mentions sidebar/view. Shared by the fetcher
+// above and the SSE "mentions" event (chat-events.js).
+function applyMentions(items) {
+  mentionItems = items;
+  renderMentionsSidebar();
+  if (channel === MENTIONS_CHANNEL) renderMentionsView();
 }
 
 // Insert/update the single "Mentions" sidebar entry at the top of the dynamic

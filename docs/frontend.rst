@@ -79,11 +79,48 @@ Key JavaScript variables maintained in the module scope:
      - Most recent result of ``GET /online_users``; used to initialise
        presence dots on newly created avatar elements.
 
-Polling Loops
--------------
+Event Stream (chat-events.js)
+-----------------------------
 
-The client starts several ``setInterval`` loops after the page loads. Each
-loop calls a different API endpoint and updates the DOM based on the response.
+Live updates arrive over a single ``EventSource`` connection opened by
+``connectEvents()`` (``chat-events.js``) instead of a fleet of ``setInterval``
+loops. Each named SSE event carries the same JSON a former poller fetched and is
+handed to the same render function, now split out of its old fetcher so both the
+one-shot REST load and the push path share it:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 28 44
+
+   * - SSE event
+     - Render function
+     - Replaces poller
+   * - ``messages``
+     - ``applyMessages(data, ch)``
+     - ``fetchMessages`` (500 ms)
+   * - ``typing`` / ``read_receipts``
+     - ``applyTyping`` / ``applyReadReceipts``
+     - ``fetchTyping`` / ``fetchReadReceipts``
+   * - ``online_users`` / ``dms``
+     - ``applyOnlineUsers`` / ``applyDMs``
+     - ``refreshPresence`` / ``refreshDMs``
+   * - ``channel_unreads`` / ``private_channels``
+     - ``applyChannelUnreads`` / ``applyPrivateChannels``
+     - ``refreshChannels`` / ``refreshPrivateChannels``
+   * - ``mentions`` / ``unread_count``
+     - ``applyMentions`` / ``applyUnreadCount``
+     - ``fetchMentions`` / ``refreshTotalUnreadCount``
+   * - ``incoming_calls`` / ``screenshares``
+     - ``applyIncomingCalls`` / ``applyScreenShares``
+     - ``pollIncomingCalls`` / ``refreshScreenShares``
+
+The fetchers (``fetchMessages``, ``refreshDMs``, …) still exist for one-shot
+loads — initial sidebar build and the instant backlog paint on a channel switch
+— but are no longer driven on an interval. ``switchChannel`` reconnects the
+stream (``fetchMessages().then(connectEvents)``) so the message cursor and
+channel scope follow the user.
+
+Loops that remain on ``setInterval`` (all unrelated to the SSE stream):
 
 .. list-table::
    :header-rows: 1
@@ -92,46 +129,19 @@ loop calls a different API endpoint and updates the DOM based on the response.
    * - Function
      - Interval
      - Description
-   * - ``fetchMessages()``
-     - 500 ms
-     - Core polling loop. Calls ``/messages/<channel>?after=<lastTs>``
-       and merges new/updated/deleted messages into the chat area.
-   * - ``refreshPresence()``
-     - 1 s
-     - Calls ``/online_users`` and updates presence dots in the sidebar.
-   * - ``fetchTyping()``
-     - 1 s
-     - Calls ``/typing/<channel>`` and shows/hides the typing indicator.
-   * - ``refreshDMs()``
-     - 1 s
-     - Calls ``/dms`` and refreshes the DM list with current unread counts.
-   * - ``refreshChannels()``
-     - 1 s
-     - Calls ``/channel_unreads`` and updates channel unread badges.
-   * - ``fetchReadReceipts()``
-     - 3 s
-     - Calls ``/read_receipts/<channel>`` for per-user read watermarks and
-       derives the ``✓`` indicators from each message's timestamp.
-   * - ``refreshTotalUnreadCount()``
-     - 5 s
-     - Calls ``/unread_count`` and updates the browser tab title.
-   * - ``pollIncomingCalls()``
-     - 1 s
-     - Calls ``/calls/incoming`` and surfaces incoming call notifications
-       for both ringing calls and active-call invitations.
    * - ``_pollCallState()``
      - 3 s
-     - During an active call: diffs the participant list (opening/closing
-       ``RTCPeerConnection`` s), detects call end, and tracks
-       ``screenshare_user`` changes. Started by ``startCall()`` and
+     - During an active call only: diffs the participant list
+       (opening/closing ``RTCPeerConnection`` s), detects call end, and tracks
+       ``screenshare_user`` changes. Started by ``startCall()`` /
        ``acceptCall()``; stopped by ``_cleanupCall()``.
    * - WebRTC signalling poll (``_pollCallSignals``)
      - 600 ms
-     - Drains ``/calls/<id>/signals`` and dispatches each offer/answer/ICE
-       candidate to the matching peer connection (perfect negotiation).
-       Standalone screen shares poll ``/screenshare/<id>/signals`` the same
-       way.  Call and screen **media** travels peer-to-peer and is never
-       polled.
+     - During an active call only: drains ``/calls/<id>/signals`` and
+       dispatches each offer/answer/ICE candidate to the matching peer
+       connection (perfect negotiation). Standalone screen shares poll
+       ``/screenshare/<id>/signals`` the same way. Call and screen **media**
+       travels peer-to-peer and is never polled.
    * - Presence heartbeat
      - 30 s
      - Re-sends the current presence state to keep ``last_seen`` fresh.

@@ -892,6 +892,18 @@ async function refreshScreenShares() {
     return;
   }
 
+  applyScreenShares(shares);
+}
+
+// React to the set of active screen shares for the open channel. Shared by the
+// fetcher above and the SSE "screenshares" event (chat-events.js).
+function applyScreenShares(shares) {
+  if (
+    !channel ||
+    (!channel.startsWith("dm:") && !channel.startsWith("private:"))
+  )
+    return;
+
   const others = shares.filter((s) => s.sharer !== CURRENT_USER);
 
   if (others.length === 0) {
@@ -1382,17 +1394,22 @@ function pollIncomingCalls() {
   if (activeCallId) return;
   fetch("/calls/incoming")
     .then((r) => (r.ok ? r.json() : []))
-    .then((calls) => {
-      if (incomingCallData) {
-        const stillRinging = calls.some(
-          (c) => c.call_id === incomingCallData.call_id,
-        );
-        if (!stillRinging) closeIncomingCallUI();
-        return;
-      }
-      if (calls.length > 0) openIncomingCallUI(calls[0]);
-    })
+    .then(applyIncomingCalls)
     .catch(() => {});
+}
+
+// React to the set of currently-ringing calls from a /calls/incoming payload.
+// Shared by the fetcher above and the SSE "incoming_calls" event.
+function applyIncomingCalls(calls) {
+  if (activeCallId) return;
+  if (incomingCallData) {
+    const stillRinging = calls.some(
+      (c) => c.call_id === incomingCallData.call_id,
+    );
+    if (!stillRinging) closeIncomingCallUI();
+    return;
+  }
+  if (calls.length > 0) openIncomingCallUI(calls[0]);
 }
 
 // Close invite panel when clicking outside it

@@ -9,8 +9,9 @@ without a checkout of the source tree::
 
     gunicorn "minimost:create_app()" -c python:minimost.gunicorn_conf
 
-It sets sensible production defaults (bind address, worker count, access-log
-filtering for the high-frequency call endpoints) and provisions TLS via
+It sets sensible production defaults (bind address, the ``gthread`` worker
+model required by the SSE push stream, access-log filtering for the
+high-frequency call and ``/events`` endpoints) and provisions TLS via
 :func:`minimost.certs.ensure_certs`, generating ``ca.pem``/``cert.pem`` in the
 current working directory on first run.
 
@@ -33,10 +34,21 @@ bind = "0.0.0.0:6767"
 # --------------------------------------------------------------------
 # Workers
 # --------------------------------------------------------------------
-workers = multiprocessing.cpu_count() * 2 + 1
-worker_class = "sync"
-threads = 1
-timeout = 30
+# The SSE push stream (minimost.events) holds one connection open per browser
+# tab for its whole lifetime, so MiniMost runs Gunicorn's threaded worker:
+# each held stream parks one thread, and concurrent-tab capacity is
+# ``workers * threads``. ``gthread`` ships inside Gunicorn — this is a
+# worker-class change, NOT a new dependency. Size ``threads`` to the peak number
+# of simultaneously-connected tabs plus headroom for the short
+# send/typing/presence requests; the defaults below comfortably fit a small
+# private-LAN deployment (cpu_count workers x 100 threads of held streams).
+worker_class = "gthread"
+workers = max(2, multiprocessing.cpu_count())
+threads = 100
+# Generous so a worker whose threads are busy holding streams is not reaped;
+# gthread's arbiter heartbeat runs off the request threads, so long-lived
+# streams don't trip the timeout the way a blocking sync worker would.
+timeout = 120
 keepalive = 2
 
 # --------------------------------------------------------------------
@@ -53,14 +65,15 @@ errorlog = "-"  # stderr
 
 
 class _SuppressCallPolling(logging.Filter):
-    """Drop access-log lines for the high-frequency call-media endpoints.
+    """Drop access-log lines for the high-frequency / long-lived endpoints.
 
     During an active call, /calls/<id>/media and /calls/<id>/state are hit
-    multiple times per second by every participant.  Logging each request
-    floods stdout and adds unnecessary I/O on the worker threads.
+    multiple times per second by every participant.  The /events SSE stream is
+    opened (and reconnected every few minutes) by every browser tab.  Logging
+    each request floods stdout and adds unnecessary I/O on the worker threads.
     """
 
-    _RE = _re.compile(r"/calls/[^/ ]+/(?:media|state)\b|/calls/incoming\b")
+    _RE = _re.compile(r"/calls/[^/ ]+/(?:media|state)\b|/calls/incoming\b|/events\b")
 
     def filter(self, record: logging.LogRecord) -> bool:
         return not self._RE.search(record.getMessage())
@@ -79,8 +92,12 @@ proc_name = "gunicorn-flask-app"
 # Security / misc
 # --------------------------------------------------------------------
 preload_app = True
-max_requests = 1000
-max_requests_jitter = 50
+# Recycling a worker after N requests would drop every SSE stream it is holding
+# at once (each stream is a single, very long-lived request), causing a
+# reconnect storm. Disable request-count recycling; streams self-recycle every
+# 5 minutes instead (see minimost.events._MAX_STREAM_SECONDS).
+max_requests = 0
+max_requests_jitter = 0
 
 # --------------------------------------------------------------------
 # Paths (set to your data directory where databases and uploads live)

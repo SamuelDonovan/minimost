@@ -8,18 +8,21 @@ codebase.
 High-Level Overview
 -------------------
 
-MiniMost is a classic **server-rendered + polling** web application. There is
-no WebSocket, no event stream, and no message broker. The client polls a set
-of JSON endpoints at fixed intervals to pick up new data.
+MiniMost is a **server-rendered SPA** that receives live updates over a single
+**Server-Sent Events** (SSE) stream. There is no WebSocket and no message
+broker: a long-lived ``GET /events`` connection is held open per browser tab,
+and the server pushes a named event whenever the relevant shared SQLite state
+changes. (Call/screen-share signalling still uses short-lived HTTP polling
+while a call is active — see below.)
 
 .. code-block:: text
 
     Browser (Vanilla JS SPA)
          │
-         │  HTTP polling (500ms – 5s intervals)
-         │  JSON REST API
+         │  1 × SSE stream  (GET /events, text/event-stream)
+         │  + JSON REST API for one-shot loads & writes
          ▼
-    Flask Application (Gunicorn workers)
+    Flask Application (Gunicorn gthread workers)
          │
          ├── auth.db              (shared, WAL mode)
          ├── presence.db          (shared, WAL mode)
@@ -194,65 +197,88 @@ Shared State: auth.db and presence.db
    ``reactions`` table.
 5. Client receives the updated ``reactions`` JSON and re-renders.
 
-Polling Architecture
---------------------
+Event Delivery Architecture
+---------------------------
 
-The client runs several ``setInterval`` loops:
+Non-media updates are delivered over **one** Server-Sent Events stream
+(:mod:`minimost.events`, ``GET /events?channel=<ch>&after=<ts>``) rather than a
+dozen ``setInterval`` pollers. The handler holds the request open and flushes an
+event whenever the underlying state changes.
+
+To avoid turning client polling into per-connection *server* polling, the stream
+is **write-gated**. A single monotonic counter in ``presence.db`` (the
+``event_signal`` table) is bumped by an ``after_request`` hook after every
+successful state-changing request to the chat/presence/calls blueprints. Each
+tick (~100 ms) the stream reads only that one-row counter; the expensive
+per-user collectors run **only when it has moved**. So an idle stream issues no
+per-user queries at all, and a write becomes a near-immediate push. Because the
+counter lives in the shared, WAL-mode database, a write committed by one worker
+is seen by a stream held open in another — that is the cross-worker wake, with
+no separate message bus.
+
+A handful of collectors are also *time-driven* (``typing``, ``online_users``,
+``incoming_calls``): their result decays without a write — typing rows expire,
+presence goes stale, a call ring times out — so they additionally run on a slow
+interval regardless of the counter. Diff-suppression still means an event is
+emitted only when its JSON actually changes.
+
+Each pushed event maps one-to-one onto a former poller, and the browser hands
+the payload to the *same* render function the poller used (``applyMessages``,
+``applyOnlineUsers``, …), so the UI behaviour is unchanged:
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 15 55
+   :widths: 28 18 54
 
-   * - Loop
-     - Interval
-     - What it does
-   * - ``fetchMessages``
-     - 500 ms
-     - Fetches new/updated/deleted messages since ``lastTs``.
-   * - ``refreshPresence``
+   * - SSE event
+     - Min. cadence
+     - What it carries
+   * - ``messages``
+     - 0.5 s
+     - New/updated/deleted messages since the stream cursor (``after``).
+   * - ``typing`` / ``read_receipts``
+     - 1 s / 3 s
+     - Typing indicator and per-user read watermarks for the open channel.
+   * - ``online_users`` / ``dms``
      - 1 s
-     - Updates presence indicators in the sidebar.
-   * - ``fetchTyping``
+     - Presence map and the DM list + unread badges.
+   * - ``channel_unreads`` / ``private_channels``
      - 1 s
-     - Shows/hides the typing indicator.
-   * - ``refreshDMs``
+     - Public- and private-channel unread badges.
+   * - ``mentions`` / ``unread_count``
+     - 2 s / 5 s
+     - Unread @-mentions and the tab-title unread total.
+   * - ``incoming_calls`` / ``screenshares``
      - 1 s
-     - Refreshes the DM list and unread badges.
-   * - ``refreshChannels``
-     - 1 s
-     - Refreshes channel unread badges.
-   * - ``pollIncomingCalls``
-     - 1 s
-     - Polls ``GET /calls/incoming``; surfaces the incoming-call overlay
-       and closes it when the caller hangs up or times out.
-   * - ``fetchReadReceipts``
-     - 3 s
-     - Fetches per-user read watermarks and derives the ``✓`` checkmarks.
-   * - ``_pollCallState``
-     - 3 s
-     - Polls ``GET /calls/<id>/state`` during an active call; diffs the
-       participant list to open/close peer connections and tears down the
-       call UI when the remote side hangs up.
-   * - WebRTC signalling poll
-     - 600 ms
-     - During an active call, polls ``GET /calls/<id>/signals`` and dispatches
-       offers/answers/ICE candidates to the matching ``RTCPeerConnection``.
-       Standalone screen shares use ``GET /screenshare/<id>/signals`` the same
-       way.  (Call/screen-share **media** itself flows peer-to-peer over
-       WebRTC and is never polled.)
-   * - ``refreshTotalUnreadCount``
-     - 5 s
-     - Updates the browser tab title badge.
-   * - Presence heartbeat
-     - 30 s
-     - Re-sends the current presence state to keep ``last_seen`` fresh.
-   * - Idle detection
-     - 5 s
-     - Checks for 5 minutes of inactivity; sends ``"idle"`` if detected.
+     - Incoming-call overlay and the active screen-share banner.
 
-The message polling endpoint uses a ``?after=<timestamp>`` parameter so
-responses only contain changes since the last poll. This keeps payloads small
-even for channels with long histories.
+The ``messages`` event is cursor-based: the stream advances ``after`` past every
+timestamp it sends, so an edit or reaction (which bumps ``edited_ts`` /
+``reactions_ts``) is delivered exactly once. It is write-gated like the rest, but
+also re-queries on a slow floor (``_MESSAGE_RECONCILE_SECONDS``, 30 s) even with
+no observed write — a safety net so a dropped counter bump delays a message by at
+most one reconcile rather than stranding it. A stream returns after roughly five
+minutes (jittered by up to a minute so tabs that connected together do not
+recycle in lockstep) and the browser's native ``EventSource`` reconnects
+automatically; the client also re-points the stream at the new channel on every
+channel switch.
+
+Because a held-open stream occupies one worker thread for its lifetime, the
+server runs Gunicorn's ``gthread`` worker (see :doc:`/deployment`); concurrent
+capacity is ``workers × threads``.
+
+Two small caveats remain on HTTP polling, both deliberately out of scope of the
+SSE stream because they only run *during an active call*:
+
+* ``_pollCallState`` (3 s) diffs ``GET /calls/<id>/state`` to open/close peer
+  connections and tear down the call UI.
+* WebRTC **signalling** polling (600 ms) drains ``GET /calls/<id>/signals``
+  (and ``GET /screenshare/<id>/signals``) to exchange offers/answers/ICE
+  candidates. The call/screen-share **media** itself flows peer-to-peer over
+  WebRTC and is never polled.
+
+The presence heartbeat (30 s ``POST /presence``) and idle detection (5 s, local)
+are writes/local timers, not pollers, and are unchanged.
 
 Authentication Flow
 -------------------

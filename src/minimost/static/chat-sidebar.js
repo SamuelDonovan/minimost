@@ -99,123 +99,135 @@ async function loadSidebar() {
 function refreshChannels() {
   fetch("/channel_unreads")
     .then((r) => r.json())
-    .then((counts) => {
-      hasUnreadChannels = Object.values(counts).some((c) => c > 0);
-      channelUnreadCount = Object.values(counts).reduce((a, b) => a + b, 0);
-      updateTitleBadge(
-        channelUnreadCount + privateChannelUnreadCount + lastUnreadCount,
-      );
+    .then(applyChannelUnreads);
+}
 
-      for (const [ch, count] of Object.entries(counts)) {
-        const el = document.querySelector(`[data-channel="${ch}"]`);
-        if (!el) continue;
-        let badge = el.querySelector(".unread-badge");
-        if (count > 0) {
-          if (!badge) {
-            badge = document.createElement("span");
-            badge.className = "unread-badge";
-            el.appendChild(badge);
-          }
-          badge.textContent = count;
-        } else if (badge) {
-          badge.remove();
-        }
+// Update channel unread badges + favicon flash from a /channel_unreads payload.
+// Shared by the fetcher above and the SSE "channel_unreads" event.
+function applyChannelUnreads(counts) {
+  hasUnreadChannels = Object.values(counts).some((c) => c > 0);
+  channelUnreadCount = Object.values(counts).reduce((a, b) => a + b, 0);
+  updateTitleBadge(
+    channelUnreadCount + privateChannelUnreadCount + lastUnreadCount,
+  );
+
+  for (const [ch, count] of Object.entries(counts)) {
+    const el = document.querySelector(`[data-channel="${ch}"]`);
+    if (!el) continue;
+    let badge = el.querySelector(".unread-badge");
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "unread-badge";
+        el.appendChild(badge);
       }
+      badge.textContent = count;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
 
-      if (hasUnreadChannels || privateChannelUnreadCount > 0) {
-        startFaviconFlash();
-      } else if (lastUnreadCount === 0) {
-        stopFaviconFlash();
-      }
+  if (hasUnreadChannels || privateChannelUnreadCount > 0) {
+    startFaviconFlash();
+  } else if (lastUnreadCount === 0) {
+    stopFaviconFlash();
+  }
 
-      maybeNotifyUnread();
-    });
+  maybeNotifyUnread();
 }
 
 function refreshPrivateChannels() {
   fetch("/private_channels")
     .then((r) => r.json())
-    .then((channels) => {
-      const sb = document.getElementById("sidebar-dynamic");
-      const header = document.getElementById("private-ch-sidebar-header");
-      if (!header) return;
+    .then(applyPrivateChannels);
+}
 
-      const seen = new Set();
-      let insertAfter = header;
+// Rebuild the private-channel sidebar list from a /private_channels payload.
+// Shared by the fetcher above and the SSE "private_channels" event.
+function applyPrivateChannels(channels) {
+  const sb = document.getElementById("sidebar-dynamic");
+  const header = document.getElementById("private-ch-sidebar-header");
+  if (!header) return;
 
-      channels.forEach((pc) => {
-        privateChannelMap[pc.channel] = pc.name;
-        privateChannelMembers[pc.channel] = pc.members || [];
-        const el = sidebarEntry(pc.name, pc.channel, pc.unread);
-        bindPCTooltip(el);
-        seen.add(pc.channel);
-        sb.insertBefore(el, insertAfter.nextSibling);
-        insertAfter = el;
-      });
+  const seen = new Set();
+  let insertAfter = header;
 
-      sb.querySelectorAll(".sidebar-private").forEach((el) => {
-        if (!seen.has(el.dataset.channel)) el.remove();
-      });
+  channels.forEach((pc) => {
+    privateChannelMap[pc.channel] = pc.name;
+    privateChannelMembers[pc.channel] = pc.members || [];
+    const el = sidebarEntry(pc.name, pc.channel, pc.unread);
+    bindPCTooltip(el);
+    seen.add(pc.channel);
+    sb.insertBefore(el, insertAfter.nextSibling);
+    insertAfter = el;
+  });
 
-      privateChannelUnreadCount = channels.reduce((s, pc) => s + pc.unread, 0);
-      updateTitleBadge(
-        channelUnreadCount + privateChannelUnreadCount + lastUnreadCount,
-      );
+  sb.querySelectorAll(".sidebar-private").forEach((el) => {
+    if (!seen.has(el.dataset.channel)) el.remove();
+  });
 
-      if (channel.startsWith("private:") && privateChannelMap[channel]) {
-        const updatedName = privateChannelMap[channel];
-        document.getElementById("chan").innerText = "";
-        const nbt = document.getElementById("private-ch-name-bar-text");
-        if (nbt) nbt.textContent = updatedName;
-      }
+  privateChannelUnreadCount = channels.reduce((s, pc) => s + pc.unread, 0);
+  updateTitleBadge(
+    channelUnreadCount + privateChannelUnreadCount + lastUnreadCount,
+  );
 
-      if (privateChannelUnreadCount > 0 || hasUnreadChannels) {
-        startFaviconFlash();
-      } else if (lastUnreadCount === 0) {
-        stopFaviconFlash();
-      }
+  if (channel.startsWith("private:") && privateChannelMap[channel]) {
+    const updatedName = privateChannelMap[channel];
+    document.getElementById("chan").innerText = "";
+    const nbt = document.getElementById("private-ch-name-bar-text");
+    if (nbt) nbt.textContent = updatedName;
+  }
 
-      maybeNotifyUnread();
-      updateSidebarActive();
-    });
+  if (privateChannelUnreadCount > 0 || hasUnreadChannels) {
+    startFaviconFlash();
+  } else if (lastUnreadCount === 0) {
+    stopFaviconFlash();
+  }
+
+  maybeNotifyUnread();
+  updateSidebarActive();
 }
 
 function refreshDMs() {
   fetch("/dms")
     .then((r) => r.json())
-    .then((dms) => {
-      const sb = document.getElementById("sidebar-dynamic");
+    .then(applyDMs);
+}
 
-      const dmHeader = Array.from(sb.children).find(
-        (e) =>
-          e.classList?.contains("sidebar-section-header") &&
-          e.querySelector("b")?.textContent === "Direct Messages",
-      );
-      if (!dmHeader) return;
+// Rebuild the DM sidebar list from a /dms payload. Shared by the fetcher above
+// and the SSE "dms" event.
+function applyDMs(dms) {
+  const sb = document.getElementById("sidebar-dynamic");
 
-      const seen = new Set();
+  const dmHeader = Array.from(sb.children).find(
+    (e) =>
+      e.classList?.contains("sidebar-section-header") &&
+      e.querySelector("b")?.textContent === "Direct Messages",
+  );
+  if (!dmHeader) return;
 
-      let insertAfter = dmHeader;
+  const seen = new Set();
 
-      dms.forEach((dm) => {
-        const label = "@ " + dm.users.join(", ");
-        const el = sidebarEntry(label, dm.channel, dm.unread);
+  let insertAfter = dmHeader;
 
-        seen.add(dm.channel);
+  dms.forEach((dm) => {
+    const label = "@ " + dm.users.join(", ");
+    const el = sidebarEntry(label, dm.channel, dm.unread);
 
-        sb.insertBefore(el, insertAfter.nextSibling);
-        insertAfter = el;
-      });
+    seen.add(dm.channel);
 
-      // Remove stale DMs only
-      sb.querySelectorAll(".sidebar-dm").forEach((el) => {
-        if (!seen.has(el.dataset.channel)) {
-          el.remove();
-        }
-      });
+    sb.insertBefore(el, insertAfter.nextSibling);
+    insertAfter = el;
+  });
 
-      updateSidebarActive();
-    });
+  // Remove stale DMs only
+  sb.querySelectorAll(".sidebar-dm").forEach((el) => {
+    if (!seen.has(el.dataset.channel)) {
+      el.remove();
+    }
+  });
+
+  updateSidebarActive();
 }
 
 // Presence
@@ -320,14 +332,18 @@ function setPresence(presenceEl, state) {
 function refreshPresence() {
   fetch("/online_users")
     .then((r) => r.json())
-    .then((presenceMap) => {
-      presenceMapCache = presenceMap;
+    .then(applyOnlineUsers);
+}
 
-      document
-        .querySelectorAll(".avatar-presence[data-username]")
-        .forEach((dot) => {
-          applyPresenceDot(dot, presenceMap[dot.dataset.username] || "offline");
-        });
+// Apply presence dots from an /online_users payload. Shared by the fetcher
+// above and the SSE "online_users" event.
+function applyOnlineUsers(presenceMap) {
+  presenceMapCache = presenceMap;
+
+  document
+    .querySelectorAll(".avatar-presence[data-username]")
+    .forEach((dot) => {
+      applyPresenceDot(dot, presenceMap[dot.dataset.username] || "offline");
     });
 }
 
@@ -475,23 +491,27 @@ function stopFaviconFlash() {
 function refreshTotalUnreadCount() {
   fetch("/unread_count")
     .then((r) => r.json())
-    .then((data) => {
-      lastUnreadCount = data.count;
-      updateTitleBadge(
-        channelUnreadCount + privateChannelUnreadCount + lastUnreadCount,
-      );
-      updateAppBadge(lastUnreadCount);
-      if (
-        lastUnreadCount > 0 ||
-        hasUnreadChannels ||
-        privateChannelUnreadCount > 0
-      ) {
-        startFaviconFlash();
-      } else {
-        stopFaviconFlash();
-      }
-      maybeNotifyUnread();
-    });
+    .then(applyUnreadCount);
+}
+
+// Apply the total DM unread count from an /unread_count payload. Shared by the
+// fetcher above and the SSE "unread_count" event.
+function applyUnreadCount(data) {
+  lastUnreadCount = data.count;
+  updateTitleBadge(
+    channelUnreadCount + privateChannelUnreadCount + lastUnreadCount,
+  );
+  updateAppBadge(lastUnreadCount);
+  if (
+    lastUnreadCount > 0 ||
+    hasUnreadChannels ||
+    privateChannelUnreadCount > 0
+  ) {
+    startFaviconFlash();
+  } else {
+    stopFaviconFlash();
+  }
+  maybeNotifyUnread();
 }
 
 function sidebarEntry(label, channelName, unread = 0) {

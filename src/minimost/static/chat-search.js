@@ -806,18 +806,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, 30_000);
 
-  setInterval(fetchMessages, 500);
-  setInterval(refreshPresence, 1000);
+  // All of the above per-interval polling (messages, presence, typing, DMs,
+  // channel/private-channel badges, read receipts, mentions, unread totals,
+  // incoming calls, screen shares) is now delivered over a single Server-Sent
+  // Events stream — see chat-events.js. startup channel is "general", for which
+  // switchChannel() early-returns, so connect the stream here directly.
+  connectEvents();
 
-  setInterval(fetchTyping, 1000);
-  setInterval(refreshDMs, 1000);
-  setInterval(refreshChannels, 1000);
-  setInterval(refreshPrivateChannels, 1000);
-  setInterval(fetchReadReceipts, 3000);
-  setInterval(fetchMentions, 2000);
-  setInterval(refreshTotalUnreadCount, 5000);
-  setInterval(pollIncomingCalls, 1000);
-  setInterval(refreshScreenShares, 1000);
   setInterval(() => {
     if (
       document.visibilityState === "visible" &&

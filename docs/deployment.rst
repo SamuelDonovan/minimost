@@ -257,6 +257,22 @@ Or specify options directly::
    worker has its own SQLite connection(s), WAL journal mode (enabled on all
    databases) is essential for preventing write contention between workers.
 
+.. note::
+
+   MiniMost pushes live updates over a single Server-Sent Events stream
+   (``GET /events``), so the bundled config uses the ``gthread`` worker class
+   with ``threads = 100``. Each connected browser tab holds one stream — and
+   therefore one thread — open for its lifetime, so concurrent-tab capacity is
+   ``workers × threads``. Raise ``threads`` if you expect more simultaneous
+   tabs than the default allows.
+
+   If you put MiniMost behind a reverse proxy, **disable response buffering for
+   the event stream** or updates will be delayed until the buffer fills. For
+   Nginx, on a ``location`` that proxies ``/events`` set
+   ``proxy_buffering off;`` and ``proxy_read_timeout`` comfortably above the
+   5-minute stream lifetime (e.g. ``360s``). The stream already sends the
+   ``X-Accel-Buffering: no`` header, which Nginx honours.
+
 Other WSGI Servers
 ------------------
 

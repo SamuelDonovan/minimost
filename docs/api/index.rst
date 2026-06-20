@@ -15,6 +15,7 @@ MiniMost Python package, generated from docstrings using
    stun
    chat
    presence
+   events
    common
    database
    preview

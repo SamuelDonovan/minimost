@@ -746,7 +746,12 @@ function updateCharCount() {
 function fetchTyping() {
     fetch(`/typing/${channel}`)
         .then(r => r.ok ? r.json() : [])
-        .then(users => {
+        .then(applyTyping);
+}
+
+// Render the typing indicator from a /typing payload. Shared by the one-shot
+// fetcher above and the SSE "typing" event (chat-events.js).
+function applyTyping(users) {
             const el = document.getElementById("typing-indicator");
             const hasUsers = users && users.length > 0;
 
@@ -797,17 +802,20 @@ function fetchTyping() {
                 el.classList.add("typing-in");
                 el.addEventListener("animationend", () => el.classList.remove("typing-in"), { once: true });
             }
-        });
 }
 
 function fetchReadReceipts() {
     fetch(`/read_receipts/${channel}`)
         .then(r => r.ok ? r.json() : {})
-        .then(data => {
-            // {user: last_read_ts} watermarks — receipts are derived per message.
-            readReceiptsMap = data;
-            updateReadReceiptUI();
-        });
+        .then(applyReadReceipts);
+}
+
+// Store read watermarks and refresh receipt ticks. Shared by the one-shot
+// fetcher and the SSE "read_receipts" event (chat-events.js).
+function applyReadReceipts(data) {
+    // {user: last_read_ts} watermarks — receipts are derived per message.
+    readReceiptsMap = data;
+    updateReadReceiptUI();
 }
 
 function updateReadReceiptUI() {
@@ -1572,7 +1580,9 @@ function switchChannel(c) {
     _cleanupStandaloneShare();
     updateCallButton();
     updateMembersCount();
-    fetchMessages();
+    // Load the backlog one-shot for instant paint, then (re)point the SSE stream
+    // at the new channel starting from the cursor that load advanced us to.
+    fetchMessages().then(() => connectEvents());
     fetchReadReceipts();
     refreshDMs();
     refreshTotalUnreadCount();
@@ -1745,7 +1755,7 @@ function _injectMsgAvatar(msgEl, sender) {
 function fetchMessages() {
     // The Mentions pseudo-channel has no /messages endpoint; its own poller
     // (fetchMentions) refreshes the view instead.
-    if (channel === MENTIONS_CHANNEL) return;
+    if (channel === MENTIONS_CHANNEL) return Promise.resolve();
 
     globalThis.fetchController = new AbortController();
     const signal = globalThis.fetchController.signal;
@@ -1753,11 +1763,29 @@ function fetchMessages() {
     // 🔒 Capture channel at request time
     const requestedChannel = channel;
 
-    fetch(`/messages/${requestedChannel}?after=${lastTs}`, { signal })
+    // Returns the fetch promise so callers (switchChannel) can open the SSE
+    // stream only after lastTs has advanced past the freshly-loaded backlog —
+    // that way the stream starts at the right cursor and never re-sends history.
+    return fetch(`/messages/${requestedChannel}?after=${lastTs}`, { signal })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-            // ❌ Ignore if aborted or channel changed
-            if (signal.aborted || requestedChannel !== channel) return;
+            // ❌ Ignore if aborted (channel-change is handled in applyMessages)
+            if (signal.aborted) return;
+            applyMessages(data, requestedChannel);
+        })
+        .catch(err => {
+            if (err.name !== "AbortError") {
+                console.error("fetchMessages error:", err);
+            }
+        });
+}
+
+// Render a batch of /messages rows into the open channel. Shared by the
+// one-shot load on channel switch (fetchMessages) and the SSE push stream
+// (chat-events.js), which both deliver the same JSON payload.
+function applyMessages(data, requestedChannel = channel) {
+    // Drop a batch meant for a channel the user already switched away from.
+    if (requestedChannel !== channel) return;
             // The first completed response for a channel is its baseline load;
             // mentions seen in it are history, not fresh alerts.
             const notifyArmed = mentionNotifyArmed;
@@ -1912,12 +1940,6 @@ function fetchMessages() {
                 });
                 forceScrollToBottom = false;
             }
-        })
-        .catch(err => {
-            if (err.name !== "AbortError") {
-                console.error("fetchMessages error:", err);
-            }
-        });
 }
 
 // Send messages
@@ -2187,6 +2209,7 @@ function scrollToMsg(msgId) {
 <script src="/static/chat-search.js?v={{ app_version }}"></script>
 <script src="/static/chat-mentions.js?v={{ app_version }}"></script>
 <script src="/static/chat-calls.js?v={{ app_version }}"></script>
+<script src="/static/chat-events.js?v={{ app_version }}"></script>
 <script src="/static/auth-password-rules.js?v={{ app_version }}"></script>
 <script src="/static/auth-password-field.js?v={{ app_version }}"></script>
 <div id="pc-member-tooltip"></div>

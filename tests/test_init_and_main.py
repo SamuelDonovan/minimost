@@ -120,3 +120,57 @@ def test_main_uses_tls_paths_from_config():
         ssl_context=("cert.pem", "key.pem"),
         threaded=True,
     )
+
+
+# ── _DisconnectLogFilter ──────────────────────────────────────────────────────
+
+
+def _werkzeug_record(message):
+    import logging
+
+    return logging.LogRecord("werkzeug", logging.ERROR, __file__, 0, message, (), None)
+
+
+def test_disconnect_filter_drops_client_disconnect_tracebacks():
+    from minimost.__main__ import _DisconnectLogFilter
+
+    f = _DisconnectLogFilter()
+    ssl_eof = (
+        "Error on request:\nTraceback (most recent call last):\n"
+        "ssl.SSLError: [SSL: UNEXPECTED_EOF_WHILE_READING] unexpected eof"
+    )
+    broken_pipe = "Error on request:\n...\nBrokenPipeError: [Errno 32] Broken pipe"
+    assert f.filter(_werkzeug_record(ssl_eof)) is False
+    assert f.filter(_werkzeug_record(broken_pipe)) is False
+
+
+def test_disconnect_filter_keeps_real_errors_and_access_logs():
+    from minimost.__main__ import _DisconnectLogFilter
+
+    f = _DisconnectLogFilter()
+    real_error = "Error on request:\nTraceback ...\nValueError: boom"
+    access_log = '127.0.0.1 - - [..] "GET /events HTTP/1.1" 200 -'
+    assert f.filter(_werkzeug_record(real_error)) is True
+    assert f.filter(_werkzeug_record(access_log)) is True
+
+
+def test_silence_stream_disconnect_logs_is_idempotent():
+    import logging
+
+    from minimost.__main__ import (
+        _DisconnectLogFilter,
+        _silence_stream_disconnect_logs,
+    )
+
+    logger = logging.getLogger("werkzeug")
+    saved = list(logger.filters)
+    try:
+        logger.filters = [
+            f for f in logger.filters if not isinstance(f, _DisconnectLogFilter)
+        ]
+        _silence_stream_disconnect_logs()
+        _silence_stream_disconnect_logs()
+        installed = [f for f in logger.filters if isinstance(f, _DisconnectLogFilter)]
+        assert len(installed) == 1
+    finally:
+        logger.filters = saved

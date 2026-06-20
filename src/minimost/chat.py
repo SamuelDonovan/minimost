@@ -1158,6 +1158,77 @@ def online_users():
     )
 
 
+def messages_since(channel, user, after):
+    """Return the message rows for *channel* that changed since *after*.
+
+    This is the cursor-based core shared by the ``/messages`` polling route and
+    the SSE push stream (:mod:`minimost.events`).  It applies the same
+    late-joiner history clamp and reaction enrichment the route has always done,
+    and returns plain Python dicts (not a Flask response) so the streaming
+    handler can serialise them itself and advance its own cursor.
+
+    :param channel: The channel name or DM identifier (already access-checked
+        by the caller).
+    :param user: The requesting username (for the late-joiner history clamp).
+    :param after: Unix timestamp; only rows modified after this point return.
+    :returns: List of message dicts, oldest first, each with a ``reactions``
+        key (JSON string or ``None``).
+    :rtype: list[dict]
+    """
+    # Members added to a private channel after creation don't see the backlog.
+    hist_start = _history_start(channel, user)
+    after = max(after, hist_start) if hist_start is not None else after
+
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT
+            id,
+            channel,
+            sender,
+            content,
+            filename,
+            ts,
+            edited,
+            edited_ts,
+            deleted,
+            deleted_ts,
+            reply_to_id,
+            reactions_ts,
+            mentions
+        FROM messages
+        WHERE channel = ?
+          AND (
+                (deleted = 0 AND (ts > ? OR (edited_ts IS NOT NULL AND edited_ts > ?) OR reactions_ts > ?))
+                OR (deleted = 1 AND deleted_ts > ?)
+              )
+        ORDER BY ts
+    """,
+        (channel, after, after, after, after),
+    ).fetchall()
+
+    result = [dict(r) for r in rows]
+
+    if result:
+        ids = [r["id"] for r in result]
+        placeholders = ",".join("?" * len(ids))
+        rx_rows = db.execute(
+            f"SELECT message_id, emoji, reactor FROM reactions WHERE message_id IN ({placeholders})",  # nosec B608
+            ids,
+        ).fetchall()
+
+        rx_map: dict = {}
+        for message_id, emoji, reactor in rx_rows:
+            rx_map.setdefault(message_id, {}).setdefault(emoji, []).append(reactor)
+
+        for msg in result:
+            reactions_dict = rx_map.get(msg["id"])
+            msg["reactions"] = json.dumps(reactions_dict) if reactions_dict else None
+
+    db.close()
+    return result
+
+
 @chat_bp.route("/messages/<channel>", methods=["GET"])
 @auth.login_required
 def messages(channel):
@@ -1229,58 +1300,7 @@ def messages(channel):
         except (ValueError, TypeError):
             after = 0.0
 
-    # Members added to a private channel after creation don't see the backlog.
-    hist_start = _history_start(channel, user)
-    after = max(after, hist_start) if hist_start is not None else after
-
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT
-            id,
-            channel,
-            sender,
-            content,
-            filename,
-            ts,
-            edited,
-            edited_ts,
-            deleted,
-            deleted_ts,
-            reply_to_id,
-            reactions_ts,
-            mentions
-        FROM messages
-        WHERE channel = ?
-          AND (
-                (deleted = 0 AND (ts > ? OR (edited_ts IS NOT NULL AND edited_ts > ?) OR reactions_ts > ?))
-                OR (deleted = 1 AND deleted_ts > ?)
-              )
-        ORDER BY ts
-    """,
-        (channel, after, after, after, after),
-    ).fetchall()
-
-    result = [dict(r) for r in rows]
-
-    if result:
-        ids = [r["id"] for r in result]
-        placeholders = ",".join("?" * len(ids))
-        rx_rows = db.execute(
-            f"SELECT message_id, emoji, reactor FROM reactions WHERE message_id IN ({placeholders})",  # nosec B608
-            ids,
-        ).fetchall()
-
-        rx_map: dict = {}
-        for message_id, emoji, reactor in rx_rows:
-            rx_map.setdefault(message_id, {}).setdefault(emoji, []).append(reactor)
-
-        for msg in result:
-            reactions_dict = rx_map.get(msg["id"])
-            msg["reactions"] = json.dumps(reactions_dict) if reactions_dict else None
-
-    db.close()
-    return jsonify(result)
+    return jsonify(messages_since(channel, user, after))
 
 
 def _insert_message(

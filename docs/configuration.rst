@@ -311,27 +311,34 @@ The defaults are:
      - ``"0.0.0.0:6767"``
      - Address and port to listen on. Change to a Unix socket when using
        Nginx as a reverse proxy.
-   * - ``workers``
-     - ``cpu_count * 2 + 1``
-     - Number of worker processes. Each worker handles one request at a
-       time (sync worker class).
    * - ``worker_class``
-     - ``"sync"``
-     - Synchronous workers. Suitable for MiniMost's SQLite-based workload.
+     - ``"gthread"``
+     - Threaded workers. **Required**: the ``GET /events`` SSE stream holds one
+       connection open per browser tab, and each held stream occupies one thread
+       for its lifetime. ``gthread`` ships inside Gunicorn (no extra dependency).
+   * - ``workers``
+     - ``max(2, cpu_count)``
+     - Number of worker processes.
+   * - ``threads``
+     - ``100``
+     - Threads per worker. Concurrent-tab capacity is ``workers × threads``;
+       size it to your peak number of simultaneously-open tabs plus headroom for
+       the short send/typing/presence requests.
    * - ``timeout``
-     - ``30``
-     - Seconds before a worker is killed if it does not respond. Increase
-       if link preview fetches are timing out.
+     - ``120``
+     - Seconds before a worker is killed if it does not respond. Kept generous
+       so a worker busy holding streams is not reaped; gthread's heartbeat runs
+       off the request threads, so long-lived streams do not trip it.
    * - ``preload_app``
      - ``True``
      - Load the application once in the master process before forking.
        Saves memory and startup time.
    * - ``max_requests``
-     - ``1000``
-     - Restart workers after this many requests to prevent memory leaks.
-   * - ``max_requests_jitter``
-     - ``50``
-     - Random jitter added to ``max_requests`` to stagger worker restarts.
+     - ``0``
+     - Request-count worker recycling is **disabled**: recycling a worker would
+       drop every SSE stream it holds at once. Streams self-recycle roughly every
+       five minutes instead (``minimost.events._MAX_STREAM_SECONDS`` plus up to
+       ``_MAX_STREAM_JITTER_SECONDS`` of jitter, so reconnects do not synchronize).
    * - ``loglevel``
      - ``"info"``
      - Log verbosity.

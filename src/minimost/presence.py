@@ -240,6 +240,18 @@ def _init_tables():
         CREATE INDEX IF NOT EXISTS share_media_idx
             ON share_media (share_id, is_init, id)
     """)
+    # A single monotonic counter bumped on every state-changing write. The SSE
+    # push stream (minimost.events) watches it instead of re-running every
+    # collector on a timer: while it is unchanged, no per-user query runs, and
+    # a write in any worker is visible to a stream held open in another because
+    # the counter lives in this shared, WAL-mode database.
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS event_signal (
+            id  INTEGER PRIMARY KEY CHECK (id = 1),
+            gen INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    db.execute("INSERT OR IGNORE INTO event_signal (id, gen) VALUES (1, 0)")
     db.commit()
     # One-time migration: if auto_vacuum was never enabled, VACUUM to compact
     # the database and permanently store the new auto_vacuum setting.
@@ -249,6 +261,51 @@ def _init_tables():
 
 
 _init_tables()
+
+
+def bump_event_signal() -> None:
+    """Increment the shared change counter to wake held-open SSE streams.
+
+    Called once per state-changing request (see the ``after_request`` hook in
+    :func:`minimost.create_app`). The write is a single-row ``UPDATE`` on a
+    WAL-mode table, so it is cheap and safe under concurrent workers. Failures
+    are swallowed: a bump only makes a push *prompt*, it is not the only thing
+    that triggers one. Every collector still re-runs on its own time-driven
+    floor without any bump — the time-decaying ones (presence, typing, calls) on
+    their short intervals and the message collector on its slower reconcile
+    (:data:`minimost.events._MESSAGE_RECONCILE_SECONDS`) — so a dropped bump just
+    delays delivery to that next reconcile instead of stranding it, and must
+    never break the originating request.
+    """
+    try:
+        db = sqlite3.connect(PRESENCE_DB)
+        db.execute(_WAL)
+        db.execute("UPDATE event_signal SET gen = gen + 1 WHERE id = 1")
+        db.commit()
+        db.close()
+    except Exception:  # noqa: BLE001  # nosec B110 — telemetry, never fatal
+        pass
+
+
+def read_event_signal(conn=None) -> int:
+    """Return the current value of the shared change counter.
+
+    The SSE stream reads this on a short tick to decide whether any write has
+    happened since it last looked. *conn* lets the caller reuse a long-lived
+    connection (the stream opens one for its lifetime) to avoid per-read connect
+    overhead on the hot path. Returns ``0`` if the counter cannot be read.
+    """
+    try:
+        owns = conn is None
+        if owns:
+            conn = sqlite3.connect(PRESENCE_DB)
+            conn.execute(_WAL)
+        row = conn.execute("SELECT gen FROM event_signal WHERE id = 1").fetchone()
+        if owns:
+            conn.close()
+        return int(row[0]) if row else 0
+    except Exception:  # noqa: BLE001 — fall back to "no change known"
+        return 0
 
 
 def _can_access_channel(channel: str, user: str) -> bool:
