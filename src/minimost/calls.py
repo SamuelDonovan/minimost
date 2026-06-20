@@ -22,11 +22,6 @@ role is limited to the call lifecycle state machine (the ``calls`` and
 ``POST /calls/<id>/signal`` / ``GET /calls/<id>/signals``.  Because the app
 is LAN-only, ICE relies on host candidates with no STUN/TURN servers.
 
-The legacy ``call_media`` / ``share_media`` tables and the
-``POST``/``GET /calls/<id>/media`` (and ``/screenshare/<id>/media``) relay
-routes are retained for one release as a fallback but are no longer used by
-the frontend.
-
 Module-level attributes
 -----------------------
 calls_bp : flask.Blueprint
@@ -34,7 +29,6 @@ calls_bp : flask.Blueprint
     :func:`minimost.create_app`.
 """
 
-import base64
 import json
 import sqlite3
 import time
@@ -75,10 +69,10 @@ def _db():
 
 
 def reset_all_screenshares_ended() -> None:
-    """Mark every active standalone screen share as ``'ended'`` and purge media.
+    """Mark every active standalone screen share as ``'ended'``.
 
     Called once at application startup so stale share records from a previous
-    server run do not block new shares or leave orphaned media in the database.
+    server run do not block new shares.
     """
     db = sqlite3.connect(presence_mod.PRESENCE_DB)
     db.execute(_WAL)
@@ -87,14 +81,13 @@ def reset_all_screenshares_ended() -> None:
         "UPDATE screenshares SET state = 'ended', ended_ts = ? WHERE state = 'active'",
         (now,),
     )
-    db.execute("DELETE FROM share_media")
     db.commit()
     db.execute(_INCREMENTAL_VACUUM)
     db.close()
 
 
 def reset_all_calls_ended() -> None:
-    """Mark every in-progress call as ``'ended'`` and purge orphaned media.
+    """Mark every in-progress call as ``'ended'`` and clear stale signaling.
 
     Called once at application startup so that stale ``'ringing'`` or
     ``'active'`` call records from a previous server run do not block new
@@ -102,13 +95,12 @@ def reset_all_calls_ended() -> None:
     """
     db = sqlite3.connect(presence_mod.PRESENCE_DB)
     db.execute(_WAL)
-    now = __import__("time").time()
+    now = time.time()
     db.execute(
         "UPDATE calls SET state = 'ended', ended_ts = ?"
         " WHERE state IN ('ringing', 'active')",
         (now,),
     )
-    db.execute("DELETE FROM call_media")
     # Clear stale WebRTC signaling rows from a previous server run.  This table
     # is shared by both calls and standalone screen shares (keyed by share_id),
     # so a single unconditional delete covers both.
@@ -427,7 +419,6 @@ def end_call(call_id):
                 "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
                 (now, call_id),
             )
-            db.execute("DELETE FROM call_media WHERE call_id = ?", (call_id,))
             db.execute("DELETE FROM call_signals WHERE call_id = ?", (call_id,))
 
         db.commit()
@@ -747,181 +738,6 @@ def call_state(call_id):
     )
 
 
-@calls_bp.route("/calls/<call_id>/media", methods=["POST"])
-@auth.login_required
-def upload_media(call_id):
-    """Receive a binary media chunk from a call participant.
-
-    Route: ``POST /calls/<call_id>/media``
-
-    Accepts raw binary data (``application/octet-stream``) from a
-    ``MediaRecorder`` running in the browser.  The first chunk must be sent
-    with ``?init=1&mime=<mimeType>``; it is stored separately (``is_init=1``)
-    and always returned to polling receivers so they can initialise their
-    ``SourceBuffer``.  Subsequent chunks are stored with ``is_init=0`` and
-    identified by their SQLite auto-increment ``id``.
-
-    All chunks are stored in the shared ``presence.db`` ``call_media`` table
-    so that every gunicorn worker can read what any other worker wrote.
-
-    Query parameters:
-        **init** (str, optional): Set to ``"1"`` to mark this as the
-        initialisation segment.
-        **mime** (str, optional): The ``MediaRecorder`` MIME type, e.g.
-        ``"video/webm;codecs=vp8,opus"``.  Required when ``init=1``.
-
-    :param call_id: UUID of the call.
-    :type call_id: str
-    :returns: JSON with ``status`` and ``seq`` (-1 for the init segment,
-        auto-increment row id for data chunks).
-    :rtype: flask.Response (application/json)
-    """
-    user = session["user"]
-    is_init = request.headers.get("X-Init", "0") == "1"
-    mime_type = request.headers.get("X-Mime", "video/webm")
-    track = request.headers.get("X-Track", "")
-    sender = f"{user}:{track}" if track else user
-    data = request.get_data()
-
-    if not data:
-        return jsonify({"error": "no data"}), 400
-
-    db = _db()
-    try:
-        call = db.execute(_SQL_CALL_STATE, (call_id,)).fetchone()
-        participant = db.execute(
-            _SQL_PARTICIPANT,
-            (call_id, user),
-        ).fetchone()
-
-        if not call or not participant:
-            return jsonify({"error": _ERR_NOT_FOUND}), 404
-        if call["state"] not in ("ringing", "active"):
-            return jsonify({"error": _ERR_CALL_NOT_ACTIVE}), 409
-
-        now = time.time()
-        if is_init:
-            db.execute(
-                "DELETE FROM call_media WHERE call_id = ? AND sender = ? AND is_init = 1",
-                (call_id, sender),
-            )
-            db.execute(
-                "INSERT INTO call_media (call_id, sender, is_init, mime_type, data, ts)"
-                " VALUES (?, ?, 1, ?, ?, ?)",
-                (call_id, sender, mime_type, data, now),
-            )
-            if track == "screen":
-                if mime_type == "screen/off":
-                    db.execute(_SQL_CLEAR_SCREENSHARE, (call_id, user))
-                else:
-                    db.execute(
-                        "UPDATE calls SET screenshare_user = ? WHERE call_id = ?",
-                        (user, call_id),
-                    )
-            db.commit()
-            return jsonify({"status": "ok", "seq": -1})
-
-        cursor = db.execute(
-            "INSERT INTO call_media (call_id, sender, is_init, data, ts)"
-            " VALUES (?, ?, 0, ?, ?)",
-            (call_id, sender, data, now),
-        )
-        seq = cursor.lastrowid
-        db.commit()
-    finally:
-        db.close()
-
-    return jsonify({"status": "ok", "seq": seq})
-
-
-@calls_bp.route("/calls/<call_id>/media", methods=["GET"])
-@auth.login_required
-def get_media(call_id):
-    """Return buffered media chunks uploaded by a specific sender.
-
-    Route: ``GET /calls/<call_id>/media?sender=<user>&after=<seq>``
-
-    Polled every 500 ms by the receiving participant.  Always returns the
-    most-recent initialisation segment (so late-joining receivers can
-    bootstrap their ``SourceBuffer``) plus any data chunks whose SQLite
-    ``id`` is greater than ``after``.
-
-    All chunks are read from the shared ``presence.db`` ``call_media``
-    table, so this works correctly across all gunicorn workers.
-
-    Query parameters:
-        **sender** (str): Username of the participant whose stream to
-        receive.  Required.
-        **after** (int, optional): ``id`` of the last data chunk already
-        processed.  Defaults to ``-1`` (return all buffered chunks).
-
-    :param call_id: UUID of the call.
-    :type call_id: str
-    :returns: JSON with ``mime_type``, ``init`` (base64 or null), and
-        ``chunks`` (list of ``{seq, data}`` objects).
-    :rtype: flask.Response (application/json)
-    """
-    user = session["user"]
-    sender = request.args.get("sender", "").strip()
-    try:
-        after_seq = int(request.args.get("after", -1))
-    except ValueError:
-        after_seq = -1
-
-    if not sender:
-        return jsonify({"error": "sender required"}), 400
-
-    db = _db()
-    try:
-        participant = db.execute(
-            _SQL_PARTICIPANT,
-            (call_id, user),
-        ).fetchone()
-        if not participant:
-            return jsonify({"error": "not a participant"}), 403
-
-        init_row = db.execute(
-            "SELECT mime_type, data FROM call_media"
-            " WHERE call_id = ? AND sender = ? AND is_init = 1"
-            " ORDER BY id DESC LIMIT 1",
-            (call_id, sender),
-        ).fetchone()
-
-        if after_seq == -1 and sender.endswith(":screen"):
-            # Late-joining viewer of an in-call screen share: skip to the live
-            # edge instead of replaying from the beginning.
-            subq = db.execute(
-                "SELECT id, data FROM call_media"
-                " WHERE call_id = ? AND sender = ? AND is_init = 0"
-                " ORDER BY id DESC LIMIT 20",
-                (call_id, sender),
-            ).fetchall()
-            chunk_rows = list(reversed(subq))
-        else:
-            chunk_rows = db.execute(
-                "SELECT id, data FROM call_media"
-                " WHERE call_id = ? AND sender = ? AND is_init = 0 AND id > ?"
-                " ORDER BY id ASC LIMIT 30",
-                (call_id, sender, after_seq),
-            ).fetchall()
-    finally:
-        db.close()
-
-    init_b64 = base64.b64encode(bytes(init_row["data"])).decode() if init_row else None
-    mime_type = init_row["mime_type"] if init_row else None
-
-    return jsonify(
-        {
-            "mime_type": mime_type,
-            "init": init_b64,
-            "chunks": [
-                {"seq": r["id"], "data": base64.b64encode(bytes(r["data"])).decode()}
-                for r in chunk_rows
-            ],
-        }
-    )
-
-
 # ── Standalone screen share ────────────────────────────────────────────────────
 
 
@@ -980,9 +796,8 @@ def stop_screenshare(share_id):
 
     Route: ``POST /screenshare/<share_id>/stop``
 
-    Marks the share as ``'ended'`` and purges its buffered media so
-    ``share_media`` does not grow unboundedly.  Only the sharer may call
-    this endpoint.
+    Marks the share as ``'ended'`` and clears its signaling rows.  Only the
+    sharer may call this endpoint.
 
     :param share_id: UUID of the screen share.
     :type share_id: str
@@ -1004,7 +819,6 @@ def stop_screenshare(share_id):
             "UPDATE screenshares SET state = 'ended', ended_ts = ? WHERE share_id = ?",
             (now, share_id),
         )
-        db.execute("DELETE FROM share_media WHERE share_id = ?", (share_id,))
         # call_signals is shared with calls; standalone-share rows are keyed by
         # the share_id in the call_id column.
         db.execute("DELETE FROM call_signals WHERE call_id = ?", (share_id,))
@@ -1176,140 +990,4 @@ def get_share_signals(share_id):
             }
             for r in rows
         ]
-    )
-
-
-@calls_bp.route("/screenshare/<share_id>/media", methods=["POST"])
-@auth.login_required
-def upload_share_media(share_id):
-    """Receive a binary media chunk from the screen sharer.
-
-    Route: ``POST /screenshare/<share_id>/media``
-
-    Identical semantics to ``POST /calls/<id>/media`` but for standalone
-    screen shares.  The first chunk must be sent with ``X-Init: 1`` and
-    ``X-Mime: <mimeType>`` so viewers can initialise their ``SourceBuffer``.
-
-    :param share_id: UUID of the screen share.
-    :type share_id: str
-    :returns: JSON with ``status`` and ``seq``.
-    :rtype: flask.Response (application/json)
-    """
-    user = session["user"]
-    is_init = request.headers.get("X-Init", "0") == "1"
-    mime_type = request.headers.get("X-Mime", "video/webm")
-    data = request.get_data()
-    if not data:
-        return jsonify({"error": "no data"}), 400
-    db = _db()
-    try:
-        share = db.execute(
-            "SELECT sharer, state FROM screenshares WHERE share_id = ?", (share_id,)
-        ).fetchone()
-        if not share or share["sharer"] != user:
-            return jsonify({"error": _ERR_SHARE_NOT_FOUND}), 404
-        if share["state"] != "active":
-            return jsonify({"error": "share is not active"}), 409
-        now = time.time()
-        if is_init:
-            db.execute(
-                "DELETE FROM share_media WHERE share_id = ? AND is_init = 1",
-                (share_id,),
-            )
-            db.execute(
-                "INSERT INTO share_media (share_id, is_init, mime_type, data, ts)"
-                " VALUES (?, 1, ?, ?, ?)",
-                (share_id, mime_type, data, now),
-            )
-            db.commit()
-            return jsonify({"status": "ok", "seq": -1})
-        cursor = db.execute(
-            "INSERT INTO share_media (share_id, is_init, data, ts) VALUES (?, 0, ?, ?)",
-            (share_id, data, now),
-        )
-        seq = cursor.lastrowid
-        # Prune chunks older than 30 s so the table doesn't grow unboundedly.
-        db.execute(
-            "DELETE FROM share_media WHERE share_id = ? AND is_init = 0 AND ts < ?",
-            (share_id, now - 30.0),
-        )
-        db.commit()
-    finally:
-        db.close()
-    return jsonify({"status": "ok", "seq": seq})
-
-
-@calls_bp.route("/screenshare/<share_id>/media", methods=["GET"])
-@auth.login_required
-def get_share_media(share_id):
-    """Return buffered screen-share media chunks.
-
-    Route: ``GET /screenshare/<share_id>/media?after=<seq>``
-
-    Polled by viewers every 500 ms.  Always returns the most-recent init
-    segment so late-joining viewers can bootstrap their ``SourceBuffer``,
-    plus any data chunks whose ``id`` is greater than ``after``.
-
-    Query parameters:
-        **after** (int, optional): ``id`` of the last chunk already processed.
-        Defaults to ``-1`` (return all buffered chunks).
-
-    :param share_id: UUID of the screen share.
-    :type share_id: str
-    :returns: JSON with ``mime_type``, ``init`` (base64 or null), ``chunks``,
-        and ``active`` (bool).
-    :rtype: flask.Response (application/json)
-    """
-    user = session["user"]
-    try:
-        after_seq = int(request.args.get("after", -1))
-    except ValueError:
-        after_seq = -1
-    db = _db()
-    try:
-        share = db.execute(
-            "SELECT channel, sharer, state FROM screenshares WHERE share_id = ?",
-            (share_id,),
-        ).fetchone()
-        if not share:
-            return jsonify({"error": _ERR_SHARE_NOT_FOUND}), 404
-        participants = _participants_for_channel(share["channel"])
-        if participants and user not in participants:
-            return jsonify({"error": _ERR_ACCESS_DENIED}), 403
-        init_row = db.execute(
-            "SELECT mime_type, data FROM share_media"
-            " WHERE share_id = ? AND is_init = 1 ORDER BY id DESC LIMIT 1",
-            (share_id,),
-        ).fetchone()
-        if after_seq == -1:
-            # Late-joining viewer: skip to the live edge by fetching the most
-            # recent chunks in reverse order, then reversing back to ASC.
-            subq = db.execute(
-                "SELECT id, data FROM share_media"
-                " WHERE share_id = ? AND is_init = 0"
-                " ORDER BY id DESC LIMIT 20",
-                (share_id,),
-            ).fetchall()
-            chunk_rows = list(reversed(subq))
-        else:
-            chunk_rows = db.execute(
-                "SELECT id, data FROM share_media"
-                " WHERE share_id = ? AND is_init = 0 AND id > ?"
-                " ORDER BY id ASC LIMIT 30",
-                (share_id, after_seq),
-            ).fetchall()
-    finally:
-        db.close()
-    init_b64 = base64.b64encode(bytes(init_row["data"])).decode() if init_row else None
-    mime_type = init_row["mime_type"] if init_row else None
-    return jsonify(
-        {
-            "mime_type": mime_type,
-            "init": init_b64,
-            "active": share["state"] == "active",
-            "chunks": [
-                {"seq": r["id"], "data": base64.b64encode(bytes(r["data"])).decode()}
-                for r in chunk_rows
-            ],
-        }
     )

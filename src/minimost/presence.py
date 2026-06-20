@@ -202,21 +202,6 @@ def _init_tables():
         )
     """)
     db.execute("""
-        CREATE TABLE IF NOT EXISTS call_media (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            call_id   TEXT NOT NULL,
-            sender    TEXT NOT NULL,
-            is_init   INTEGER NOT NULL DEFAULT 0,
-            mime_type TEXT,
-            data      BLOB NOT NULL,
-            ts        REAL NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE INDEX IF NOT EXISTS call_media_idx
-            ON call_media (call_id, sender, is_init, id)
-    """)
-    db.execute("""
         CREATE TABLE IF NOT EXISTS screenshares (
             share_id   TEXT PRIMARY KEY,
             channel    TEXT NOT NULL,
@@ -225,20 +210,6 @@ def _init_tables():
             started_ts REAL NOT NULL,
             ended_ts   REAL
         )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS share_media (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            share_id  TEXT NOT NULL,
-            is_init   INTEGER NOT NULL DEFAULT 0,
-            mime_type TEXT,
-            data      BLOB NOT NULL,
-            ts        REAL NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE INDEX IF NOT EXISTS share_media_idx
-            ON share_media (share_id, is_init, id)
     """)
     # A single monotonic counter bumped on every state-changing write. The SSE
     # push stream (minimost.events) watches it instead of re-running every
