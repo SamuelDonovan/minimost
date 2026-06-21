@@ -1,7 +1,7 @@
 Name:           minimost
 # Do not edit Version by hand. `bump-my-version bump <part>` (config in
-# pyproject.toml's [tool.bumpversion]) updates this line, src/minimost/_version.py,
-# and the tag together, so they never drift. The build reads the version from here.
+# .bumpversion.toml) updates this line, src/minimost/_version.py, setup.cfg, and
+# the tag together, so they never drift. The build reads the version from here.
 Version:        0.0.2
 Release:        1%{?dist}
 Summary:        Lightweight self-hosted collaboration platform for messaging
@@ -24,12 +24,29 @@ BuildRequires:  pyproject-rpm-macros
 # Provides %%{_unitdir} and the %%systemd_* scriptlet macros.
 BuildRequires:  systemd-rpm-macros
 
+%if 0%{?rhel} && 0%{?rhel} < 9
+# EL8's rpm (4.14) predates dynamic BuildRequires (%%generate_buildrequires, rpm
+# >= 4.15), so the deps %%pyproject_buildrequires would generate on newer distros
+# are listed statically here instead. python3-flask is needed by the %%check
+# import smoke test (and is EL8's runtime Flask, from AppStream).
+BuildRequires:  python3-setuptools
+BuildRequires:  python3-wheel
+BuildRequires:  python3-pip
+BuildRequires:  python3-flask
+%endif
+
 # MiniMost ships a systemd service that runs the app under gunicorn. gunicorn is
-# the production WSGI server (it is NOT a [project] dependency in pyproject.toml,
-# so %%pyproject_buildrequires/%%pyproject_save_files will not pull it in — it is
-# required here explicitly). Flask is declared in pyproject and is resolved
-# automatically by the generated Python dependencies.
+# the production WSGI server (it is NOT a setup.cfg install_requires, so the
+# automatic Python dependency generator won't add it) — require it explicitly.
+# Flask is declared in setup.cfg and is resolved automatically from the wheel
+# metadata by the dependency generator on Fedora/EL9+.
 Requires:       python3-gunicorn
+
+%if 0%{?rhel} && 0%{?rhel} < 9
+# EL8's dependency generator does not reliably emit python3dist(flask) from the
+# installed wheel, so require Flask explicitly there.
+Requires:       python3-flask
+%endif
 
 %description
 MiniMost is a small, self-hosted team chat server: channels, direct messages,
@@ -42,8 +59,12 @@ with no external services.
 %prep
 %autosetup -n %{name}-%{version}
 
+# Dynamic BuildRequires only where rpm supports the section (Fedora, EL9+). On
+# EL8 the build deps are listed statically above instead.
+%if 0%{?fedora} || 0%{?rhel} >= 9
 %generate_buildrequires
 %pyproject_buildrequires
+%endif
 
 %build
 %pyproject_wheel
@@ -60,16 +81,15 @@ with no external services.
 install -D -m 0644 minimost.service %{buildroot}%{_unitdir}/minimost.service
 
 %check
-# Lightweight, non-flaky verification that every shipped module imports cleanly
-# in the build root. The full pytest/jest suites run in CI rather than here.
-# MINIMOST_SKIP_TLS keeps the import from provisioning a TLS cert; gunicorn_conf
-# is excluded because it calls ensure_certs() at import time (and pulls gunicorn,
-# a runtime-only dependency not present in the build root).
+# Lightweight, non-flaky smoke test that the installed package imports cleanly.
+# A plain `python -c import` (rather than %%pyproject_check_import, whose -e flag
+# is absent from EL8's old pyproject-rpm-macros) keeps this portable across every
+# target. MINIMOST_SKIP_TLS stops the import from provisioning a TLS cert
+# (gunicorn_conf honours it); MINIMOST_DATA_DIR points the import-time SQLite
+# bootstrap at a throwaway dir so nothing is written into the buildroot.
 export MINIMOST_SKIP_TLS=1
-# Importing the package initialises its SQLite databases as a side effect; point
-# the data root at a throwaway dir so the check writes nothing into the buildroot.
 export MINIMOST_DATA_DIR="$(mktemp -d)"
-%pyproject_check_import -e '*.gunicorn_conf'
+PYTHONPATH=%{buildroot}%{python3_sitelib} %{python3} -c "import minimost, minimost.gunicorn_conf, minimost.certs, minimost.stun, minimost.clean, minimost.preview"
 
 %post
 %systemd_post minimost.service
@@ -83,7 +103,7 @@ export MINIMOST_DATA_DIR="$(mktemp -d)"
 %files -f %{pyproject_files}
 %license LICENSE
 %doc README.md
-# Console-script entry point declared in pyproject ([project.scripts]); the
+# Console-script entry point declared in setup.cfg ([options.entry_points]); the
 # pyproject macros place it in %%{_bindir} but do not auto-list it.
 %{_bindir}/minimost
 %{_unitdir}/minimost.service

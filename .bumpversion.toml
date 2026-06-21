@@ -1,0 +1,34 @@
+# Release tooling. `bump-my-version bump <major|minor|patch>` rewrites the version
+# in every file below in lockstep, then commits and tags v<new_version>. This is
+# the single place a release version is changed: _version.py is the human-facing
+# source; setup.cfg and minimost.spec are kept identical to it, so the wheel/RPM
+# builds need no version stamping. The RPM pipelines read the version from the spec.
+#
+# This lives in its own .bumpversion.toml (not pyproject.toml's [tool.bumpversion])
+# because bump-my-version auto-discovers setup.cfg ahead of pyproject.toml; setup.cfg
+# has no [bumpversion] section, so it would otherwise shadow the config. A dedicated
+# .bumpversion.toml has the highest discovery precedence and avoids that.
+[tool.bumpversion]
+current_version = "0.0.2"
+allow_dirty = false
+commit = true
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Release {new_version}"
+message = "chore: release {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "src/minimost/_version.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "setup.cfg"
+search = "version = {current_version}"
+replace = "version = {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "minimost.spec"
+regex = true
+search = 'Version:\s+{current_version}'
+replace = "Version:        {new_version}"

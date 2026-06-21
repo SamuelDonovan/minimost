@@ -1,57 +1,12 @@
+# setuptools>=39.2 is RHEL/EPEL 8's version — the floor for building this package
+# across every supported distro. Package metadata lives in setup.cfg (not a
+# [project] table here) precisely so this old a setuptools can build it; see the
+# header comment in setup.cfg.
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=39.2", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[project]
-name = "minimost"
-dynamic = ["version"]
-description = "Lightweight self-hosted collaboration platform for messaging"
-readme = "README.md"
-requires-python = ">=3.6"
-license = {file = "LICENSE"}
-dependencies = [
-    "flask",
-]
-
-[project.optional-dependencies]
-# black and ruff are pinned so pre-commit, CI (build.yml/ruff.yml), and local
-# dev all format/lint identically; bump each in all three places together.
-dev = ["black==26.3.1", "ruff==0.15.16", "pytest", "pytest-cov", "vermin", "bump-my-version"]
-docs = ["sphinx>=7", "sphinx-rtd-theme>=2", "sphinxcontrib-httpdomain>=1.8"]
-
-[project.scripts]
-minimost = "minimost.__main__:main"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.dynamic]
-version = {attr = "minimost._version.__version__"}
-
-# Release tooling. `bump-my-version bump <major|minor|patch>` rewrites the version
-# in every file below in lockstep, then commits and tags v<new_version>. This is
-# the single place a release version is changed: _version.py is the human-facing
-# source and minimost.spec is kept byte-identical to it, so the RPM build needs no
-# version stamping. The build pipelines read the version straight from the spec.
-[tool.bumpversion]
-current_version = "0.0.2"
-allow_dirty = false
-commit = true
-tag = true
-tag_name = "v{new_version}"
-tag_message = "Release {new_version}"
-message = "chore: release {new_version}"
-
-[[tool.bumpversion.files]]
-filename = "src/minimost/_version.py"
-search = '__version__ = "{current_version}"'
-replace = '__version__ = "{new_version}"'
-
-[[tool.bumpversion.files]]
-filename = "minimost.spec"
-regex = true
-search = 'Version:\s+{current_version}'
-replace = "Version:        {new_version}"
+# Release/version tooling config lives in .bumpversion.toml (see that file).
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -71,11 +26,3 @@ exclude_dirs = ["build", "dist"]
 # checks E4/E7/E9. Line length and other formatting concerns are owned by black,
 # so style rules such as E501 are intentionally left off to avoid conflicts.
 select = ["E4", "E7", "E9", "F"]
-
-[tool.setuptools.package-data]
-minimost = [
-    "templates/*",
-    "static/*",
-    "static/reactions/*",
-    "settings.json",
-]
