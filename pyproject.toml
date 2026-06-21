@@ -16,7 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 # black and ruff are pinned so pre-commit, CI (build.yml/ruff.yml), and local
 # dev all format/lint identically; bump each in all three places together.
-dev = ["black==26.3.1", "ruff==0.15.16", "pytest", "pytest-cov", "vermin"]
+dev = ["black==26.3.1", "ruff==0.15.16", "pytest", "pytest-cov", "vermin", "bump-my-version"]
 docs = ["sphinx>=7", "sphinx-rtd-theme>=2", "sphinxcontrib-httpdomain>=1.8"]
 
 [project.scripts]
@@ -27,6 +27,31 @@ where = ["src"]
 
 [tool.setuptools.dynamic]
 version = {attr = "minimost._version.__version__"}
+
+# Release tooling. `bump-my-version bump <major|minor|patch>` rewrites the version
+# in every file below in lockstep, then commits and tags v<new_version>. This is
+# the single place a release version is changed: _version.py is the human-facing
+# source and minimost.spec is kept byte-identical to it, so the RPM build needs no
+# version stamping. The build pipelines read the version straight from the spec.
+[tool.bumpversion]
+current_version = "0.0.2"
+allow_dirty = false
+commit = true
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Release {new_version}"
+message = "chore: release {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "src/minimost/_version.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "minimost.spec"
+regex = true
+search = 'Version:\s+{current_version}'
+replace = "Version:        {new_version}"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,9 +1,7 @@
 Name:           minimost
-# Single source of truth for the version is src/minimost/_version.py. The build
-# pipeline (.copr/Makefile and the rpm.yml workflow) rewrites this Version line
-# from it before building, so releasing only means bumping _version.py + tagging
-# — never editing this spec. The literal below is just a fallback for a direct
-# `rpmbuild minimost.spec` and may lag the real version.
+# Do not edit Version by hand. `bump-my-version bump <part>` (config in
+# pyproject.toml's [tool.bumpversion]) updates this line, src/minimost/_version.py,
+# and the tag together, so they never drift. The build reads the version from here.
 Version:        0.0.2
 Release:        1%{?dist}
 Summary:        Lightweight self-hosted collaboration platform for messaging

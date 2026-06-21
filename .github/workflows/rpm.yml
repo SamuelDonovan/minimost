@@ -47,11 +47,13 @@ jobs:
       - name: Determine version and release
         id: ver
         run: |
-          version="$(python3 -c 'import runpy; print(runpy.run_path("src/minimost/_version.py")["__version__"])')"
+          # The spec's Version is authoritative (bump-my-version keeps it in
+          # lockstep with _version.py), so read it straight from there.
+          version="$(sed -n 's/^Version:[[:space:]]*//p' minimost.spec | head -n1)"
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             tag="${GITHUB_REF_NAME#v}"
             if [ "$tag" != "$version" ]; then
-              echo "Tag $GITHUB_REF_NAME (=$tag) does not match package version $version" >&2
+              echo "Tag $GITHUB_REF_NAME (=$tag) does not match spec version $version" >&2
               exit 1
             fi
             release="1"
@@ -68,11 +70,10 @@ jobs:
           rpmdev-setuptree
           v='${{ steps.ver.outputs.version }}'
           r='${{ steps.ver.outputs.release }}'
-          # The committed spec carries the static release "1"; patch a working
-          # copy so snapshot/tag builds get the computed version-release without
-          # dirtying the in-tree, Fedora-submittable spec.
-          sed -e "s/^Version:.*/Version:        ${v}/" \
-              -e "s/^Release:.*/Release:        ${r}%{?dist}/" \
+          # The spec's Version is authoritative; only the Release is patched, so
+          # snapshot/tag builds get a computed release without dirtying the
+          # in-tree spec. (Version comes from the spec itself — see above.)
+          sed -e "s/^Release:.*/Release:        ${r}%{?dist}/" \
               minimost.spec >~/rpmbuild/SPECS/minimost.spec
           # Append the git-generated %changelog (the committed spec has none),
           # matching what .copr/Makefile does for COPR builds.

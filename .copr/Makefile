@@ -17,21 +17,19 @@ spec   ?= minimost.spec
 
 # Run the whole recipe in one shell so the version is read at *runtime*, after
 # the build deps are installed. (make expands $(shell)/$(eval) before any recipe
-# line runs, so computing the version that way executed before `dnf install` and
-# yielded an empty string in COPR's minimal SRPM chroot.) The version is parsed
-# from _version.py with sed — no python3 needed in the SRPM buildroot.
+# line runs, which would compute the version before `dnf install`.) The version
+# comes straight from the spec's Version field — bump-my-version keeps that in
+# lockstep with _version.py (see [tool.bumpversion] in pyproject.toml), so the
+# spec is authoritative and needs no stamping here.
 .ONESHELL:
 srpm:
 	set -eu
 	dnf -y install --setopt=install_weak_deps=False rpm-build rpmdevtools git sed
-	version=$$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/minimost/_version.py)
+	version=$$(sed -n 's/^Version:[[:space:]]*//p' "$(spec)" | head -n1)
 	test -n "$$version"
 	rm -rf .srpm-build
 	mkdir -p .srpm-build/SOURCES .srpm-build/SPECS "$(outdir)"
-	# Keep src/minimost/_version.py the single source of truth: stamp the spec's
-	# Version to match so Source0's minimost-<version>.tar.gz name always lines up,
-	# even if the committed spec's Version drifts behind a version bump.
-	sed "s/^Version:.*/Version:        $$version/" "$(spec)" > .srpm-build/SPECS/minimost.spec
+	cp "$(spec)" .srpm-build/SPECS/minimost.spec
 	# Append a %changelog generated from git history (the committed spec has none),
 	# so cutting a release never requires a spec edit. See .copr/gen-changelog.sh.
 	sh .copr/gen-changelog.sh "$$version" >> .srpm-build/SPECS/minimost.spec
