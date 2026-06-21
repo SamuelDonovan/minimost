@@ -15,6 +15,9 @@ Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 BuildArch:      noarch
 
 BuildRequires:  python3-devel
+# The %%pyproject_* macros. Fedora's python3-devel pulls this in implicitly, but
+# EPEL/RHEL do not, so require it explicitly for a portable build.
+BuildRequires:  pyproject-rpm-macros
 # Provides %%{_unitdir} and the %%systemd_* scriptlet macros.
 BuildRequires:  systemd-rpm-macros
 
@@ -83,5 +86,5 @@ export MINIMOST_DATA_DIR="$(mktemp -d)"
 %{_unitdir}/minimost.service
 
 %changelog
-* Fri Jun 20 2026 Samuel Mehalko <sammehalko1174@gmail.com> - 0.0.2-1
+* Sat Jun 20 2026 Samuel Mehalko <sammehalko1174@gmail.com> - 0.0.2-1
 - Initial RPM packaging
