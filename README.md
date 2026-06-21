@@ -26,6 +26,8 @@
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=sqale_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
 [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=reliability_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=SamuelDonovan_minimost&metric=security_rating)](https://sonarcloud.io/summary/overall?id=SamuelDonovan_minimost)
+[![RPM](https://github.com/SamuelDonovan/minimost/actions/workflows/rpm.yml/badge.svg)](https://github.com/SamuelDonovan/minimost/actions/workflows/rpm.yml)
+[![Copr build status](https://copr.fedorainfracloud.org/coprs/samuel-donovan-fas/Minimost/package/minimost/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/samuel-donovan-fas/Minimost/package/minimost/)
 
 **MiniMost** is a lightweight, self-hosted chat platform built for private networks. It runs entirely on Python and SQLite — no external database, no root access, no infrastructure required. Just Flask and a browser.
 
