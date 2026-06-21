@@ -31,6 +31,9 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# ...but the RPM packaging spec is a tracked source file (the *.spec rule above
+# targets PyInstaller specs, not this).
+!minimost.spec
 
 # Installer logs
 pip-log.txt
@@ -219,6 +222,9 @@ __marimo__/
 uploads/*
 users/*
 avatars/*
+
+# RPM build scratch dir (.copr/Makefile srpm)
+.srpm-build/
 
 # Secrets
 secret.key

@@ -1,30 +1,63 @@
-# To set up:
+# MiniMost system service.
 #
-# mkdir -p ~/.config/systemd/user
-# cp minimost.service ~/.config/systemd/user/minimost.service
+# This is a *system* unit (not a --user unit): it runs MiniMost as an unprivileged,
+# isolated service account with all mutable state under /var/lib/minimost. It is
+# the unit installed by the RPM/distro package.
 #
-# systemctl --user daemon-reexec
-# systemctl --user enable minimost 
-# systemctl --user start minimost 
+# Manual install from a checkout that has MiniMost pip-installed system-wide:
 #
-# Have an admin run:
-# loginctl enable-linger YOUR_USERNAME
-
+#     sudo install -m644 minimost.service /etc/systemd/system/minimost.service
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now minimost
+#
+# The TLS certificate clients import is served at https://<host>:6767/ca.pem.
 
 [Unit]
-Description=Minimost Chat App
-After=network.target
+Description=MiniMost chat server
+Documentation=https://github.com/SamuelDonovan/minimost
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-WorkingDirectory=/home/sam/minimost
-ExecStart=/home/sam/venv/bin/gunicorn \
-          -c /home/sam/minimost/gunicorn.conf.py \
-          app:app
-Restart=always
+Type=simple
+
+# Run as a dedicated, locked-down service account rather than a login user.
+# DynamicUser allocates a transient UID/GID for the lifetime of the service, so
+# the package does not have to create or manage a static user. StateDirectory=
+# then creates /var/lib/minimost (mode 0700) owned by that identity and keeps it
+# across restarts. MINIMOST_DATA_DIR points every data path (databases, uploads,
+# avatars, secret.key, the generated TLS material) at it — see minimost.paths.
+DynamicUser=yes
+StateDirectory=minimost
+WorkingDirectory=%S/minimost
+Environment=MINIMOST_DATA_DIR=%S/minimost
+
+# Production WSGI server. The config module ships inside the installed wheel, so
+# no file from the source checkout is referenced. gthread workers are required
+# by the held-open SSE /events stream (see minimost.gunicorn_conf).
+ExecStart=/usr/bin/gunicorn "minimost:create_app()" --config python:minimost.gunicorn_conf
+
+Restart=on-failure
 RestartSec=5
 
-[Install]
-WantedBy=default.target
+# --- Sandboxing ----------------------------------------------------------
+# MiniMost only needs to read its install tree and write its StateDirectory; it
+# binds two unprivileged TCP/UDP ports (6767 HTTPS, 3478 STUN) and talks to no
+# privileged resources, so it can run with an aggressive sandbox.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 
-[Journal]
-SystemMaxUse=20M
+[Install]
+WantedBy=multi-user.target

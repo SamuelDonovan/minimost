@@ -1,0 +1,112 @@
+name: RPM
+
+# Build a Fedora RPM on every push and attach it to releases.
+#
+#   * any push        -> RPM is built and uploaded as a workflow artifact
+#   * push to main     -> RPM is also attached to the rolling "dev" prerelease
+#   * push of a v* tag -> RPM + SRPM are attached to that GitHub release
+#
+# The build runs inside the official Fedora container so it uses real Fedora
+# packaging macros (pyproject-rpm-macros, systemd-rpm-macros). For Fedora *review*
+# fidelity (clean-chroot builds with dynamic BuildRequires resolved by mock), the
+# recommended path is a Fedora COPR project that builds straight from this repo;
+# this workflow is the fast in-repo smoke build + artifact publisher.
+
+on: push
+
+permissions:
+  contents: write
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      # git must exist before actions/checkout so it performs a real clone
+      # (with .git) rather than an API tarball — git archive below needs it.
+      # These are the only build dependencies: the spec's dynamic Python
+      # BuildRequires resolve to python3-flask (the sole runtime dep) plus the
+      # setuptools/wheel/pip build backend, all pre-installed here so plain
+      # rpmbuild does not need mock's dynamic-BR round-trip.
+      - name: Install build tooling
+        run: >
+          dnf -y install
+          rpm-build rpmdevtools rpmlint gh git tar gzip
+          python3-devel pyproject-rpm-macros systemd-rpm-macros
+          python3-pip python3-setuptools python3-wheel python3-flask
+
+      - uses: actions/checkout@v6
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Determine version and release
+        id: ver
+        run: |
+          version="$(python3 -c 'import runpy; print(runpy.run_path("src/minimost/_version.py")["__version__"])')"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "$tag" != "$version" ]; then
+              echo "Tag $GITHUB_REF_NAME (=$tag) does not match package version $version" >&2
+              exit 1
+            fi
+            release="1"
+          else
+            # Fedora-style snapshot release that sorts *below* the eventual 1:
+            # 0.<utc-timestamp>.git<short-sha>
+            release="0.$(date -u +%Y%m%d%H%M).git$(echo "$GITHUB_SHA" | cut -c1-7)"
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "release=$release" >>"$GITHUB_OUTPUT"
+
+      - name: Stage spec and source tarball
+        run: |
+          rpmdev-setuptree
+          v='${{ steps.ver.outputs.version }}'
+          r='${{ steps.ver.outputs.release }}'
+          # The committed spec carries the static release "1"; patch a working
+          # copy so snapshot/tag builds get the computed version-release without
+          # dirtying the in-tree, Fedora-submittable spec.
+          sed -e "s/^Version:.*/Version:        ${v}/" \
+              -e "s/^Release:.*/Release:        ${r}%{?dist}/" \
+              minimost.spec >~/rpmbuild/SPECS/minimost.spec
+          # Source0 expects a v<version> GitHub archive with a minimost-<v>/ prefix.
+          git archive --format=tar.gz --prefix="minimost-${v}/" \
+              -o ~/rpmbuild/SOURCES/minimost-${v}.tar.gz HEAD
+
+      - name: Build RPM and SRPM
+        run: rpmbuild -ba ~/rpmbuild/SPECS/minimost.spec
+
+      - name: rpmlint
+        # Non-fatal for now: surface findings without blocking the build while
+        # the spec is iterated toward a clean Fedora-review pass.
+        run: rpmlint ~/rpmbuild/RPMS/noarch/*.rpm ~/rpmbuild/SRPMS/*.src.rpm || true
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist-rpm
+          cp ~/rpmbuild/RPMS/noarch/*.rpm ~/rpmbuild/SRPMS/*.src.rpm dist-rpm/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minimost-rpm
+          path: dist-rpm/*.rpm
+
+      - name: Attach RPM to the dev prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # build.yml (re)creates the "dev" prerelease on every main push; this
+          # may race it, so create the release if it is not there yet, then
+          # clobber in the RPMs.
+          gh release view dev >/dev/null 2>&1 || \
+            gh release create dev --prerelease --title "Latest Dev Build" \
+              --notes "Built from ${GITHUB_SHA}"
+          gh release upload dev dist-rpm/*.rpm --clobber
+
+      - name: Attach RPM + SRPM to the tagged release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist-rpm/*.rpm --clobber
