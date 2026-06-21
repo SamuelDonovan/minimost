@@ -1498,8 +1498,12 @@ def files(filename):
         download_name = (
             filename[33:] if len(filename) > 33 and filename[32] == "_" else filename
         )
-        return send_from_directory(
-            UPLOAD_DIR, filename, as_attachment=True, download_name=download_name
+        return common.send_attachment(
+            send_from_directory,
+            UPLOAD_DIR,
+            filename,
+            as_attachment=True,
+            name=download_name,
         )
     return send_from_directory(UPLOAD_DIR, filename)
 

@@ -376,11 +376,12 @@ def create_app():
         ca_path = default_cert_dir() / "ca.pem"
         if not ca_path.is_file():
             abort(404)
-        return send_file(
+        return common.send_attachment(
+            send_file,
             ca_path,
             mimetype="application/x-pem-file",
             as_attachment=True,
-            download_name="minimost-ca.pem",
+            name="minimost-ca.pem",
         )
 
     app.register_blueprint(auth_bp)

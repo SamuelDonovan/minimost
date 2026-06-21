@@ -21,6 +21,7 @@ everything here, so running from a source checkout behaves identically.
 
 import logging
 import multiprocessing
+import os
 import re as _re
 from minimost.certs import ensure_certs
 
@@ -112,12 +113,17 @@ max_requests_jitter = 0
 # minimost.certs). The leaf renews itself; clients import ca.pem once. If
 # generation fails a warning is printed and gunicorn starts without TLS (calls
 # will not work in that case).
-_cert, _key = ensure_certs()
+#
+# MINIMOST_SKIP_TLS short-circuits provisioning (matching minimost.__init__'s
+# _provision_tls): it lets this module be imported as a pure config without the
+# import-time side effect of minting certificates — e.g. under the RPM %check
+# import smoke test, or when TLS is terminated by an upstream proxy.
+_cert, _key = (None, None) if os.environ.get("MINIMOST_SKIP_TLS") else ensure_certs()
 
 if _cert and _key:
     certfile = str(_cert)
     keyfile = str(_key)
-else:
+elif not os.environ.get("MINIMOST_SKIP_TLS"):
     import sys
 
     print(

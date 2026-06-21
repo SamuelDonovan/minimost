@@ -33,6 +33,22 @@ from .paths import data_dir
 DB_DIR = data_dir() / "users"
 
 
+def send_attachment(send_func, *args, name, **kwargs):
+    """Serve a download with the right filename kwarg for the installed Flask.
+
+    Flask >= 2.0 spells it ``download_name``; older Flask (e.g. the 0.12 shipped
+    in RHEL/EPEL 8's AppStream) spells it ``attachment_filename``. Trying the
+    modern keyword first and falling back keeps MiniMost working on both without
+    a version probe — ``flask.__version__`` is unreliable (deprecated in 2.2,
+    removed in 3.0). *send_func* is :func:`flask.send_file` or
+    :func:`flask.send_from_directory`; *name* is the download filename.
+    """
+    try:
+        return send_func(*args, download_name=name, **kwargs)
+    except TypeError:
+        return send_func(*args, attachment_filename=name, **kwargs)
+
+
 def user_db_path(username: str) -> Path:
     """Return the absolute filesystem path for a user's SQLite database.
 
