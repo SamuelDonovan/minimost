@@ -32,6 +32,9 @@ srpm:
 	# Version to match so Source0's minimost-<version>.tar.gz name always lines up,
 	# even if the committed spec's Version drifts behind a version bump.
 	sed "s/^Version:.*/Version:        $$version/" "$(spec)" > .srpm-build/SPECS/minimost.spec
+	# Append a %changelog generated from git history (the committed spec has none),
+	# so cutting a release never requires a spec edit. See .copr/gen-changelog.sh.
+	sh .copr/gen-changelog.sh "$$version" >> .srpm-build/SPECS/minimost.spec
 	git archive --format=tar.gz --prefix="minimost-$$version/" \
 		-o ".srpm-build/SOURCES/minimost-$$version.tar.gz" HEAD
 	rpmbuild -bs .srpm-build/SPECS/minimost.spec \

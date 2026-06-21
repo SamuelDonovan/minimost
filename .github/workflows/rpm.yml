@@ -36,6 +36,10 @@ jobs:
           python3-pip python3-setuptools python3-wheel python3-flask
 
       - uses: actions/checkout@v6
+        with:
+          # Full history + tags so .copr/gen-changelog.sh can build the
+          # %changelog from release tags (a shallow clone has neither).
+          fetch-depth: 0
 
       - name: Mark workspace safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -70,6 +74,9 @@ jobs:
           sed -e "s/^Version:.*/Version:        ${v}/" \
               -e "s/^Release:.*/Release:        ${r}%{?dist}/" \
               minimost.spec >~/rpmbuild/SPECS/minimost.spec
+          # Append the git-generated %changelog (the committed spec has none),
+          # matching what .copr/Makefile does for COPR builds.
+          sh .copr/gen-changelog.sh "${v}" >>~/rpmbuild/SPECS/minimost.spec
           # Source0 expects a v<version> GitHub archive with a minimost-<v>/ prefix.
           git archive --format=tar.gz --prefix="minimost-${v}/" \
               -o ~/rpmbuild/SOURCES/minimost-${v}.tar.gz HEAD

@@ -85,6 +85,8 @@ export MINIMOST_DATA_DIR="$(mktemp -d)"
 %{_bindir}/minimost
 %{_unitdir}/minimost.service
 
-%changelog
-* Sat Jun 20 2026 Samuel Mehalko <sammehalko1174@gmail.com> - 0.0.2-1
-- Initial RPM packaging
+# No %%changelog here: the build pipeline (.copr/Makefile and the rpm.yml
+# workflow) appends one generated from git history by .copr/gen-changelog.sh, so
+# releases need no spec edit. When this spec moves to Fedora dist-git, drop the
+# generated changelog in favour of %%autochangelog (+ %%autorelease), which dist-git
+# expands natively from the packaging repo's own commits.
