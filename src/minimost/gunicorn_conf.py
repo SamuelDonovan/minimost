@@ -13,7 +13,7 @@ It sets sensible production defaults (bind address, the ``gthread`` worker
 model required by the SSE push stream, access-log filtering for the
 high-frequency call and ``/events`` endpoints) and provisions TLS via
 :func:`minimost.certs.ensure_certs`, generating ``ca.pem``/``cert.pem`` in the
-current working directory on first run.
+MiniMost data root (see :func:`minimost.paths.data_dir`) on first run.
 
 The repository's top-level ``gunicorn.conf.py`` is a thin shim that re-exports
 everything here, so running from a source checkout behaves identically.

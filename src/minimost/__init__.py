@@ -47,10 +47,10 @@ from .auth import auth_bp
 from .calls import calls_bp
 from .chat import chat_bp
 from .events import events_bp
+from .paths import data_dir
 from .presence import presence_bp
 
 _HERE = Path(__file__).resolve().parent
-_PROJECT_ROOT = _HERE.parent.parent
 
 
 def _read_version() -> str:
@@ -201,7 +201,7 @@ def create_app():
     """
     app = Flask(__name__)
 
-    key_file = _PROJECT_ROOT / "secret.key"
+    key_file = data_dir() / "secret.key"
     if not key_file.exists():
         key_file.write_text(secrets.token_hex(32))
     app.secret_key = key_file.read_text().strip()
@@ -454,7 +454,7 @@ def _start_cleanup_scheduler(
         ``5``.
     """
     # Resolve the data directories from the live module attributes (rather than
-    # ``_PROJECT_ROOT``) so the worker honours any monkeypatched paths — this is
+    # re-deriving them) so the worker honours any monkeypatched paths — this is
     # what keeps the test suite's cleanup runs confined to their temp dirs
     # instead of touching the real ``users/`` and ``uploads/`` directories.
     upload_dir = chat_mod.UPLOAD_DIR

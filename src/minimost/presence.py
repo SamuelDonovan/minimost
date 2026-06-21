@@ -60,10 +60,12 @@ _VALID_STATES : set of str
 # From the python standard library
 import time
 import sqlite3
-from pathlib import Path
 
 # From Flask
 from flask import session, request, Blueprint
+
+# Local Imports
+from .paths import data_dir
 
 presence_bp = Blueprint("presence", __name__)
 
@@ -75,9 +77,7 @@ _VALID_STATES = {"active", "idle", "hidden", "offline"}
 _VALID_OVERRIDES = {"active", "idle", "offline"}
 _WAL = "PRAGMA journal_mode=WAL"
 
-_HERE = Path(__file__).resolve().parent
-_PROJECT_ROOT = _HERE.parent.parent
-PRESENCE_DB = str(_PROJECT_ROOT / "presence.db")
+PRESENCE_DB = str(data_dir() / "presence.db")
 
 
 def _init_tables():

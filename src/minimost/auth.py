@@ -48,9 +48,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from . import common
 from . import presence
 
+from .paths import data_dir
+
 _HERE = Path(__file__).resolve().parent
-_PROJECT_ROOT = _HERE.parent.parent
-AUTH_DB = str(_PROJECT_ROOT / "auth.db")
+AUTH_DB = str(data_dir() / "auth.db")
 
 _USERNAME_RE = re.compile(r"[A-Za-z0-9_\-]{1,32}")
 

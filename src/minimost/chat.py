@@ -77,6 +77,7 @@ from . import common
 from . import presence
 from . import auth
 from . import preview as preview_mod
+from .paths import data_dir
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -135,12 +136,11 @@ _INSERT_MSG_SQL = (
 )
 
 _HERE = Path(__file__).resolve().parent
-_PROJECT_ROOT = _HERE.parent.parent
 
-UPLOAD_DIR = _PROJECT_ROOT / "uploads"
+UPLOAD_DIR = data_dir() / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-AVATAR_DIR = _PROJECT_ROOT / "avatars"
+AVATAR_DIR = data_dir() / "avatars"
 AVATAR_DIR.mkdir(exist_ok=True)
 
 # settings.json is bundled inside the package (src/minimost/) so it ships in

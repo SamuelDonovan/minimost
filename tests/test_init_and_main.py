@@ -1,5 +1,6 @@
 """Tests for __init__.py and __main__.py."""
 
+import os
 import sys
 from unittest.mock import patch, MagicMock
 
@@ -59,7 +60,8 @@ def test_create_app_version_in_context(app):
 def test_create_app_creates_secret_key_file(tmp_path):
     import minimost
 
-    with patch.object(minimost, "_PROJECT_ROOT", tmp_path):
+    # secret.key lives in the data root; MINIMOST_DATA_DIR points it at tmp_path.
+    with patch.dict(os.environ, {"MINIMOST_DATA_DIR": str(tmp_path)}):
         minimost.create_app()
     assert (tmp_path / "secret.key").exists()
 
@@ -69,7 +71,7 @@ def test_create_app_reuses_existing_secret_key(tmp_path):
 
     key_file = tmp_path / "secret.key"
     key_file.write_text("my-fixed-secret-key")
-    with patch.object(minimost, "_PROJECT_ROOT", tmp_path):
+    with patch.dict(os.environ, {"MINIMOST_DATA_DIR": str(tmp_path)}):
         app = minimost.create_app()
     assert app.secret_key == "my-fixed-secret-key"
 

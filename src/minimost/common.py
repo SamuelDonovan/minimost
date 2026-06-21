@@ -28,10 +28,9 @@ import sqlite3
 
 from werkzeug.utils import secure_filename
 
-_HERE = Path(__file__).resolve().parent
-_PROJECT_ROOT = _HERE.parent.parent
+from .paths import data_dir
 
-DB_DIR = _PROJECT_ROOT / "users"
+DB_DIR = data_dir() / "users"
 
 
 def user_db_path(username: str) -> Path:

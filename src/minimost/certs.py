@@ -37,12 +37,12 @@ import sys
 from pathlib import Path
 
 from . import _pki
+from .paths import data_dir
 
 # Certificates live in the same data root as the rest of MiniMost's state
 # (``secret.key``, the ``users/`` databases) rather than the process working
-# directory.  ``parents[2]`` of ``src/minimost/certs.py`` is the project root —
-# the same path ``minimost.__init__`` and ``minimost.common`` derive as
-# ``_PROJECT_ROOT`` — and resolves identically under an installed wheel.
+# directory — see :func:`minimost.paths.data_dir`. On a packaged install this is
+# ``/var/lib/minimost``; from a git checkout it is the source root.
 #
 # Anchoring the certs to a fixed location is deliberate: a client that has
 # already imported ``ca.pem`` keeps validating the served leaf no matter which
@@ -51,7 +51,7 @@ from . import _pki
 # because every CA shared one subject name, browsers matched the stale trusted
 # CA to the new leaf and reported the confusing ``SEC_ERROR_BAD_SIGNATURE``
 # instead of a clean untrusted-issuer error.
-_DATA_DIR = Path(__file__).resolve().parents[2]
+_DATA_DIR = data_dir()
 
 # Validity (days) for the served leaf certificate. Chrome rejects any TLS server
 # certificate valid for more than 398 days with NET::ERR_CERT_VALIDITY_TOO_LONG,
