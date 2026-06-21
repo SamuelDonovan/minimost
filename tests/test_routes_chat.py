@@ -312,7 +312,6 @@ def test_send_with_invalid_reply_to(alice):
 def test_send_file(alice, tmp_path):
     import minimost.chat as chat
 
-    orig_upload = chat.UPLOAD_DIR
     chat.UPLOAD_DIR.mkdir(exist_ok=True)
     img = io.BytesIO(b"\xff\xd8\xff" + b"\x00" * 10)
     resp = alice.post(

@@ -5,7 +5,6 @@ import sqlite3
 import time
 import uuid
 
-import pytest
 import minimost.presence as presence_mod
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -833,8 +832,6 @@ def test_full_reject_flow(alice_and_bob, app):
 
 def _make_bob_client(app, isolated_dbs):
     """Create an authenticated client for bob (assumes bob is already registered)."""
-    import minimost.auth as auth_mod
-    import minimost.common as common_mod
 
     _add_user = lambda db, u: None  # noqa: E731 – already registered by fixture
     c = app.test_client()
@@ -905,7 +902,6 @@ def test_screenshare_stop_other_user_denied(app, isolated_dbs, alice_and_bob):
     ).get_json()["share_id"]
 
     import minimost.auth as auth_mod
-    import minimost.common as common_mod
 
     try:
         auth_mod._add_user(auth_mod.AUTH_DB, "bob", "Pass1234!")

@@ -3,7 +3,6 @@ import pytest
 from werkzeug.security import check_password_hash
 
 from minimost.auth import hash_password, _validate_signup, _seed_channel_history
-import minimost.auth as auth_mod
 import minimost.common as common_mod
 
 

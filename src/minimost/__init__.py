@@ -38,7 +38,11 @@ from flask import Flask, abort, request, send_file, session
 
 from . import calls as calls_mod
 from . import chat as chat_mod
-from . import common, database, presence
+from . import common, presence
+
+# Imported for its import-time side effect: it initialises auth.db at module
+# load. Not referenced directly, so ruff/pyflakes would otherwise flag it.
+from . import database  # noqa: F401
 from .auth import auth_bp
 from .calls import calls_bp
 from .chat import chat_bp

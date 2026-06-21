@@ -1,0 +1,21 @@
+name: Ruff
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ruff:
+    name: Ruff lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      # Pinned so CI and the pre-commit hook lint with the same ruff; keep this
+      # version in sync with .pre-commit-config.yaml and the pyproject dev extra.
+      - run: pip install ruff==0.15.16
+      - run: ruff check .

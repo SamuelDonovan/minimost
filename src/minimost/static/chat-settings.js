@@ -581,7 +581,7 @@ async function updateMembersCount() {
   const badge = document.getElementById("members-count");
   if (!badge) return;
   const forChannel = channel;
-  let count = 0;
+  let count;
   try {
     if (forChannel.startsWith("dm:")) {
       count = forChannel.split(":").slice(1).length;

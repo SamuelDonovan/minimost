@@ -14,9 +14,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# black is pinned so pre-commit, CI (build.yml), and local dev all format
-# identically; bump it in all three places together.
-dev = ["black==26.3.1", "pytest", "pytest-cov", "vermin"]
+# black and ruff are pinned so pre-commit, CI (build.yml/ruff.yml), and local
+# dev all format/lint identically; bump each in all three places together.
+dev = ["black==26.3.1", "ruff==0.15.16", "pytest", "pytest-cov", "vermin"]
 docs = ["sphinx>=7", "sphinx-rtd-theme>=2", "sphinxcontrib-httpdomain>=1.8"]
 
 [project.scripts]
@@ -40,6 +40,12 @@ source = ["src/minimost"]
 
 [tool.bandit]
 exclude_dirs = ["build", "dist"]
+
+[tool.ruff.lint]
+# Stick to ruff's default rule set: pyflakes (F) plus the pycodestyle error
+# checks E4/E7/E9. Line length and other formatting concerns are owned by black,
+# so style rules such as E501 are intentionally left off to avoid conflicts.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.setuptools.package-data]
 minimost = [

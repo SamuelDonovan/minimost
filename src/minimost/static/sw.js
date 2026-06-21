@@ -24,7 +24,7 @@ globalThis.addEventListener("notificationclick", (event) => {
 // later. It is harmless otherwise and lets the SW surface OS notifications even
 // when no tab is open.
 globalThis.addEventListener("push", (event) => {
-  let data = {};
+  let data;
   try {
     data = event.data ? event.data.json() : {};
   } catch {
