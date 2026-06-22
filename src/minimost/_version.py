@@ -11,4 +11,4 @@ Keeping the version in a plain module — rather than relying on
 from an installed wheel, since this file always ships inside the package.
 """
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"

@@ -2,7 +2,7 @@ Name:           minimost
 # Do not edit Version by hand. `bump-my-version bump <part>` (config in
 # .bumpversion.toml) updates this line, src/minimost/_version.py, setup.cfg, and
 # the tag together, so they never drift. The build reads the version from here.
-Version:        0.0.2
+Version:        0.0.3
 Release:        1%{?dist}
 Summary:        Lightweight self-hosted collaboration platform for messaging
 
