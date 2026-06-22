@@ -101,20 +101,20 @@ MiniMost is released under the [MIT License](https://github.com/SamuelDonovan/mi
 
 MiniMost trades breadth of features for something most chat platforms can't offer: it's fully open, runs on your own private network with no external services, and installs in one command. Here's how it lines up against common alternatives.
 
-|                              | **MiniMost**                 | **Mattermost**                           | **Cisco Jabber**                  | **Microsoft Teams**        | **Slack**                        | **Skype**¹       |
-| ---------------------------- | ---------------------------- | ---------------------------------------- | --------------------------------- | -------------------------- | -------------------------------- | ---------------- |
-| **License**                  | MIT                          | Open core (source-available + paid EE)   | Proprietary                       | Proprietary                | Proprietary                      | Proprietary      |
-| **Source open & auditable**  | ✅ Fully — every line public | ⚠️ Core only; enterprise features closed | ❌                                | ❌                         | ❌                               | ❌               |
-| **Cost**                     | Free, forever                | Free core; paid tiers                    | Paid (Cisco licensing)            | Paid (Microsoft 365 plans) | Freemium; paid per-seat tiers    | Was free         |
-| **User / seat limit**        | Unlimited                    | Unlimited (self-hosted core)             | Per-license                       | Per-license                | Free tier limited; paid per-seat | n/a              |
-| **Self-host on private LAN** | ✅                           | ✅                                       | ⚠️ On-prem, needs Cisco UC infra  | ❌ Cloud (SaaS)            | ❌ Cloud (SaaS)                  | ❌ Cloud (SaaS)  |
-| **Works fully air-gapped**   | ✅                           | ⚠️ Possible, with effort                 | ⚠️                                | ❌                         | ❌                               | ❌               |
-| **Database**                 | SQLite (bundled, file-based) | PostgreSQL (external, you run it)        | Cisco UC backend                  | Microsoft cloud            | Slack cloud                      | Microsoft cloud  |
-| **Runtime dependencies**     | Python + Flask               | Go binary + DB + reverse proxy           | CUCM / IM&P servers               | Microsoft 365 tenant       | Internet account                 | Internet account |
-| **Ease of setup**            | One `pip`/`dnf` command      | Moderate (DB, config, proxy)             | Heavy (enterprise infrastructure) | Account signup             | Account signup                   | n/a              |
-| **Voice / video / screen**   | ✅ P2P WebRTC over LAN       | ⚠️ Via calls plugin / integrations       | ✅                                | ✅                         | ✅                               | ✅               |
+|                              | **MiniMost**                 | **Mattermost**                           | **Cisco Jabber**                  | **Microsoft Teams**        | **Slack**                        | **Skype**¹                               |
+| ---------------------------- | ---------------------------- | ---------------------------------------- | --------------------------------- | -------------------------- | -------------------------------- | ---------------------------------------- |
+| **License**                  | MIT                          | Open core (source-available + paid EE)   | Proprietary                       | Proprietary                | Proprietary                      | Proprietary                              |
+| **Source open & auditable**  | ✅ Fully — every line public | ⚠️ Core only; enterprise features closed | ❌                                | ❌                         | ❌                               | ❌                                       |
+| **Cost**                     | Free, forever                | Free core; paid tiers                    | Paid (Cisco licensing)            | Paid (Microsoft 365 plans) | Freemium; paid per-seat tiers    | Was free                                 |
+| **User / seat limit**        | Unlimited                    | Free Team Ed. capped (≤250 users)        | Per-license                       | Per-license                | Free tier limited; paid per-seat | n/a                                      |
+| **Self-host on private LAN** | ✅                           | ✅                                       | ⚠️ On-prem, needs Cisco UC infra  | ❌ Cloud (SaaS)            | ❌ Cloud (SaaS)                  | ⚠️ Consumer cloud; SfB Server is on-prem |
+| **Works fully air-gapped**   | ✅                           | ⚠️ Possible, with effort                 | ⚠️                                | ❌                         | ❌                               | ❌                                       |
+| **Database**                 | SQLite (bundled, file-based) | PostgreSQL (external, you run it)        | Cisco UC backend                  | Microsoft cloud            | Slack cloud                      | Microsoft cloud                          |
+| **Runtime dependencies**     | Python + Flask               | Go binary + DB + reverse proxy           | CUCM / IM&P servers               | Microsoft 365 tenant       | Internet account                 | Internet account                         |
+| **Ease of setup**            | One `pip`/`dnf` command      | Moderate (DB, config, proxy)             | Heavy (enterprise infrastructure) | Account signup             | Account signup                   | n/a                                      |
+| **Voice / video / screen**   | ✅ P2P WebRTC over LAN       | ⚠️ Via calls plugin / integrations       | ✅                                | ✅                         | ✅                               | ✅                                       |
 
-¹ Microsoft retired Skype in May 2025; included for reference.
+¹ Consumer Skype retired May 2025; Skype for Business Server is on-prem (end of support Oct 2025).
 
 This isn't a feature-count contest — the big platforms have far more functionality (see the [FAQ](#faq)). MiniMost wins only where it's designed to: zero infrastructure, full auditability, and running on a network with no internet at all.
 
