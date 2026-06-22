@@ -33,6 +33,25 @@
 
 ---
 
+## Quick start
+
+```bash
+pip install minimost   # 1. install (only needs Python 3.6+ and Flask)
+minimost               # 2. run → https://127.0.0.1:5000
+```
+
+Open the URL, sign up with any username and password, and start chatting. To let others on your network join:
+
+```bash
+minimost --host 0.0.0.0          # listen on all interfaces
+```
+
+Then point a browser at `https://<server-ip>:5000`, accept the self-signed certificate warning once, and you're done — no database to provision, no accounts to pre-create, no internet required.
+
+> On Red Hat / Fedora? Skip pip and install the packaged systemd service straight from COPR — see [On Red Hat / Fedora (COPR)](#on-red-hat--fedora-copr).
+
+---
+
 ## Screenshots
 
 ![Login page](https://raw.githubusercontent.com/SamuelDonovan/minimost/main/docs/_static/screenshot-login.png)
@@ -78,6 +97,29 @@ MiniMost is released under the [MIT License](https://github.com/SamuelDonovan/mi
 
 ---
 
+## How MiniMost compares
+
+MiniMost trades breadth of features for something most chat platforms can't offer: it's fully open, runs on your own private network with no external services, and installs in one command. Here's how it lines up against common alternatives.
+
+|                              | **MiniMost**                 | **Mattermost**                           | **Cisco Jabber**                  | **Microsoft Teams**        | **Slack**                        | **Skype**¹       |
+| ---------------------------- | ---------------------------- | ---------------------------------------- | --------------------------------- | -------------------------- | -------------------------------- | ---------------- |
+| **License**                  | MIT                          | Open core (source-available + paid EE)   | Proprietary                       | Proprietary                | Proprietary                      | Proprietary      |
+| **Source open & auditable**  | ✅ Fully — every line public | ⚠️ Core only; enterprise features closed | ❌                                | ❌                         | ❌                               | ❌               |
+| **Cost**                     | Free, forever                | Free core; paid tiers                    | Paid (Cisco licensing)            | Paid (Microsoft 365 plans) | Freemium; paid per-seat tiers    | Was free         |
+| **User / seat limit**        | Unlimited                    | Unlimited (self-hosted core)             | Per-license                       | Per-license                | Free tier limited; paid per-seat | n/a              |
+| **Self-host on private LAN** | ✅                           | ✅                                       | ⚠️ On-prem, needs Cisco UC infra  | ❌ Cloud (SaaS)            | ❌ Cloud (SaaS)                  | ❌ Cloud (SaaS)  |
+| **Works fully air-gapped**   | ✅                           | ⚠️ Possible, with effort                 | ⚠️                                | ❌                         | ❌                               | ❌               |
+| **Database**                 | SQLite (bundled, file-based) | PostgreSQL (external, you run it)        | Cisco UC backend                  | Microsoft cloud            | Slack cloud                      | Microsoft cloud  |
+| **Runtime dependencies**     | Python + Flask               | Go binary + DB + reverse proxy           | CUCM / IM&P servers               | Microsoft 365 tenant       | Internet account                 | Internet account |
+| **Ease of setup**            | One `pip`/`dnf` command      | Moderate (DB, config, proxy)             | Heavy (enterprise infrastructure) | Account signup             | Account signup                   | n/a              |
+| **Voice / video / screen**   | ✅ P2P WebRTC over LAN       | ⚠️ Via calls plugin / integrations       | ✅                                | ✅                         | ✅                               | ✅               |
+
+¹ Microsoft retired Skype in May 2025; included for reference.
+
+This isn't a feature-count contest — the big platforms have far more functionality (see the [FAQ](#faq)). MiniMost wins only where it's designed to: zero infrastructure, full auditability, and running on a network with no internet at all.
+
+---
+
 ## Requirements
 
 - Python 3.6+
@@ -101,6 +143,38 @@ pip install minimost
 git clone https://github.com/SamuelDonovan/minimost.git
 cd minimost
 pip install -e .
+```
+
+### On Red Hat / Fedora (COPR)
+
+MiniMost is packaged for Fedora, RHEL, and their rebuilds (Rocky, Alma, CentOS Stream) via [COPR](https://copr.fedorainfracloud.org/coprs/samuel-donovan-fas/Minimost/). This installs MiniMost as a proper RPM with a hardened systemd service — no `pip`, no virtualenv.
+
+```bash
+# Enable the COPR repository (one-time). On RHEL/EL, first install the plugin:
+#   sudo dnf install -y dnf-plugins-core
+sudo dnf copr enable samuel-donovan-fas/Minimost
+
+# Install the package
+sudo dnf install minimost
+
+# Start it now and on every boot
+sudo systemctl enable --now minimost
+```
+
+The RPM ships a locked-down systemd unit that runs MiniMost under a transient `DynamicUser`, keeping all state (databases, uploads, TLS material) under `/var/lib/minimost`. The service listens on **HTTPS port 6767** by default:
+
+```bash
+systemctl status minimost          # check it's running
+sudo systemctl restart minimost    # apply settings.json changes
+journalctl -u minimost -f          # follow the logs
+```
+
+Browse to `https://<server-ip>:6767`. Clients can fetch the CA certificate to trust at `https://<server-ip>:6767/ca.pem`. Remember to open the port (and UDP `3478` for calls) in `firewalld`:
+
+```bash
+sudo firewall-cmd --permanent --add-port=6767/tcp
+sudo firewall-cmd --permanent --add-port=3478/udp
+sudo firewall-cmd --reload
 ```
 
 ### From wheel (latest dev build)
