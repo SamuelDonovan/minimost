@@ -9,7 +9,11 @@ loader Flask uses) accepts the generated certificate and key.
 """
 
 import datetime
+import socket
 import ssl
+import threading
+
+import pytest
 
 import minimost
 from minimost import _pki, certs
@@ -208,3 +212,53 @@ def test_create_app_tolerates_tls_generation_failure(monkeypatch):
     monkeypatch.setattr(certs, "ensure_certs", lambda directory: (None, None))
     app = minimost.create_app()
     assert "TLS_CERT_FILE" not in app.config
+
+
+def _negotiated_protocol(cert, key):
+    """Run a real loopback TLS handshake and return the version both peers agreed
+    on (e.g. ``'TLSv1.3'``).
+
+    The server side is configured exactly as the WSGI servers configure it —
+    ``PROTOCOL_TLS_SERVER`` + ``load_cert_chain`` with no version pinning — so
+    whatever this negotiates is what MiniMost actually serves over the wire. The
+    version is read back from the *client* socket, the authoritative record of
+    what the connection settled on.
+    """
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(str(cert), str(key))
+
+    client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_ctx.check_hostname = False
+    client_ctx.verify_mode = ssl.CERT_NONE
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    host, port = listener.getsockname()
+
+    def _serve():
+        raw, _ = listener.accept()
+        with raw, server_ctx.wrap_socket(raw, server_side=True) as tls:
+            tls.recv(16)
+
+    server_thread = threading.Thread(target=_serve)
+    server_thread.start()
+    try:
+        with socket.create_connection((host, port)) as raw:
+            with client_ctx.wrap_socket(raw, server_hostname=host) as tls:
+                version = tls.version()
+                tls.send(b"hi")
+        return version
+    finally:
+        server_thread.join(timeout=5)
+        listener.close()
+
+
+@pytest.mark.skipif(not ssl.HAS_TLSv1_3, reason="platform OpenSSL build lacks TLS 1.3")
+def test_served_cert_negotiates_tls_1_3(tmp_path):
+    # End-to-end proof: provision the cert exactly as the app does, stand up a
+    # listener with the same ssl configuration the WSGI server uses, and confirm
+    # a fresh client handshake settles on TLS 1.3 (never an older protocol).
+    cert, key = certs.ensure_certs(tmp_path)
+    assert cert is not None and key is not None
+    assert _negotiated_protocol(cert, key) == "TLSv1.3"
