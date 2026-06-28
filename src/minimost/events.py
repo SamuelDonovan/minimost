@@ -46,9 +46,16 @@ import secrets
 import sqlite3
 import time
 
-from flask import Blueprint, Response, request, session, stream_with_context
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    request,
+    session,
+    stream_with_context,
+)
 
-from . import auth, calls, chat, presence
+from . import auth, calls, chat, presence, ratelimit
 
 events_bp = Blueprint("events", __name__)
 
@@ -219,6 +226,20 @@ def events():
     :rtype: flask.Response
     """
     user = session["user"]
+
+    # Each held-open stream pins one worker thread for its whole lifetime, so an
+    # actor who opens many streams could exhaust the pool and lock everyone out.
+    # Cap the number a single user may hold at once; the browser uses one per
+    # open tab, so the default ceiling allows plenty of real tabs. A slot is
+    # taken here and released in the generator's finally when the stream ends.
+    cap_streams = current_app.config.get("RATELIMIT_ENABLED", True)
+    if cap_streams and not ratelimit.acquire_stream(user):
+        return Response(
+            "too many open event streams; close other tabs and retry",
+            status=429,
+            headers={"Retry-After": "5"},
+        )
+
     channel = request.args.get("channel", "") or ""
     after = _parse_after(request.args.get("after"))
     # On an automatic reconnect the browser re-requests the original URL but
@@ -313,6 +334,8 @@ def events():
         finally:
             if signal_conn is not None:
                 signal_conn.close()
+            if cap_streams:
+                ratelimit.release_stream(user)
 
     headers = {
         "Cache-Control": "no-cache",

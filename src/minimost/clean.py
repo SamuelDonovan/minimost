@@ -38,6 +38,7 @@ This module can also be invoked directly for ad-hoc cleanup:
 
 import sqlite3
 from pathlib import Path
+from typing import Optional
 import time
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -124,21 +125,108 @@ def _snapshot_files(dirpath: Path):
     return entries, total
 
 
+def _file_owners(owner_db: str) -> dict:
+    """Map each stored upload filename to its uploader, read from *owner_db*.
+
+    A file's owner is the ``sender`` of the message whose ``filename`` column
+    references it. Returns an empty dict when the database, its ``messages``
+    table, or its ``filename`` column is unavailable, so the caller transparently
+    falls back to plain oldest-first eviction.
+
+    :param owner_db: Path to the shared ``messages.db``.
+    :returns: ``{stored_filename: uploader}``.
+    :rtype: dict
+    """
+    path = Path(owner_db)
+    if not path.is_file():
+        return {}
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        if not _has_table(conn, "messages"):
+            return {}
+        rows = conn.execute(
+            "SELECT filename, sender FROM messages "
+            "WHERE filename IS NOT NULL AND filename != ''"
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    return {filename: sender for filename, sender in rows}
+
+
+def _fair_file_order(entries, owners: dict):
+    """Order ``(mtime, size, path)`` entries for fair size-cap deletion.
+
+    Yields ``(size, path)`` pairs in the order they should be removed: files with
+    no known owner first (orphans, or every file when *owners* is empty),
+    oldest-first; then the remaining files by repeatedly trimming the owner that
+    currently holds the most bytes, oldest of theirs first. The greedy pick keeps
+    the largest consumer shrinking until another owner overtakes it, so deletions
+    stay proportional to consumption instead of falling entirely on whoever
+    happens to have the oldest files.
+
+    :param entries: ``(mtime, size, path)`` tuples from :func:`_snapshot_files`.
+    :param owners: ``{filename: uploader}`` map (empty for oldest-first).
+    :returns: A list of ``(size, path)`` tuples in deletion order.
+    :rtype: list
+    """
+    by_owner = {}
+    orphans = []
+    for mtime, size, path in entries:
+        owner = owners.get(path.name)
+        if owner is None:
+            orphans.append((mtime, size, path))
+        else:
+            by_owner.setdefault(owner, []).append((mtime, size, path))
+
+    order = [(size, path) for _mtime, size, path in sorted(orphans, key=lambda e: e[0])]
+
+    for files in by_owner.values():
+        files.sort(key=lambda e: e[0])  # oldest-first within each owner
+    owner_bytes = {o: sum(e[1] for e in files) for o, files in by_owner.items()}
+
+    while by_owner:
+        owner = max(owner_bytes, key=owner_bytes.get)
+        _mtime, size, path = by_owner[owner].pop(0)
+        order.append((size, path))
+        owner_bytes[owner] -= size
+        if not by_owner[owner]:
+            del by_owner[owner]
+            del owner_bytes[owner]
+
+    return order
+
+
 def delete_files_over_size(
     directory: str,
     max_size_mb: float,
     dry_run: bool = False,
+    owner_db: Optional[str] = None,
 ) -> None:
-    """Delete the oldest files in *directory* until it fits within a size cap.
+    """Delete files in *directory* until its total size fits within a cap.
 
     The combined size of every regular file directly in *directory* is compared
     against *max_size_mb*.  While the total exceeds the cap, files are deleted
-    **oldest-first** (by modification time) until the directory is back under it.
+    until the directory is back under it.
 
     This bounds the disk footprint of ``uploads/`` independently of the
     age-based retention in :func:`delete_files_older_than`: a burst of large
     uploads is trimmed by size even before any of it ages out.  The two run
     together — age-based cleanup first, then this size cap on whatever remains.
+
+    Eviction order depends on *owner_db*:
+
+    * **With** *owner_db* — the upload→uploader mapping is read from the shared
+      message database (a file's owner is the sender of the message that
+      references it).  Files with no owner (orphans whose message was deleted)
+      are removed first, oldest-first; the rest are removed by repeatedly
+      trimming the **uploader currently holding the most bytes**, oldest of
+      theirs first.  This makes the cap *fair*: a single account that floods the
+      directory has its own uploads purged before anyone else's.
+    * **Without** *owner_db* — files are simply removed oldest-first (by
+      modification time), the historic behaviour.
 
     Subdirectories are ignored (only regular files are counted and deleted), so
     the function is safe to point at a directory that nests other content.  A cap
@@ -152,6 +240,9 @@ def delete_files_over_size(
     :param dry_run: If ``True``, only print what would be deleted without
         removing any files.  Defaults to ``False``.
     :type dry_run: bool
+    :param owner_db: Optional path to the shared ``messages.db``; when given,
+        eviction is made fair across uploaders (see above).
+    :type owner_db: str or None
     :raises ValueError: If *directory* does not exist or is not a directory.
     """
     if not max_size_mb or max_size_mb <= 0:
@@ -165,10 +256,9 @@ def delete_files_over_size(
     if total <= max_bytes:
         return
 
-    # Oldest first, so the most recent uploads are the last to be removed.
-    entries.sort(key=lambda entry: entry[0])
+    owners = _file_owners(owner_db) if owner_db else {}
 
-    for _mtime, size, path in entries:
+    for size, path in _fair_file_order(entries, owners):
         if total <= max_bytes:
             break
         if dry_run:
@@ -231,6 +321,22 @@ def _live_size_bytes(conn) -> int:
     return (page_count - freelist) * page_size
 
 
+def _heaviest_sender(conn):
+    """Return the sender consuming the most message bytes, or ``None`` if empty.
+
+    "Bytes" is the summed length of each sender's ``content`` text — the
+    dominant driver of database size — with message count as a tiebreaker (so
+    senders of empty-content attachment rows are still ranked). This is what
+    makes size-cap eviction fair: the account that has written the most is
+    trimmed first, so a flooder's own messages go before anyone else's.
+    """
+    row = conn.execute(
+        "SELECT sender FROM messages GROUP BY sender ORDER BY "
+        "SUM(LENGTH(COALESCE(content, ''))) DESC, COUNT(*) DESC LIMIT 1"
+    ).fetchone()
+    return row[0] if row else None
+
+
 def delete_messages_over_size(
     db_path: str,
     max_size_mb: float,
@@ -243,11 +349,17 @@ def delete_messages_over_size(
     content, so it is the only one a size cap can be enforced on.  Size is
     measured as the live (post-compaction) data size — see
     :func:`_live_size_bytes` — so transient free-page bloat never triggers a
-    deletion.  When that size exceeds *max_size_mb*, the oldest messages (lowest
-    ``ts``) are deleted in batches of *batch* rows until the database is back
-    under the cap, after which the freed pages are reclaimed in one ``VACUUM``
-    and the WAL checkpointed so the on-disk file shrinks to match.  ``VACUUM``
-    runs at most once per call, and only when something was actually pruned.
+    deletion.  When that size exceeds *max_size_mb*, messages are deleted in
+    batches of *batch* rows until the database is back under the cap, after which
+    the freed pages are reclaimed in one ``VACUUM`` and the WAL checkpointed so
+    the on-disk file shrinks to match.  ``VACUUM`` runs at most once per call,
+    and only when something was actually pruned.
+
+    Eviction is **fair**: each batch targets the oldest messages of the sender
+    currently consuming the most space (see :func:`_heaviest_sender`), so a
+    single account that floods the channel has its own messages purged before
+    any other user's history.  When one sender dominates this is equivalent to
+    deleting the globally oldest messages first.
 
     A size cap of ``0`` (or any non-positive value) disables the check, leaving
     age-based retention as the only purge.  The database is opened only when it
@@ -290,11 +402,21 @@ def delete_messages_over_size(
 
         deleted_total = 0
         while size > max_bytes:
+            # Fair eviction: trim the sender currently consuming the most space,
+            # oldest of theirs first. A flood from one account makes that account
+            # the heaviest, so its own messages are purged before any other
+            # user's history — a single spammer cannot evict everyone else's
+            # data the way a pure global-oldest pass would. With one dominant
+            # sender this naturally reduces to oldest-first.
+            sender = _heaviest_sender(conn)
+            if sender is None:
+                break  # table is empty but the schema still exceeds the cap
             ids = [
                 row[0]
                 for row in conn.execute(
-                    "SELECT id FROM messages ORDER BY ts ASC, id ASC LIMIT ?",
-                    (batch,),
+                    "SELECT id FROM messages WHERE sender = ? "
+                    "ORDER BY ts ASC, id ASC LIMIT ?",
+                    (sender, batch),
                 ).fetchall()
             ]
             if not ids:

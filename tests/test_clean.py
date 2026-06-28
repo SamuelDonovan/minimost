@@ -454,3 +454,110 @@ def test_over_size_empties_table_when_cap_below_schema(tmp_path):
     _fill_messages(db, 30, size=4000)
     delete_messages_over_size(str(db), max_size_mb=0.00001, batch=1000)
     assert _count_msgs(db) == 0
+
+
+# ── fair eviction (size caps must not let one account purge others' data) ─────
+
+
+def _fill_from_sender(path, sender, count, ts_base, size=4000):
+    """Insert *count* fat messages from *sender* with increasing timestamps."""
+    conn = sqlite3.connect(str(path))
+    payload = "x" * size
+    conn.executemany(
+        "INSERT INTO messages (channel, sender, content, ts) VALUES ('general', ?, ?, ?)",
+        [(sender, payload, ts_base + i) for i in range(count)],
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_over_size_messages_evicts_flooder_not_innocent(tmp_path):
+    db = tmp_path / "messages.db"
+    _make_messages_db(db)
+    base = time.time() - 1000
+    # The innocent user posted a handful of the OLDEST messages; a pure
+    # global-oldest pass would delete these first. The flooder posted many newer
+    # ones, making them the heaviest sender.
+    _fill_from_sender(db, "innocent", 5, ts_base=base)
+    _fill_from_sender(db, "flooder", 95, ts_base=base + 100)
+
+    delete_messages_over_size(str(db), max_size_mb=0.1, batch=10)
+
+    conn = sqlite3.connect(str(db))
+    innocent_left = conn.execute(
+        "SELECT COUNT(*) FROM messages WHERE sender = 'innocent'"
+    ).fetchone()[0]
+    flooder_left = conn.execute(
+        "SELECT COUNT(*) FROM messages WHERE sender = 'flooder'"
+    ).fetchone()[0]
+    conn.close()
+
+    # Every one of the innocent user's messages survives; the cap was met by
+    # purging the flooder's instead.
+    assert innocent_left == 5
+    assert flooder_left < 95
+
+
+def _make_owner_db(path, owners):
+    """Create a minimal messages DB mapping each filename to its uploader.
+
+    *owners* is a list of ``(filename, sender)`` pairs.
+    """
+    conn = sqlite3.connect(str(path))
+    conn.execute(
+        "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "channel TEXT, sender TEXT, content TEXT, filename TEXT, ts REAL)"
+    )
+    conn.executemany(
+        "INSERT INTO messages (sender, filename, ts) VALUES (?, ?, 0)",
+        [(sender, filename) for filename, sender in owners],
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_over_size_files_evicts_heaviest_owner_first(updir, tmp_path):
+    db = tmp_path / "messages.db"
+    # innocent owns one OLD file; flooder owns nine NEWER files. Oldest-first
+    # would delete the innocent file; fair eviction must spare it.
+    _file_of_size(updir / "innocent.bin", kb=10, mtime_offset=10000)
+    for i in range(9):
+        _file_of_size(updir / f"flood{i}.bin", kb=10, mtime_offset=i)
+    _make_owner_db(
+        db,
+        [("innocent.bin", "innocent")]
+        + [(f"flood{i}.bin", "flooder") for i in range(9)],
+    )
+
+    # 10 files x 10 KiB = 100 KiB; cap ~50 KiB forces about half to be deleted.
+    delete_files_over_size(str(updir), max_size_mb=50 / 1024, owner_db=str(db))
+
+    survivors = {p.name for p in updir.iterdir()}
+    assert "innocent.bin" in survivors  # protected despite being the oldest
+    assert sum(1 for n in survivors if n.startswith("flood")) < 9
+
+
+def test_over_size_files_evicts_orphans_first(updir, tmp_path):
+    db = tmp_path / "messages.db"
+    # An orphan (no owning message) and one owned file, both pushing over cap.
+    # The orphan — dead weight — goes first even though it is the newest.
+    _file_of_size(updir / "owned.bin", kb=10, mtime_offset=10000)  # oldest
+    _file_of_size(updir / "orphan.bin", kb=10, mtime_offset=0)  # newest
+    _make_owner_db(db, [("owned.bin", "alice")])
+
+    delete_files_over_size(str(updir), max_size_mb=10 / 1024, owner_db=str(db))
+
+    survivors = {p.name for p in updir.iterdir()}
+    assert "orphan.bin" not in survivors
+    assert "owned.bin" in survivors
+
+
+def test_over_size_files_missing_owner_db_falls_back_to_oldest(updir, tmp_path):
+    # A non-existent owner_db must not raise; eviction falls back to oldest-first.
+    for i in range(5):
+        _file_of_size(updir / f"f{i}.bin", kb=10, mtime_offset=(5 - i) * 100)
+    delete_files_over_size(
+        str(updir), max_size_mb=25 / 1024, owner_db=str(tmp_path / "nope.db")
+    )
+    survivors = {p.name for p in updir.iterdir()}
+    assert "f0.bin" not in survivors  # oldest removed first

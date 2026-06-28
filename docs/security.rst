@@ -41,12 +41,12 @@ case-insensitive.
 
 **Brute-force protection**
 
-Failed login attempts sleep for 3 seconds before the server responds. This
-limits brute-force attacks to approximately 20 attempts per minute per
-connection, and — because it applies to every failed attempt — also slows
-password spraying across many accounts from a single source. For stronger
-protection, use a reverse proxy with rate limiting (e.g. Nginx's
-``limit_req_zone``).
+The ``/login`` route is **rate limited per client IP** (see
+`Denial-of-service mitigations`_ below), which bounds how fast credentials can
+be guessed or sprayed from a single source without parking a worker thread on a
+delay. (Earlier versions slept for 3 seconds on each failed attempt; that was
+removed because a held sleep is itself a way to exhaust the worker pool — the
+per-IP rate limit achieves the same throttling without tying up threads.)
 
 In addition, **account lockout** temporarily disables an account after too many
 consecutive failed logins. Once ``max_login_attempts`` (default ``5``)
@@ -55,8 +55,9 @@ consecutive failures are recorded, the account is locked for
 rejected without the password being checked. A successful login resets the
 counter. Both values are configured in ``settings.json`` (see
 :doc:`configuration`), and setting ``max_login_attempts`` to ``0`` disables the
-feature. Lockout is tracked per account rather than per IP, so it complements —
-but does not replace — proxy-level rate limiting.
+feature. Lockout is tracked per account rather than per IP, so it complements
+the per-IP rate limit: the rate limit caps total guessing volume from one
+source, while lockout protects a specific targeted account.
 
 **Password reset tokens**
 
@@ -174,7 +175,74 @@ deploying in a less-trusted environment.
 A single upload is capped at ``max_upload_size_mb`` (default 25 MiB) — enforced
 both per file in the route and globally by Flask's ``MAX_CONTENT_LENGTH``, which
 rejects an oversized request before the handler runs. Avatar uploads are capped
-separately by ``max_avatar_size_mb`` (default 5 MiB).
+separately by ``max_avatar_size_mb`` (default 5 MiB). The rate at which a single
+account can upload is bounded by the per-user ``send`` and ``avatar`` rate limits
+(see `Denial-of-service mitigations`_).
+
+Disk use is also bounded in aggregate by ``max_upload_dir_size_mb``. When the
+``uploads/`` directory exceeds that cap, files are evicted **fairly**: a file's
+owner is the sender of the message that references it, and the uploader currently
+consuming the most space has their oldest files removed first (orphaned files
+with no owning message go first of all). This means a single account that floods
+the directory has its *own* uploads purged before any other user's attachments —
+a flood cannot be used to delete other people's files. The same fairness applies
+to the message database cap ``max_message_db_size_mb`` (the heaviest sender is
+trimmed first).
+
+Denial-of-service mitigations
+-----------------------------
+
+Because anyone with an account (or, for some routes, any unauthenticated
+visitor) can send requests, MiniMost includes in-process throttles to blunt the
+most accessible denial-of-service (DoS) attacks. These use only the Python
+standard library and Flask — no extra dependency — and are implemented in
+:mod:`minimost.ratelimit`. They are enabled by default and can be turned off
+with the ``rate_limit_enabled`` key in ``settings.json``.
+
+**Request rate limiting.** Expensive or abuse-prone endpoints are capped using a
+thread-safe sliding-window counter:
+
+- ``/login``, ``/signup`` and the password-reset routes are limited **per client
+  IP** — this throttles credential guessing, account-creation floods (the
+  classic "create many accounts" attack), and repeated password-hashing (PBKDF2)
+  work.
+- ``/send``, avatar upload, and private-channel creation are limited **per
+  authenticated user** — this throttles message/attachment floods and channel
+  spam.
+
+The defaults are deliberately generous, so ordinary interactive use never trips
+them; they exist only to stop pathological volume. Each limit is an integer
+count over a window in seconds and can be tuned via the ``rate_limits`` object in
+``settings.json`` (see :doc:`configuration`). A throttled request receives
+``429 Too Many Requests`` with a ``Retry-After`` header.
+
+On the rare occasion a real user does hit a limit, the response is surfaced
+rather than failing silently: the in-app actions (sending a message, uploading
+an avatar, creating a channel) show a brief toast with the wait time and keep the
+user's input intact so it can be retried, and the login/signup pages re-render
+with the message as a normal inline form error instead of a raw status body.
+
+**Concurrent SSE stream cap.** The live update stream (``GET /events``) holds one
+worker thread open for the life of the connection, so a client that opens many
+streams could exhaust the worker pool and lock everyone out. The number of
+simultaneous streams **per user** is capped at
+``max_event_streams_per_user`` (default 12 — far more than the handful of browser
+tabs a real user keeps open); beyond that, new streams get ``429`` until an
+existing one closes.
+
+**Fair retention eviction.** The ``uploads/`` and message-database size caps
+evict the heaviest-consuming account first rather than the globally oldest data,
+so a flood cannot delete other users' history or files (see `File Upload
+Security`_).
+
+**Scope.** These counters live in each worker process, so with several Gunicorn
+workers the effective ceiling is *limit × workers*. That is intentional: the goal
+is to stop pathological abuse cheaply, not to enforce a globally exact quota. For
+a hard, cross-worker ceiling — and to throttle traffic before it ever reaches the
+application — put a reverse proxy in front (e.g. Nginx ``limit_req`` /
+``limit_conn``). The in-process limits complement that layer rather than replace
+it. Note that ``remote_addr`` is the proxy's address unless the proxy forwards
+the real client IP and the deployment is configured to trust it.
 
 Channel Access Control
 ----------------------
@@ -222,11 +290,14 @@ Flask's signed, ``SameSite=Lax`` session cookie for authentication; these
 endpoints do not require CSRF tokens as they are not reachable via cross-origin
 HTML forms.
 
-**No rate limiting on signup**
+**Open registration**
 
-Any unauthenticated visitor can create an account. If exposing MiniMost to
-the internet, consider adding registration invite codes or IP-based rate
-limiting on the ``/signup`` route.
+Any unauthenticated visitor can create an account. Signup is rate limited per
+client IP (see `Denial-of-service mitigations`_), which bounds account-creation
+floods, but there is no invite-code or approval gate: anyone who can reach the
+page can register. If exposing MiniMost to the internet, consider adding
+registration invite codes, an approval step, or stricter proxy-level limits on
+the ``/signup`` route.
 
 **TLS / HTTPS**
 

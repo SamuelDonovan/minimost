@@ -345,6 +345,11 @@ document
       if (r.ok) {
         globalThis.usersWithAvatars.add(CURRENT_USER);
         _refreshUserAvatar(CURRENT_USER);
+      } else if (r.status === 429) {
+        showToast(
+          (await r.text()) ||
+            "You're updating your avatar too quickly. Please slow down.",
+        );
       }
       _pendingAvatarBlob = null;
     } else if (_removeAvatar) {

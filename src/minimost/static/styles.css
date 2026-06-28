@@ -3044,3 +3044,42 @@ a {
   width: 12px;
   text-align: center;
 }
+
+/* Toast notifications — transient, non-blocking feedback (e.g. when a rate
+   limit is hit). Stacked bottom-centre, above modals, and click-through except
+   for the toasts themselves. */
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: min(90vw, 420px);
+}
+
+.toast {
+  background: #2d2d2d;
+  color: #eee;
+  border: 1px solid #c0392b;
+  border-left: 4px solid #c0392b;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  pointer-events: auto;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}

@@ -47,6 +47,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # Local Imports
 from . import common
 from . import presence
+from . import ratelimit
 
 from .paths import data_dir
 
@@ -228,6 +229,17 @@ def about():
 
 
 @auth_bp.route("/login", methods=["POST"])
+@ratelimit.rate_limit(
+    "login",
+    by="ip",
+    # A login POST is a full-page navigation, so surface the limit as the page's
+    # normal inline error rather than replacing it with a raw 429 body.
+    on_limit=lambda retry: (
+        render_template(_LOGIN_TEMPLATE, error=ratelimit.rate_limit_message(retry)),
+        429,
+        {"Retry-After": str(retry)},
+    ),
+)
 def login_post():
     """Authenticate a user from the login form.
 
@@ -244,11 +256,13 @@ def login_post():
 
     On failure:
 
-    * Waits **3 seconds** before responding to slow down brute-force
-      attempts.
     * Re-renders ``login.html`` with a generic ``"Invalid credentials"``
       error (username and password failures are intentionally
       indistinguishable).
+
+    **Brute-force defence:** this route is rate limited per client IP (see
+    :func:`minimost.ratelimit.rate_limit`), which bounds how fast credentials
+    can be guessed without parking a worker thread on a delay.
 
     **Account lockout:** consecutive failed attempts against an existing
     account are counted in ``users.failed_attempts``.  Once they reach
@@ -271,7 +285,6 @@ def login_post():
     # No valid password can exceed this (enforced at signup/reset); reject an
     # oversized one cheaply rather than spending CPU hashing it.
     if len(password) > _MAX_PASSWORD_LEN:
-        time.sleep(3)
         return render_template(
             _LOGIN_TEMPLATE, error="Invalid credentials", username=username
         )
@@ -295,7 +308,6 @@ def login_post():
     # Account currently locked — reject without checking the password.
     if row and lockout_enabled and row[3] and now < row[3]:
         db.close()
-        time.sleep(3)
         remaining = int((row[3] - now) // 60) + 1
         return render_template(
             _LOGIN_TEMPLATE, error=_lockout_message(remaining), username=username
@@ -314,7 +326,6 @@ def login_post():
                 )
                 db.commit()
                 db.close()
-                time.sleep(3)
                 return render_template(
                     _LOGIN_TEMPLATE,
                     error=_lockout_message(lockout_seconds // 60),
@@ -326,8 +337,11 @@ def login_post():
             )
             db.commit()
         db.close()
-        # Delay to prevent users from brute forcing others passwords
-        time.sleep(3)
+        # Brute force is bounded two ways without parking a worker thread on a
+        # sleep: per-IP request rate limiting on this route (see the
+        # ``@rate_limit("login")`` decorator) caps how fast an attacker can guess,
+        # and per-account lockout (above) disables a targeted account after
+        # ``max_login_attempts`` failures.
         return render_template(
             _LOGIN_TEMPLATE, error="Invalid credentials", username=username
         )
@@ -435,6 +449,15 @@ def signup():
 
 
 @auth_bp.route("/signup", methods=["POST"])
+@ratelimit.rate_limit(
+    "signup",
+    by="ip",
+    on_limit=lambda retry: (
+        render_template(_SIGNUP_TEMPLATE, error=ratelimit.rate_limit_message(retry)),
+        429,
+        {"Retry-After": str(retry)},
+    ),
+)
 def signup_post():
     """Create a new user account from the registration form.
 
@@ -534,6 +557,17 @@ def _validate_password_reset(password: str, confirm: str):
 
 @auth_bp.route("/change-password", methods=["POST"])
 @login_required
+@ratelimit.rate_limit(
+    "password_reset",
+    by="user",
+    # This endpoint is called via fetch and its caller reads {"error": ...} from
+    # JSON, so report the limit in that same shape rather than as plain text.
+    on_limit=lambda retry: (
+        {"error": ratelimit.rate_limit_message(retry)},
+        429,
+        {"Retry-After": str(retry)},
+    ),
+)
 def change_password_post():
     """Change the logged-in user's password from the account modal.
 
@@ -608,6 +642,7 @@ def reset_password_form(token):
 
 
 @auth_bp.route("/reset-password/<token>", methods=["POST"])
+@ratelimit.rate_limit("password_reset", by="ip")
 def reset_password_post(token):
     """Process a password reset form submission.
 

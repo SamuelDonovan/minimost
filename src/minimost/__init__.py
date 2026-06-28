@@ -107,6 +107,23 @@ def _max_avatar_size_mb() -> int:
     return 5
 
 
+def _ratelimit_enabled() -> bool:
+    """Return whether abuse rate limiting is on (default ``True``).
+
+    Read from the ``rate_limit_enabled`` key in ``settings.json`` so an operator
+    can disable the in-process DoS throttles (e.g. when a reverse proxy already
+    enforces stricter limits). Any read/parse error leaves it enabled.
+    """
+    import json
+
+    with suppress(Exception):
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("rate_limit_enabled")
+        if isinstance(value, bool):
+            return value
+    return True
+
+
 def _stun_port() -> int:
     """Return the configured STUN UDP port (default 3478).
 
@@ -221,6 +238,12 @@ def create_app():
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SECURE"] = not os.environ.get("MINIMOST_SKIP_TLS")
+
+    # In-process DoS throttles (per-IP/per-user rate limits and the per-user
+    # concurrent SSE-stream cap). Default on; an operator can disable via the
+    # ``rate_limit_enabled`` key in settings.json, and the test suite turns it
+    # off so functional tests are not throttled.
+    app.config["RATELIMIT_ENABLED"] = _ratelimit_enabled()
 
     # Cache static assets instead of serving them with the Flask default of
     # ``Cache-Control: no-cache``. Under the built-in dev server (the `minimost`
@@ -534,7 +557,14 @@ def _run_cleanup_once(upload_dir, users_dir, retention: tuple) -> None:
         file_days=file_days,
     )
     if max_upload_mb:
-        delete_files_over_size(str(upload_dir), max_size_mb=max_upload_mb)
+        # Pass the shared message DB so eviction is fair across uploaders (a
+        # file's owner is the sender of the message that references it), rather
+        # than purging the globally oldest files regardless of who uploaded them.
+        delete_files_over_size(
+            str(upload_dir),
+            max_size_mb=max_upload_mb,
+            owner_db=str(common.shared_db_path()),
+        )
     delete_messages_older_than(str(users_dir), days=msg_days)
     if max_db_mb:
         delete_messages_over_size(str(common.shared_db_path()), max_size_mb=max_db_mb)

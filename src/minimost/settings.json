@@ -9,5 +9,15 @@
   "max_avatar_size_mb": 5,
   "stun_port": 3478,
   "max_login_attempts": 5,
-  "lockout_duration_minutes": 15
+  "lockout_duration_minutes": 15,
+  "rate_limit_enabled": true,
+  "max_event_streams_per_user": 12,
+  "rate_limits": {
+    "login": [60, 60],
+    "signup": [20, 3600],
+    "password_reset": [30, 3600],
+    "send": [240, 60],
+    "avatar": [60, 3600],
+    "create_channel": [60, 3600]
+  }
 }

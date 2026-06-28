@@ -27,7 +27,17 @@ Example (showing all available keys with their defaults)::
         "max_avatar_size_mb": 5,
         "stun_port": 3478,
         "max_login_attempts": 5,
-        "lockout_duration_minutes": 15
+        "lockout_duration_minutes": 15,
+        "rate_limit_enabled": true,
+        "max_event_streams_per_user": 12,
+        "rate_limits": {
+            "login": [60, 60],
+            "signup": [20, 3600],
+            "password_reset": [30, 3600],
+            "send": [240, 60],
+            "avatar": [60, 3600],
+            "create_channel": [60, 3600]
+        }
     }
 
 MiniMost limits how much disk it uses in two complementary ways. **Age-based**
@@ -74,9 +84,12 @@ content. The two are independent, so you can cap by age, by size, or both.
 ``max_message_db_size_mb``
     Total **size cap**, in megabytes, for the shared message database
     ``users/messages.db``. When the database exceeds this size, the cleanup
-    thread permanently deletes the **oldest** messages (lowest timestamp first),
-    along with their reactions and search-index entries, until it fits — then
-    compacts the file so the space is returned to disk. This complements
+    thread permanently deletes messages — along with their reactions and
+    search-index entries — until it fits, then compacts the file so the space is
+    returned to disk. Eviction is **fair**: the account currently consuming the
+    most space has its oldest messages removed first, so one user flooding the
+    channel cannot purge everyone else's history (when a single sender dominates,
+    this is equivalent to deleting the oldest messages first). This complements
     ``message_retention_days``: age-based retention bounds *how old* messages
     get, while this bounds *how large* the database grows, regardless of age.
     Defaults to ``1024``. Set to ``0`` (or any non-positive value) to disable
@@ -93,8 +106,11 @@ content. The two are independent, so you can cap by age, by size, or both.
 ``max_upload_dir_size_mb``
     Total **size cap**, in megabytes, for the ``uploads/`` attachment directory.
     When the combined size of all stored attachments exceeds this value, the
-    cleanup thread deletes the **oldest** files (by modification time) until the
-    directory fits. This complements ``image_retention_days`` /
+    cleanup thread deletes files until the directory fits. Eviction is **fair**:
+    orphaned files (whose message was deleted) go first, then the uploader
+    consuming the most space has their oldest files removed first, so one user
+    flooding the directory cannot delete everyone else's attachments. This
+    complements ``image_retention_days`` /
     ``file_retention_days``: age-based retention bounds *how old* attachments
     get, while this bounds the *total* footprint — useful when a burst of large
     uploads would otherwise fill the disk before aging out. Defaults to ``2048``.
@@ -149,6 +165,50 @@ content. The two are independent, so you can cap by age, by size, or both.
        lockout message confirms that the account exists, which is a deliberate
        trade-off for clear user feedback; the rest of the login flow keeps
        invalid-username and invalid-password failures indistinguishable.
+
+``rate_limit_enabled``
+    Master switch for the in-process denial-of-service throttles — the per-route
+    request rate limits and the per-user concurrent ``/events`` stream cap.
+    Defaults to ``true``. Set to ``false`` to disable them entirely, e.g. when a
+    reverse proxy already enforces stricter limits. Read fresh when the
+    application starts, so a change requires a **server restart**. See the
+    denial-of-service section of :doc:`security`.
+
+``max_event_streams_per_user``
+    Maximum number of live update streams (``GET /events``) a single user may
+    hold open at once. Each open browser tab uses one stream and each holds a
+    worker thread for its lifetime, so this caps how many threads one account can
+    occupy. Defaults to ``12`` — comfortably more than the handful of tabs a real
+    user keeps open. Beyond the cap, new streams receive ``429 Too Many
+    Requests`` until an existing one closes. Read fresh on each connection, so
+    changes take effect without a restart.
+
+``rate_limits``
+    Per-route request rate limits, as an object mapping an action name to a
+    ``[max, window_seconds]`` pair: at most *max* requests are allowed within any
+    trailing *window_seconds*, after which the route returns ``429 Too Many
+    Requests`` with a ``Retry-After`` header. Only the named actions are
+    configurable; any omitted action keeps its built-in default. The defaults are
+    deliberately generous so normal use never trips them:
+
+    - ``login`` — ``[60, 60]`` (60/min per client IP)
+    - ``signup`` — ``[20, 3600]`` (20/hour per client IP)
+    - ``password_reset`` — ``[30, 3600]`` (30/hour per client IP; also covers
+      change-password)
+    - ``send`` — ``[240, 60]`` (240/min per user — messages and attachments)
+    - ``avatar`` — ``[60, 3600]`` (60/hour per user)
+    - ``create_channel`` — ``[60, 3600]`` (60/hour per user)
+
+    Login, signup, and password-reset are keyed by client IP; send, avatar, and
+    create_channel by the logged-in user. Read fresh on each request (cached by
+    file mtime), so changes take effect without a restart.
+
+    .. note::
+
+       These counters are per worker process, so with several Gunicorn workers
+       the effective ceiling is *limit × workers*. They stop pathological abuse
+       cheaply; for a hard, cross-worker ceiling, also configure rate limiting at
+       a reverse proxy (e.g. Nginx ``limit_req`` / ``limit_conn``).
 
 .. warning::
 

@@ -69,7 +69,14 @@ document.getElementById("private-ch-create-btn").onclick = async () => {
   });
 
   if (!resp.ok) {
-    alert("Failed to create channel: " + (await resp.text()));
+    const text = await resp.text();
+    if (resp.status === 429) {
+      showToast(
+        text || "You're creating channels too quickly. Please slow down.",
+      );
+    } else {
+      alert("Failed to create channel: " + text);
+    }
     return;
   }
 

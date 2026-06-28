@@ -20,3 +20,4 @@ MiniMost Python package, generated from docstrings using
    database
    preview
    clean
+   ratelimit

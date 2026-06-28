@@ -11,6 +11,7 @@ def isolated_dbs(tmp_path, monkeypatch):
     import minimost.common as common_mod
     import minimost.preview as preview_mod
     import minimost.chat as chat_mod
+    import minimost.ratelimit as ratelimit_mod
 
     auth_db = str(tmp_path / "auth.db")
     presence_db = str(tmp_path / "presence.db")
@@ -33,6 +34,9 @@ def isolated_dbs(tmp_path, monkeypatch):
     monkeypatch.setenv("MINIMOST_SKIP_TLS", "1")
 
     preview_mod._CACHE.clear()
+    # Clear in-process rate-limit / stream-cap state so one test's requests never
+    # count against another's.
+    ratelimit_mod.reset_all()
 
     from minimost.database import init_auth_db
 
@@ -61,6 +65,10 @@ def app(isolated_dbs):
     application = create_app()
     application.config["TESTING"] = True
     application.config["CSRF_ENABLED"] = False
+    # Functional tests fire many requests in tight loops; leave DoS throttling
+    # off here so it never interferes. The limiter is exercised directly in
+    # test_ratelimit.py, which re-enables the flag.
+    application.config["RATELIMIT_ENABLED"] = False
     return application
 
 

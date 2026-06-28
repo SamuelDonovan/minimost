@@ -77,6 +77,7 @@ from . import common
 from . import presence
 from . import auth
 from . import preview as preview_mod
+from . import ratelimit
 from .paths import data_dir
 
 chat_bp = Blueprint("chat", __name__)
@@ -937,6 +938,7 @@ def get_avatar(username):
 
 @chat_bp.route("/avatar", methods=["POST"])
 @auth.login_required
+@ratelimit.rate_limit("avatar", by="user")
 def upload_avatar():
     """Upload and store the current user's avatar.
 
@@ -1351,6 +1353,7 @@ def post_welcome_message(new_user: str) -> None:
 
 @chat_bp.route("/send/<channel>", methods=["POST"])
 @auth.login_required
+@ratelimit.rate_limit("send", by="user")
 def send(channel):
     """Send a message (and/or image attachments) to a channel.
 
@@ -2586,6 +2589,7 @@ def link_preview():
 
 @chat_bp.route("/private_channels/create", methods=["POST"])
 @auth.login_required
+@ratelimit.rate_limit("create_channel", by="user")
 def create_private_channel():
     """Create a new private channel.
 

@@ -266,25 +266,40 @@ Edit `settings.json` (bundled with the package at `src/minimost/settings.json`) 
   "max_avatar_size_mb": 5,
   "stun_port": 3478,
   "max_login_attempts": 5,
-  "lockout_duration_minutes": 15
+  "lockout_duration_minutes": 15,
+  "rate_limit_enabled": true,
+  "max_event_streams_per_user": 12,
+  "rate_limits": {
+    "login": [60, 60],
+    "signup": [20, 3600],
+    "password_reset": [30, 3600],
+    "send": [240, 60],
+    "avatar": [60, 3600],
+    "create_channel": [60, 3600]
+  }
 }
 ```
 
-MiniMost bounds disk usage two complementary ways: **age-based** retention deletes content once it gets old enough, and **size-based** caps delete the oldest content once a store grows past a limit (whichever triggers first). Note the difference between the two upload settings: `max_upload_size_mb` is a per-file ceiling enforced at upload time, while `max_upload_dir_size_mb` caps the _total_ size of all stored attachments.
+MiniMost bounds disk usage two complementary ways: **age-based** retention deletes content once it gets old enough, and **size-based** caps delete content once a store grows past a limit (whichever triggers first). Size-cap eviction is **fair** — the account consuming the most space is trimmed first — so one user flooding messages or uploads cannot delete everyone else's data. Note the difference between the two upload settings: `max_upload_size_mb` is a per-file ceiling enforced at upload time, while `max_upload_dir_size_mb` caps the _total_ size of all stored attachments.
 
-| Key                        | Default       | Description                                                                                                                                   |
-| -------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `channels`                 | `["general"]` | Public channel names shown in the sidebar. Restart required.                                                                                  |
-| `image_retention_days`     | `30`          | Days before image attachments are auto-deleted. No restart needed.                                                                            |
-| `file_retention_days`      | `30`          | Days before non-image attachments are auto-deleted. No restart needed.                                                                        |
-| `message_retention_days`   | `770`         | Days before messages are permanently deleted from the database. No restart needed.                                                            |
-| `max_message_db_size_mb`   | `1024`        | Total size cap (MB) for the message database `users/messages.db`; oldest messages are deleted when exceeded. `0` disables. No restart needed. |
-| `max_upload_dir_size_mb`   | `2048`        | Total size cap (MB) for the `uploads/` attachment directory; oldest files are deleted when exceeded. `0` disables. No restart needed.         |
-| `max_upload_size_mb`       | `25`          | Maximum size in MB for a **single** file attachment, rejected at upload time. Restart required.                                               |
-| `max_avatar_size_mb`       | `5`           | Maximum size in MB for a profile avatar upload. Restart required.                                                                             |
-| `stun_port`                | `3478`        | UDP port for the bundled STUN server used by WebRTC calls/screen share. Must be `1`–`65535`. Restart required.                                |
-| `max_login_attempts`       | `5`           | Consecutive failed logins before an account is locked. Set to `0` to disable lockout. No restart needed.                                      |
-| `lockout_duration_minutes` | `15`          | How long an account stays locked after too many failed logins. No restart needed.                                                             |
+MiniMost also includes built-in **denial-of-service throttles** (no external dependency): per-IP/per-user [rate limits](docs/security.rst) on abuse-prone routes (login, signup, message send, uploads) and a cap on concurrent live-update streams per user. They are generous enough that normal use never trips them; tune or disable them with the `rate_limit_enabled`, `max_event_streams_per_user`, and `rate_limits` keys below.
+
+| Key                          | Default       | Description                                                                                                                                                         |
+| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `channels`                   | `["general"]` | Public channel names shown in the sidebar. Restart required.                                                                                                        |
+| `image_retention_days`       | `30`          | Days before image attachments are auto-deleted. No restart needed.                                                                                                  |
+| `file_retention_days`        | `30`          | Days before non-image attachments are auto-deleted. No restart needed.                                                                                              |
+| `message_retention_days`     | `770`         | Days before messages are permanently deleted from the database. No restart needed.                                                                                  |
+| `max_message_db_size_mb`     | `1024`        | Total size cap (MB) for the message database `users/messages.db`; the heaviest sender's oldest messages are deleted when exceeded. `0` disables. No restart needed. |
+| `max_upload_dir_size_mb`     | `2048`        | Total size cap (MB) for the `uploads/` attachment directory; the heaviest uploader's oldest files are deleted when exceeded. `0` disables. No restart needed.       |
+| `max_upload_size_mb`         | `25`          | Maximum size in MB for a **single** file attachment, rejected at upload time. Restart required.                                                                     |
+| `max_avatar_size_mb`         | `5`           | Maximum size in MB for a profile avatar upload. Restart required.                                                                                                   |
+| `stun_port`                  | `3478`        | UDP port for the bundled STUN server used by WebRTC calls/screen share. Must be `1`–`65535`. Restart required.                                                      |
+| `max_login_attempts`         | `5`           | Consecutive failed logins before an account is locked. Set to `0` to disable lockout. No restart needed.                                                            |
+| `lockout_duration_minutes`   | `15`          | How long an account stays locked after too many failed logins. No restart needed.                                                                                   |
+| `rate_limit_enabled`         | `true`        | Master switch for the built-in DoS throttles (request rate limits + SSE stream cap). Restart required.                                                              |
+| `max_event_streams_per_user` | `12`          | Max concurrent live-update (`/events`) streams a single user may hold open. Excess connections get `429`. No restart needed.                                        |
+| `rate_limits`                | _(see above)_ | Per-route request limits as `{action: [max, window_seconds]}`. Omitted actions keep their default. Returns `429` when exceeded. No restart needed.                  |
 
 ---
 

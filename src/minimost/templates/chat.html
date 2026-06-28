@@ -1943,6 +1943,36 @@ function applyMessages(data, requestedChannel = channel) {
             }
 }
 
+// Transient, non-blocking notification (e.g. when a rate limit is hit). Stacks
+// in #toast-container and auto-dismisses. Declared here in the page's main
+// script so every chat-*.js file can call it. Global by design.
+function showToast(message, duration = 5000) {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    const el = document.createElement("div");
+    el.className = "toast";
+    el.setAttribute("role", "status");
+    el.textContent = message;
+    container.appendChild(el);
+    // Reveal on the next frame so the CSS transition actually runs.
+    requestAnimationFrame(() => el.classList.add("show"));
+    setTimeout(() => {
+        el.classList.remove("show");
+        setTimeout(() => el.remove(), 200);
+    }, duration);
+}
+
+// Show a rate-limit (429) response as a toast, using the server's message.
+async function showRateLimitToast(response, fallback) {
+    let message = "";
+    try {
+        message = (await response.text()).trim();
+    } catch {
+        message = "";
+    }
+    showToast(message || fallback);
+}
+
 // Send messages
 function send() {
     const text = msgBox.value.trim();
@@ -1991,6 +2021,13 @@ function send() {
                 counter.classList.remove("hidden");
                 counter.classList.add("over-limit");
             }
+        } else if (r.status === 429) {
+            // Rate limited. Keep the text in the box so nothing is lost and the
+            // user can resend once the brief cooldown passes.
+            showRateLimitToast(
+                r,
+                "You're sending messages too quickly. Please slow down.",
+            );
         }
     });
 }
@@ -2214,6 +2251,7 @@ function scrollToMsg(msgId) {
 <script src="{{ url_for('static', filename='auth-password-rules.js') }}"></script>
 <script src="{{ url_for('static', filename='auth-password-field.js') }}"></script>
 <div id="pc-member-tooltip"></div>
+<div id="toast-container" aria-live="polite" aria-atomic="false"></div>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js');
