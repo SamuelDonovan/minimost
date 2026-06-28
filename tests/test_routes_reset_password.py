@@ -286,11 +286,18 @@ def test_cli_reset_sends_dm():
 
 def test_cli_reset_no_dm_when_no_user_db():
     """If user DB hasn't been created yet, the token is still stored."""
-    _add_user("alice")
-    # Don't call init_user_db — simulate a user with no DB file
-    db_path = common_mod.shared_db_path()
-    if db_path.exists():
-        db_path.unlink()
+    # Register the user but skip init_user_db so the shared message DB is never
+    # created — simulating an account whose messages.db does not exist yet.
+    # (We avoid creating-then-deleting the file because on Windows the WAL-mode
+    # SQLite handle keeps it locked, so unlink() raises PermissionError.)
+    db = sqlite3.connect(auth_mod.AUTH_DB)
+    db.execute(
+        "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+        ("alice", generate_password_hash("Password1!")),
+    )
+    db.commit()
+    db.close()
+    assert not common_mod.shared_db_path().exists()
 
     from minimost.__main__ import _cmd_reset_password
 
