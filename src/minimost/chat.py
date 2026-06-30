@@ -73,6 +73,7 @@ from werkzeug.utils import secure_filename as _secure_filename
 from werkzeug.security import check_password_hash
 
 # Local Imports
+from . import audit
 from . import common
 from . import presence
 from . import auth
@@ -1115,6 +1116,7 @@ def delete_account():
     adb.close()
 
     session.clear()
+    audit.account_deleted(user, delete_type)
     return jsonify({"status": "ok"})
 
 

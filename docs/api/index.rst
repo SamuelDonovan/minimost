@@ -21,3 +21,4 @@ MiniMost Python package, generated from docstrings using
    preview
    clean
    ratelimit
+   audit

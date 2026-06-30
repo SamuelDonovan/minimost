@@ -45,6 +45,7 @@ from flask import session, redirect, request, render_template, Blueprint
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Local Imports
+from . import audit
 from . import common
 from . import presence
 from . import ratelimit
@@ -309,6 +310,7 @@ def login_post():
     if row and lockout_enabled and row[3] and now < row[3]:
         db.close()
         remaining = int((row[3] - now) // 60) + 1
+        audit.login_failure(canonical, detail="account locked")
         return render_template(
             _LOGIN_TEMPLATE, error=_lockout_message(remaining), username=username
         )
@@ -326,6 +328,8 @@ def login_post():
                 )
                 db.commit()
                 db.close()
+                audit.login_failure(canonical)
+                audit.account_lockout(canonical)
                 return render_template(
                     _LOGIN_TEMPLATE,
                     error=_lockout_message(lockout_seconds // 60),
@@ -337,6 +341,10 @@ def login_post():
             )
             db.commit()
         db.close()
+        # Log every failed attempt, including those against a non-existent
+        # account (``row`` is None) so credential-guessing is visible in the
+        # trail. The username is recorded as typed; no password is ever logged.
+        audit.login_failure(username if not row else canonical)
         # Brute force is bounded two ways without parking a worker thread on a
         # sleep: per-IP request rate limiting on this route (see the
         # ``@rate_limit("login")`` decorator) caps how fast an attacker can guess,
@@ -359,6 +367,7 @@ def login_post():
     session["user"] = canonical
     common.init_user_db(canonical)
     presence.update_presence(canonical, "active")
+    audit.login_success(canonical)
     return redirect("/")
 
 
@@ -380,6 +389,7 @@ def logout():
     presence.update_presence(user, "offline")
     presence.set_override(user, None)
     session.clear()
+    audit.logout(user)
     return redirect("/login")
 
 
@@ -542,6 +552,8 @@ def signup_post():
 
     session["user"] = username
     presence.update_presence(username, "active")
+    audit.account_created(username)
+    audit.login_success(username)
     return redirect("/")
 
 
@@ -601,6 +613,7 @@ def change_password_post():
 
     if not row or not check_password_hash(row[0], current):
         db.close()
+        audit.password_changed(username, outcome="failure")
         return {"error": "Current password is incorrect"}, 400
 
     error = _validate_password_reset(password, confirm)
@@ -614,6 +627,7 @@ def change_password_post():
     )
     db.commit()
     db.close()
+    audit.password_changed(username)
     return {"ok": True}
 
 
@@ -685,6 +699,7 @@ def reset_password_post(token):
     db.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = ?", (token,))
     db.commit()
     db.close()
+    audit.password_reset(username)
     return render_template(
         _RESET_PW_TEMPLATE, token=None, error=None, success=True, username=username
     )

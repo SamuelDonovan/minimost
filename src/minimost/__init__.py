@@ -36,6 +36,7 @@ from pathlib import Path
 
 from flask import Flask, abort, request, send_file, session
 
+from . import audit
 from . import calls as calls_mod
 from . import chat as chat_mod
 from . import common, presence
@@ -335,6 +336,24 @@ def create_app():
         submitted = request.form.get("csrf_token", "")
         if not expected or not secrets.compare_digest(expected, submitted):
             abort(403)
+
+    @app.after_request
+    def _audit_access_denied(response):
+        """Record access-control denials (forbidden resource / failed CSRF).
+
+        A single hook on the response captures every 401/403 the app emits —
+        the CSRF rejection in :func:`_enforce_csrf`, the explicit
+        ``"forbidden", 403`` returns guarding channel/DM access, and any
+        ``abort(403)`` — without threading an audit call through each route.
+        Only the method and path are logged (no bodies, no query string), so
+        no message content or token is written to the trail.
+        """
+        if response.status_code in (401, 403):
+            audit.access_denied(
+                session.get("user"),
+                "{0} {1}".format(request.method, request.path),
+            )
+        return response
 
     @app.after_request
     def _signal_state_change(response):

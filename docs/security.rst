@@ -264,6 +264,39 @@ confines results to the set of channels the caller may read), and to
 DMs or a private channel they don't belong to. All queries are parameterised, so
 the channel identifier is never interpolated into SQL.
 
+Audit logging
+-------------
+
+MiniMost writes a security audit trail (:mod:`minimost.audit`) to ``audit.log``
+in the data root (see :func:`minimost.paths.data_dir`; on a packaged install
+that is the systemd ``StateDirectory``, e.g. ``/var/lib/minimost``). Each record
+is a single, machine-parseable line carrying the five fields an auditor needs —
+*what* happened, *when* (ISO-8601 UTC), *where* it came from (source IP), *who*
+(user identity), and the *outcome*::
+
+    2026-06-29T18:04:11Z event=login outcome=failure user=alice src=10.0.0.5
+
+The following security-relevant events are recorded:
+
+- authentication: successful login, failed login (including attempts against a
+  non-existent account and against a locked account), and logout;
+- account lifecycle: account creation, account removal (soft/hard), and an
+  account being locked after consecutive failed logins;
+- credential changes: password change and password reset (success and failure);
+- access-control denials: any ``401``/``403`` response, which covers failed CSRF
+  validation and attempts to reach a channel, DM, or message the caller may not
+  access.
+
+Records are written with the standard-library :mod:`logging` module only (no new
+dependency). Interpolated values are stripped of control characters before they
+are written, so a newline smuggled through a username or path cannot forge or
+split a record (log injection). Passwords, session tokens, and message bodies
+are never written to the trail. The file is append-only and safe for multiple
+Gunicorn workers to share; operators should forward it to a central
+aggregator/SIEM (for example via journald or rsyslog) and restrict its
+permissions, since it is the authoritative record of authentication and
+access-control activity.
+
 Known Limitations
 -----------------
 

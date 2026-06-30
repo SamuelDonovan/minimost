@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 @pytest.fixture(autouse=True)
 def isolated_dbs(tmp_path, monkeypatch):
     """Redirect all DB paths to a temp directory and initialise clean schemas."""
+    import minimost.audit as audit_mod
     import minimost.auth as auth_mod
     import minimost.presence as presence_mod
     import minimost.common as common_mod
@@ -32,6 +33,10 @@ def isolated_dbs(tmp_path, monkeypatch):
     # Skip the (relatively slow) TLS keygen in create_app for every test; the
     # certificate logic is covered directly in test_pki.py instead.
     monkeypatch.setenv("MINIMOST_SKIP_TLS", "1")
+    # Confine the security audit trail to the temp dir so tests never append to a
+    # real audit.log; pointing AUDIT_LOG at a fresh path also makes the logger
+    # reattach its file handler there on the next event (see audit._get_logger).
+    monkeypatch.setattr(audit_mod, "AUDIT_LOG", str(tmp_path / "audit.log"))
 
     preview_mod._CACHE.clear()
     # Clear in-process rate-limit / stream-cap state so one test's requests never
