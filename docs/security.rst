@@ -322,6 +322,9 @@ past the window. MiniMost has a single, non-privileged user role, so no separate
    The shipped default for ``session_idle_minutes`` is **2 weeks**, chosen for
    usability and intentionally outside the APSC-DV-000070 band. A deployment
    that must satisfy that control should set ``session_idle_minutes`` to ``15``.
+   Setting it to ``0`` disables the inactivity logout entirely (sessions are
+   never terminated for being idle), which likewise does not satisfy
+   APSC-DV-000070.
 
 Security response headers
 -------------------------

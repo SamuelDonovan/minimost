@@ -185,24 +185,23 @@ def _session_idle_seconds() -> int:
 
     Read from the ``session_idle_minutes`` key in ``settings.json`` so an
     operator can lengthen (or shorten) the idle window without code changes. A
-    missing, non-positive or malformed value falls back to
+    value of ``0`` (or any non-positive value) **disables** the idle logout
+    entirely and returns ``0``. A missing or malformed value falls back to
     :data:`_SESSION_IDLE_SECONDS`. ``bool`` is rejected explicitly because
     ``True``/``False`` are ``int`` instances in Python.
 
     See ``settings.json`` for the shipped default and ``STIG-COMPLIANCE.md`` for
-    the value required by APSC-DV-000070.
+    the value required by APSC-DV-000070 (disabling the timeout does not satisfy
+    that control).
     """
     import json
 
     with suppress(Exception):
         data = json.loads(_SETTINGS_FILE.read_text())
         value = data.get("session_idle_minutes")
-        if (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and value > 0
-        ):
-            return int(value * 60)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            # 0 (or any non-positive value) disables the idle logout entirely.
+            return int(value * 60) if value > 0 else 0
     return _SESSION_IDLE_SECONDS
 
 
@@ -306,10 +305,12 @@ def create_app():
     # itself expires alongside the server-side idle check in
     # ``_enforce_idle_timeout`` (see APSC-DV-000070). Sessions are marked
     # permanent at login so this lifetime applies. The window is operator-tunable
-    # via ``session_idle_minutes`` in settings.json.
+    # via ``session_idle_minutes`` in settings.json; ``0`` disables the idle
+    # logout, in which case the cookie keeps Flask's default permanent lifetime.
     _idle_seconds = _session_idle_seconds()
     app.config["SESSION_IDLE_SECONDS"] = _idle_seconds
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=_idle_seconds)
+    if _idle_seconds > 0:
+        app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=_idle_seconds)
 
     # In-process DoS throttles (per-IP/per-user rate limits and the per-user
     # concurrent SSE-stream cap). Default on; an operator can disable via the
@@ -404,14 +405,21 @@ def create_app():
         — so an idle, unattended tab is logged out by its own next heartbeat —
         but only genuine interaction (any endpoint not in
         :data:`_PASSIVE_ENDPOINTS`) refreshes the timer.
+
+        A configured window of ``0`` disables the idle logout entirely: the
+        session is kept (and marked permanent) and never terminated for
+        inactivity.
         """
         user = session.get("user")
         if not user:
             return
         session.permanent = True
+        idle_seconds = app.config["SESSION_IDLE_SECONDS"]
+        if idle_seconds <= 0:
+            return
         now = time.time()
         last = session.get("_last_active")
-        if last is not None and (now - last) > app.config["SESSION_IDLE_SECONDS"]:
+        if last is not None and (now - last) > idle_seconds:
             session.clear()
             audit.log_event("session_timeout", "success", user=user)
             # Mirror login_required's behaviour: send the caller to /login. A

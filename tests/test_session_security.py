@@ -102,6 +102,34 @@ def test_idle_timeout_respects_configured_window(app):
     assert c.get("/channels").status_code == 200
 
 
+def test_zero_minutes_disables_idle_timeout_in_reader(tmp_path, monkeypatch):
+    import json
+    import minimost
+
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"session_idle_minutes": 0}))
+    monkeypatch.setattr(minimost, "_SETTINGS_FILE", settings)
+    assert _session_idle_seconds() == 0
+    # Any non-positive value disables it, too.
+    settings.write_text(json.dumps({"session_idle_minutes": -5}))
+    assert _session_idle_seconds() == 0
+
+
+def test_disabled_idle_timeout_never_logs_out(app):
+    # session_idle_minutes=0 -> SESSION_IDLE_SECONDS=0: a session idle for a year
+    # must survive and must not emit a session_timeout audit record.
+    app.config["SESSION_IDLE_SECONDS"] = 0
+    before = _audit_text()
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user"] = "alice"
+        s["_last_active"] = time.time() - 365 * 24 * 3600
+    assert c.get("/channels").status_code == 200
+    with c.session_transaction() as s:
+        assert s.get("user") == "alice"
+    assert _audit_text() == before  # no new audit records
+
+
 def test_background_poll_does_not_refresh_the_timer(alice):
     # /online_users is a passive poller; hitting it must not extend the session,
     # or an unattended-but-open tab would never time out.

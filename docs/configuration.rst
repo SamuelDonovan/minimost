@@ -172,8 +172,9 @@ content. The two are independent, so you can cap by age, by size, or both.
     terminated and the user is redirected to the login page. The signed session
     cookie is bound to the same lifetime, and only genuine user interaction
     resets the timer (background pollers do not). Defaults to ``20160`` (two
-    weeks). Read fresh when the application starts, so a change requires a
-    **server restart**.
+    weeks). Set to ``0`` (or any non-positive value) to **disable** the idle
+    logout entirely, so a session is never terminated for inactivity. Read fresh
+    when the application starts, so a change requires a **server restart**.
 
     .. note::
 
