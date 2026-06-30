@@ -194,11 +194,23 @@ def test_size_rotation_creates_and_prunes_archives(tmp_path):
     log, handler = _rotating_logger("test.audit.size", path, 200, 0, 3)
     for i in range(200):
         log.info("event=login outcome=success user=user%03d src=10.0.0.1" % i)
+    # The log must remain writable after rotation — on Windows a failure to
+    # release the handle before renaming would silently skip rotation, so assert
+    # this post-rotation line is recorded (it lands in the live file or, if it
+    # triggers another rotation, the newest archive).
+    log.info("event=logout outcome=success user=after_rotation src=x")
     handler.close()
     archives = _archives(path)
     assert archives, "expected at least one rotation"
     assert len(archives) <= 3, "pruning must keep at most backup_count archives"
-    assert os.path.getsize(path) < 10 * 1024  # live file stays small
+    if os.path.exists(path):
+        assert os.path.getsize(path) < 10 * 1024  # live file stays small
+    contents = ""
+    for f in [path, *archives]:
+        if os.path.exists(f):
+            with open(f, encoding="utf-8") as fh:
+                contents += fh.read()
+    assert "user=after_rotation" in contents
 
 
 def test_age_rotation_triggers_after_marker_ages(tmp_path):

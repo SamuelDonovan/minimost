@@ -219,15 +219,33 @@ class _RotatingAuditHandler(logging.handlers.WatchedFileHandler):
             except OSError:  # nosec B110 - a peer may have pruned it already
                 pass
 
+    def _close_stream(self):
+        """Release this handler's open file descriptor on the log.
+
+        Windows refuses to rename a file that is open in the process, so the log
+        must be closed before it can be rotated (POSIX allows renaming an open
+        file, so this is harmless there). The stream is left as ``None`` so the
+        next :meth:`emit` reopens a fresh file via the base handler.
+        """
+        if self.stream is not None:
+            try:
+                self.stream.flush()
+            finally:
+                self.stream.close()
+                self.stream = None
+
     def _rotate(self):
+        target = self._archive_name()
+        # Drop our own handle first so the rename succeeds on Windows.
+        self._close_stream()
         try:
-            os.rename(self.baseFilename, self._archive_name())
+            os.rename(self.baseFilename, target)
         except OSError:
             return  # already moved by a peer, or gone
         self._touch_marker()
         self._prune()
-        # The next emit recreates baseFilename via WatchedFileHandler's
-        # inode-change reopen, so there is nothing else to do here.
+        # The next emit recreates baseFilename (the stream is now None), so there
+        # is nothing else to do here.
 
     # A rotation that crashes mid-way would leave its lock file behind; treat a
     # lock older than this as abandoned so it can never deadlock future rotations.
