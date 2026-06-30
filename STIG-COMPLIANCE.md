@@ -39,7 +39,7 @@ and runs on **Python 3.6** (no new dependencies).
 | 5   | Password policy hardening     | ☐ Planned                      | APSC-DV-001940 family                |
 | 6   | DoD Notice & Consent banner   | ☐ Planned                      | logon banner                         |
 | 7   | Concurrent-session limit      | ☐ Planned                      | APSC-DV-000010                       |
-| 8   | Logoff confirmation page      | ☐ Planned                      | APSC-DV-000100                       |
+| 8   | Logoff confirmation page      | ✅ **Done**                    | APSC-DV-000100                       |
 | 9   | Session ID rotation on auth   | ☐ Planned                      | APSC-DV-002250                       |
 
 ### 1. Security audit logging — ✅ Done
@@ -114,10 +114,13 @@ No limit on simultaneous logins per account. Track an active-session marker
 server-side (a small table in `auth.db` keyed by username + a session token)
 and reject/evict additional sessions.
 
-### 8. Logoff confirmation page (APSC-DV-000100)
+### 8. Logoff confirmation page — ✅ Done (APSC-DV-000100)
 
-`/logout` silently redirects. STIG wants an explicit "you have been logged out"
-confirmation. Render a logged-out page (or a flash on the login page).
+`/logout` clears the session and redirects to `/login?logged_out=1`; the login
+page then displays an explicit confirmation banner ("You have been logged out.
+Your session was securely terminated.") via a new `.auth-notice` style. The
+banner shows only when the flag is present, and an `error` takes precedence over
+it. The logout is still audited (`event=logout`).
 
 ### 9. Session ID rotation on auth (APSC-DV-002250)
 

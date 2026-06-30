@@ -91,6 +91,23 @@ def test_logout_redirects_to_login(alice):
     assert "/login" in resp.location
 
 
+def test_logout_redirect_carries_logged_out_flag(alice):
+    # The redirect target must request the explicit logoff confirmation banner
+    # (ASD STIG APSC-DV-000100).
+    resp = alice.get("/logout", follow_redirects=False)
+    assert "logged_out=1" in resp.location
+
+
+def test_login_page_shows_logoff_confirmation(client):
+    body = client.get("/login?logged_out=1").get_data(as_text=True)
+    assert "You have been logged out" in body
+
+
+def test_login_page_has_no_confirmation_without_flag(client):
+    body = client.get("/login").get_data(as_text=True)
+    assert "You have been logged out" not in body
+
+
 # ── GET /signup ───────────────────────────────────────────────────────────────
 
 

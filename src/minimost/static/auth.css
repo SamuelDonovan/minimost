@@ -93,6 +93,19 @@ button[type="submit"]:disabled {
   margin-bottom: 16px;
 }
 
+/* Positive confirmation banner (e.g. the explicit "you have been logged out"
+   message shown on the login page after logout). Mirrors .auth-error but in a
+   reassuring green rather than an alarming red. */
+.auth-notice {
+  background: rgba(60, 160, 90, 0.15);
+  border: 1px solid #3ca05a;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #8fd9a8; /* NOSONAR — dark-theme app; contrast on dark bg exceeds 4.5:1 */
+  margin-bottom: 16px;
+}
+
 /* Caps Lock warning shown beneath a focused password field.  The base rule sets
    no `display`, so the UA `[hidden] { display: none }` still hides it; the
    `:not([hidden])` rule restores the flex layout only when shown. */

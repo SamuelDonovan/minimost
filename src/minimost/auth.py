@@ -208,10 +208,14 @@ def login():
 
     Routes: ``GET /login``
 
+    When the request carries ``?logged_out=1`` (set by the :func:`logout`
+    redirect) the template shows an explicit confirmation that the session was
+    terminated — the logoff message required by ASD STIG APSC-DV-000100.
+
     :returns: A rendered ``login.html`` template.
     :rtype: flask.Response
     """
-    return render_template(_LOGIN_TEMPLATE)
+    return render_template(_LOGIN_TEMPLATE, logged_out=request.args.get("logged_out"))
 
 
 @auth_bp.route("/about", methods=["GET"])
@@ -382,11 +386,13 @@ def logout():
 
     Sets the user's presence state to ``"offline"`` in ``presence.db`` via
     :func:`minimost.presence.update_presence` and clears any manual presence
-    override, then clears the Flask session and redirects to ``/login``.
+    override, then clears the Flask session and redirects to
+    ``/login?logged_out=1`` so the login page can show an explicit logoff
+    confirmation (ASD STIG APSC-DV-000100).
 
     Route: ``GET /logout``
 
-    :returns: A redirect response to ``/login``.
+    :returns: A redirect response to ``/login?logged_out=1``.
     :rtype: flask.Response
     """
     user = session["user"]
@@ -394,7 +400,7 @@ def logout():
     presence.set_override(user, None)
     session.clear()
     audit.logout(user)
-    return redirect("/login")
+    return redirect("/login?logged_out=1")
 
 
 def _validate_password(password: str):
