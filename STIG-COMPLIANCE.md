@@ -52,7 +52,14 @@ non-existent and locked accounts), account lockout, logout, account
 create/remove, password change/reset, and any 401/403 access denial (failed
 CSRF, forbidden channel/DM/message access). Values are stripped of control
 characters (log-injection defence); passwords, tokens, and message bodies are
-never written. See `docs/security.rst` → _Audit logging_.
+never written.
+
+The trail is bounded by rotation (relevant to audit-storage-capacity controls
+such as APSC-DV-001340): the log rolls to a timestamped archive at
+`audit_log_max_size_mb` or `audit_log_max_age_days`, retaining
+`audit_log_backups` archives, coordinated across workers with an advisory lock.
+Off-load records to a SIEM before they age out. See `docs/security.rst` →
+_Audit logging_ and `docs/configuration.rst`.
 
 ### 2. Session inactivity timeout — ✅ Mechanism done; default needs tuning for compliance (APSC-DV-000070 / 000080)
 

@@ -29,6 +29,13 @@ Design
   first use *after* Gunicorn forks its workers, so every worker opens its own
   ``O_APPEND`` descriptor; on POSIX, single-line appends are atomic, so the
   workers never corrupt each other's records.
+* **Bounded by rotation.**  The handler rotates the log by size and/or age (see
+  ``audit_log_max_size_mb`` / ``audit_log_max_age_days`` / ``audit_log_backups``
+  in ``settings.json``), keeping a configurable number of timestamped archives.
+  Rotation is coordinated across workers so they never clobber each other (see
+  :class:`_RotatingAuditHandler`). Pruning deletes the oldest archives, so a
+  deployment with audit-retention requirements should off-load records to a
+  central aggregator/SIEM before they age out.
 * **Log-injection resistant.**  All interpolated values are stripped of control
   characters (notably CR/LF) before they reach the log, so an attacker cannot
   forge or split records by smuggling newlines through a username or path.
@@ -42,15 +49,35 @@ AUDIT_LOG : str
     it to a temp directory; changing it re-points the logger on the next event.
 """
 
+import glob
 import logging
+import logging.handlers
+import os
 import re
 import time
+from pathlib import Path
 
 from .paths import data_dir
+
+try:
+    import fcntl  # POSIX advisory file locks; absent on non-POSIX (e.g. Windows)
+except ImportError:  # pragma: no cover - non-POSIX platform
+    fcntl = None
 
 AUDIT_LOG = str(data_dir() / "audit.log")
 
 _LOGGER_NAME = "minimost.audit"
+
+# settings.json ships inside the package (next to this module); the rotation
+# thresholds are read from it so the audit trail does not grow without bound.
+_SETTINGS_FILE = Path(__file__).resolve().parent / "settings.json"
+
+# Shipped rotation defaults, used when settings.json is absent/unreadable. A
+# size or age of 0 disables that trigger; a backup count of 0 keeps every
+# archive (so total size is unbounded — bound it with a positive count).
+_DEFAULT_AUDIT_MAX_SIZE_MB = 10
+_DEFAULT_AUDIT_MAX_AGE_DAYS = 30
+_DEFAULT_AUDIT_BACKUPS = 12
 
 # Matches any ASCII control character (CR, LF, NUL, tabs, …).  Replaced with a
 # space before interpolation so a value can never inject a newline and forge a
@@ -77,15 +104,182 @@ class _UTCFormatter(logging.Formatter):
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", self.converter(record.created))
 
 
+def _setting_num(value, default):
+    """Return *value* if it is a non-negative, non-bool number, else *default*."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+        return value
+    return default
+
+
+def _rotation_config():
+    """Return ``(max_bytes, max_age_seconds, backup_count)`` from settings.json.
+
+    Keys (all optional):
+
+    * ``audit_log_max_size_mb`` — rotate once the live log reaches this size.
+    * ``audit_log_max_age_days`` — rotate this long after the previous rotation.
+    * ``audit_log_backups`` — number of rotated archives to keep; older ones are
+      deleted. ``0`` keeps every archive.
+
+    A ``0`` (or absent) size/age disables that trigger; with both disabled the
+    file is never rotated. A read/parse error falls back to the shipped defaults.
+    """
+    max_mb = _DEFAULT_AUDIT_MAX_SIZE_MB
+    max_days = _DEFAULT_AUDIT_MAX_AGE_DAYS
+    backups = _DEFAULT_AUDIT_BACKUPS
+    try:
+        import json
+
+        data = json.loads(_SETTINGS_FILE.read_text())
+        max_mb = _setting_num(data.get("audit_log_max_size_mb"), max_mb)
+        max_days = _setting_num(data.get("audit_log_max_age_days"), max_days)
+        backups = _setting_num(data.get("audit_log_backups"), backups)
+    except (OSError, ValueError):
+        pass
+    return int(max_mb * 1024 * 1024), int(max_days * 24 * 3600), int(backups)
+
+
+class _RotatingAuditHandler(logging.handlers.WatchedFileHandler):
+    """Append-only audit handler that rotates by size and/or age.
+
+    Rotation is safe across several Gunicorn workers, each of which holds its
+    own handler. :class:`~logging.handlers.WatchedFileHandler` reopens the log
+    whenever its inode changes, so when one worker rotates the file (by renaming
+    it) the others transparently switch to the freshly created one — no records
+    are lost, and, unlike :class:`~logging.handlers.RotatingFileHandler`, the
+    workers never clobber each other's rotation. The rename is guarded by a
+    non-blocking ``fcntl.flock`` and re-checked under the lock, so exactly one
+    worker rotates and a file already rotated by a peer is left alone. Where
+    ``fcntl`` is unavailable (e.g. a Windows dev box) the server is
+    single-process, so the lock is simply skipped.
+
+    Age is measured from a companion ``<log>.rotated_at`` marker file (touched at
+    each rotation), independent of write activity, so a quiet day does not reset
+    the clock.
+    """
+
+    def __init__(
+        self,
+        filename,
+        max_bytes,
+        max_age_seconds,
+        backup_count,
+        encoding=None,
+        delay=False,
+    ):
+        super().__init__(filename, encoding=encoding, delay=delay)
+        self.max_bytes = max_bytes
+        self.max_age_seconds = max_age_seconds
+        self.backup_count = backup_count
+
+    @property
+    def _marker(self):
+        return self.baseFilename + ".rotated_at"
+
+    def _touch_marker(self):
+        try:
+            with open(self._marker, "a"):
+                os.utime(self._marker, None)
+        except OSError:  # nosec B110 - best effort; clock just restarts later
+            pass
+
+    def _needs_rotation(self):
+        try:
+            if self.max_bytes and os.path.getsize(self.baseFilename) >= self.max_bytes:
+                return True
+        except OSError:
+            return False
+        if self.max_age_seconds:
+            try:
+                started = os.path.getmtime(self._marker)
+            except OSError:
+                self._touch_marker()  # no marker yet: start the clock now
+                return False
+            if time.time() - started >= self.max_age_seconds:
+                return True
+        return False
+
+    def _archive_name(self):
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        target = "{0}.{1}".format(self.baseFilename, stamp)
+        n = 0
+        while os.path.exists(target):  # avoid clobbering a same-second archive
+            n += 1
+            target = "{0}.{1}.{2}".format(self.baseFilename, stamp, n)
+        return target
+
+    def _prune(self):
+        if not self.backup_count:
+            return
+        archives = [
+            p
+            for p in glob.glob(self.baseFilename + ".*")
+            if not p.endswith((".rotated_at", ".lock"))
+        ]
+        archives.sort(key=os.path.getmtime)
+        for old in archives[: max(0, len(archives) - self.backup_count)]:
+            try:
+                os.remove(old)
+            except OSError:  # nosec B110 - a peer may have pruned it already
+                pass
+
+    def _rotate(self):
+        try:
+            os.rename(self.baseFilename, self._archive_name())
+        except OSError:
+            return  # already moved by a peer, or gone
+        self._touch_marker()
+        self._prune()
+        # The next emit recreates baseFilename via WatchedFileHandler's
+        # inode-change reopen, so there is nothing else to do here.
+
+    def _rotate_locked(self):
+        if fcntl is None:  # no advisory locks: single-process dev server
+            if self._needs_rotation():
+                self._rotate()
+            return
+        try:
+            fd = os.open(self.baseFilename + ".lock", os.O_CREAT | os.O_WRONLY, 0o600)
+        except OSError:
+            return
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return  # another worker holds the lock / is rotating
+            if self._needs_rotation():  # re-check under the lock
+                self._rotate()
+        finally:
+            os.close(fd)  # releasing the fd releases the flock
+
+    def emit(self, record):
+        super().emit(record)  # write, reopening first if the file was rotated
+        try:
+            if (self.max_bytes or self.max_age_seconds) and self._needs_rotation():
+                self._rotate_locked()
+        except Exception:  # nosec B110 # pragma: no cover - rotation is best effort
+            pass
+
+
 def _make_handler(path):
-    """Return a file handler for *path*, or ``None`` if it cannot be opened.
+    """Return a rotating audit handler for *path*, or ``None`` if unopenable.
 
     Audit logging must never take the request down: if the log file cannot be
     created (read-only data dir, permissions, …) the failure is swallowed and
-    the caller proceeds without a durable record rather than raising.
+    the caller proceeds without a durable record rather than raising. The handler
+    rotates by size and/or age per :func:`_rotation_config` so the trail does not
+    grow without bound.
     """
     try:
-        handler = logging.FileHandler(path, encoding="utf-8", delay=True)
+        max_bytes, max_age, backups = _rotation_config()
+        handler = _RotatingAuditHandler(
+            path,
+            max_bytes,
+            max_age,
+            backups,
+            encoding="utf-8",
+            delay=True,
+        )
     except OSError:
         return None
     handler.setFormatter(_UTCFormatter("%(asctime)s %(message)s"))

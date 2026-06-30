@@ -5,13 +5,16 @@ file inside the per-test ``tmp_path``, so each test reads back exactly the
 records it produced without touching a real audit trail.
 """
 
+import glob
+import logging
+import os
+import time
+
 import minimost.audit as audit
 
 
 def _read_log():
     """Return the lines currently in the per-test audit log (or [])."""
-    import os
-
     if not os.path.exists(audit.AUDIT_LOG):
         return []
     with open(audit.AUDIT_LOG, encoding="utf-8") as fh:
@@ -139,3 +142,82 @@ def test_forbidden_channel_access_is_audited(alice):
     records = "\n".join(_read_log())
     assert "event=access_denied" in records
     assert "user=alice" in records
+
+
+# --- Log rotation -----------------------------------------------------------
+
+
+def _archives(path):
+    return [
+        p for p in glob.glob(path + ".*") if not p.endswith((".rotated_at", ".lock"))
+    ]
+
+
+def _rotating_logger(name, path, max_bytes, max_age, backups):
+    handler = audit._RotatingAuditHandler(
+        path, max_bytes, max_age, backups, encoding="utf-8", delay=True
+    )
+    handler.setFormatter(audit._UTCFormatter("%(asctime)s %(message)s"))
+    log = logging.getLogger(name)
+    log.handlers = [handler]
+    log.setLevel(logging.INFO)
+    log.propagate = False
+    return log, handler
+
+
+def test_rotation_config_reads_bundled_defaults():
+    max_bytes, max_age, backups = audit._rotation_config()
+    assert max_bytes == 10 * 1024 * 1024
+    assert max_age == 30 * 24 * 3600
+    assert backups == 12
+
+
+def test_rotation_config_override_and_disable(tmp_path, monkeypatch):
+    import json
+
+    settings = tmp_path / "settings.json"
+    settings.write_text(
+        json.dumps(
+            {
+                "audit_log_max_size_mb": 0,  # disable size trigger
+                "audit_log_max_age_days": 7,
+                "audit_log_backups": 3,
+            }
+        )
+    )
+    monkeypatch.setattr(audit, "_SETTINGS_FILE", settings)
+    assert audit._rotation_config() == (0, 7 * 24 * 3600, 3)
+
+
+def test_size_rotation_creates_and_prunes_archives(tmp_path):
+    path = str(tmp_path / "audit.log")
+    log, handler = _rotating_logger("test.audit.size", path, 200, 0, 3)
+    for i in range(200):
+        log.info("event=login outcome=success user=user%03d src=10.0.0.1" % i)
+    handler.close()
+    archives = _archives(path)
+    assert archives, "expected at least one rotation"
+    assert len(archives) <= 3, "pruning must keep at most backup_count archives"
+    assert os.path.getsize(path) < 10 * 1024  # live file stays small
+
+
+def test_age_rotation_triggers_after_marker_ages(tmp_path):
+    path = str(tmp_path / "audit.log")
+    log, handler = _rotating_logger("test.audit.age", path, 0, 3600, 5)
+    log.info("event=login outcome=success user=a src=x")  # creates file + marker
+    marker = path + ".rotated_at"
+    past = time.time() - 2 * 3600  # older than the 1-hour window
+    os.utime(marker, (past, past))
+    log.info("event=login outcome=success user=b src=x")  # should rotate
+    handler.close()
+    assert len(_archives(path)) == 1
+    assert time.time() - os.path.getmtime(marker) < 60  # clock was reset
+
+
+def test_rotation_disabled_keeps_single_file(tmp_path):
+    path = str(tmp_path / "audit.log")
+    log, handler = _rotating_logger("test.audit.off", path, 0, 0, 0)
+    for i in range(100):
+        log.info("event=login outcome=success user=u%03d src=x" % i)
+    handler.close()
+    assert _archives(path) == []

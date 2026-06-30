@@ -11,6 +11,9 @@
   "max_login_attempts": 5,
   "lockout_duration_minutes": 15,
   "session_idle_minutes": 20160,
+  "audit_log_max_size_mb": 10,
+  "audit_log_max_age_days": 30,
+  "audit_log_backups": 12,
   "rate_limit_enabled": true,
   "max_event_streams_per_user": 12,
   "rate_limits": {

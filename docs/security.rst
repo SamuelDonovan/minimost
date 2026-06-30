@@ -297,6 +297,15 @@ aggregator/SIEM (for example via journald or rsyslog) and restrict its
 permissions, since it is the authoritative record of authentication and
 access-control activity.
 
+The log is rotated so it does not grow without bound. It is rolled to a
+timestamped archive once it reaches ``audit_log_max_size_mb`` or is older than
+``audit_log_max_age_days`` (either trigger can be disabled with ``0``), and
+``audit_log_backups`` archives are retained — see :doc:`configuration`. Rotation
+is coordinated across workers with an advisory lock so they never clobber each
+other, and each worker reopens the fresh file automatically. Because pruning
+deletes the oldest archives, a deployment with audit-retention requirements
+should off-load records centrally before they age out.
+
 Session inactivity timeout
 --------------------------
 

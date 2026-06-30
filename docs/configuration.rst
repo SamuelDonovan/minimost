@@ -183,6 +183,32 @@ content. The two are independent, so you can cap by age, by size, or both.
        For a deployment that must satisfy that control, set this to ``15``. If
        this file cannot be read the timeout falls back to the 15-minute baseline.
 
+``audit_log_max_size_mb``
+    Rotate the security audit log (``audit.log``) once it reaches this size, in
+    megabytes. The active file is renamed to a timestamped archive and a fresh
+    log is started. Defaults to ``10``. Set to ``0`` to disable size-based
+    rotation. Read fresh when the application starts, so a change requires a
+    **server restart**.
+
+``audit_log_max_age_days``
+    Rotate the audit log this many days after the previous rotation, regardless
+    of size (age is tracked independently of write activity). Defaults to ``30``.
+    Set to ``0`` to disable age-based rotation. With both size and age disabled
+    the log is never rotated and will grow unbounded. Read fresh when the
+    application starts, so a change requires a **server restart**.
+
+``audit_log_backups``
+    Number of rotated audit-log archives to retain; older archives are deleted on
+    the next rotation. Defaults to ``12``. Set to ``0`` to keep **every** archive
+    (which bounds individual file size but not total disk usage).
+
+    .. note::
+
+       Pruning deletes the oldest audit records. A deployment with audit-retention
+       requirements (e.g. under the DISA ASD STIG) should off-load records to a
+       central aggregator/SIEM before they age out; see the audit-logging section
+       of :doc:`security`.
+
 ``rate_limit_enabled``
     Master switch for the in-process denial-of-service throttles — the per-route
     request rate limits and the per-user concurrent ``/events`` stream cap.
