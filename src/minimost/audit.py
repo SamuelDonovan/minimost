@@ -59,11 +59,6 @@ from pathlib import Path
 
 from .paths import data_dir
 
-try:
-    import fcntl  # POSIX advisory file locks; absent on non-POSIX (e.g. Windows)
-except ImportError:  # pragma: no cover - non-POSIX platform
-    fcntl = None
-
 AUDIT_LOG = str(data_dir() / "audit.log")
 
 _LOGGER_NAME = "minimost.audit"
@@ -147,11 +142,12 @@ class _RotatingAuditHandler(logging.handlers.WatchedFileHandler):
     whenever its inode changes, so when one worker rotates the file (by renaming
     it) the others transparently switch to the freshly created one — no records
     are lost, and, unlike :class:`~logging.handlers.RotatingFileHandler`, the
-    workers never clobber each other's rotation. The rename is guarded by a
-    non-blocking ``fcntl.flock`` and re-checked under the lock, so exactly one
-    worker rotates and a file already rotated by a peer is left alone. Where
-    ``fcntl`` is unavailable (e.g. a Windows dev box) the server is
-    single-process, so the lock is simply skipped.
+    workers never clobber each other's rotation. The rename is guarded by an
+    atomically-created ``<log>.lock`` file (``O_CREAT | O_EXCL``, which works on
+    both POSIX and Windows) and re-checked under the lock, so exactly one worker
+    rotates and a file already rotated by a peer is left alone. A lock left
+    behind by a crashed rotation is treated as stale after a minute so it can
+    never deadlock.
 
     Age is measured from a companion ``<log>.rotated_at`` marker file (touched at
     each rotation), independent of write activity, so a quiet day does not reset
@@ -233,24 +229,40 @@ class _RotatingAuditHandler(logging.handlers.WatchedFileHandler):
         # The next emit recreates baseFilename via WatchedFileHandler's
         # inode-change reopen, so there is nothing else to do here.
 
+    # A rotation that crashes mid-way would leave its lock file behind; treat a
+    # lock older than this as abandoned so it can never deadlock future rotations.
+    _LOCK_STALE_SECONDS = 60
+
     def _rotate_locked(self):
-        if fcntl is None:  # no advisory locks: single-process dev server
-            if self._needs_rotation():
-                self._rotate()
-            return
+        # Cross-platform mutual exclusion (works on Windows and POSIX, unlike
+        # ``fcntl``): O_EXCL makes the lock-file creation atomic, so only one
+        # worker wins. The trigger is re-checked under the lock so a file a peer
+        # already rotated is left alone.
+        lockpath = self.baseFilename + ".lock"
         try:
-            fd = os.open(self.baseFilename + ".lock", os.O_CREAT | os.O_WRONLY, 0o600)
+            fd = os.open(lockpath, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            self._clear_stale_lock(lockpath)
+            return  # a peer is rotating; the trigger will fire again next emit
         except OSError:
             return
         try:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                return  # another worker holds the lock / is rotating
-            if self._needs_rotation():  # re-check under the lock
+            if self._needs_rotation():  # re-check now that we hold the lock
                 self._rotate()
         finally:
-            os.close(fd)  # releasing the fd releases the flock
+            os.close(fd)
+            try:
+                os.remove(lockpath)
+            except OSError:  # nosec B110 - a peer may have cleared it already
+                pass
+
+    def _clear_stale_lock(self, lockpath):
+        """Remove the lock file if it was abandoned by a crashed rotation."""
+        try:
+            if time.time() - os.path.getmtime(lockpath) > self._LOCK_STALE_SECONDS:
+                os.remove(lockpath)
+        except OSError:  # nosec B110 - best effort; gone or just-recreated is fine
+            pass
 
     def emit(self, record):
         super().emit(record)  # write, reopening first if the file was rotated

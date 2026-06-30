@@ -221,3 +221,34 @@ def test_rotation_disabled_keeps_single_file(tmp_path):
         log.info("event=login outcome=success user=u%03d src=x" % i)
     handler.close()
     assert _archives(path) == []
+
+
+def test_fresh_lock_blocks_rotation(tmp_path):
+    # A peer holding the cross-platform lock file means this worker must skip
+    # rotation, even though the log is over size — no archive is created.
+    path = str(tmp_path / "audit.log")
+    handler = audit._RotatingAuditHandler(path, 50, 0, 5, encoding="utf-8", delay=True)
+    with open(path, "w") as fh:
+        fh.write("x" * 200)
+    lock = path + ".lock"
+    open(lock, "w").close()
+    handler._rotate_locked()
+    assert _archives(path) == []
+    assert os.path.exists(lock)  # the peer's fresh lock is left in place
+    handler.close()
+
+
+def test_stale_lock_is_cleared(tmp_path):
+    # A lock left behind by a crashed rotation is cleared once it ages out, so it
+    # can never deadlock future rotations.
+    path = str(tmp_path / "audit.log")
+    handler = audit._RotatingAuditHandler(path, 50, 0, 5, encoding="utf-8", delay=True)
+    with open(path, "w") as fh:
+        fh.write("x" * 200)
+    lock = path + ".lock"
+    open(lock, "w").close()
+    old = time.time() - (handler._LOCK_STALE_SECONDS + 5)
+    os.utime(lock, (old, old))
+    handler._rotate_locked()
+    assert not os.path.exists(lock)
+    handler.close()
