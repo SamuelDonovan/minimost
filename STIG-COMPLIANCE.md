@@ -35,7 +35,7 @@ and runs on **Python 3.6** (no new dependencies).
 | 1   | Security audit logging        | ✅ **Done** (`minimost.audit`) | APSC-DV-000340–000430, 000810–000900 |
 | 2   | Session inactivity timeout    | ✅ **Done**                    | APSC-DV-000070 / 000080              |
 | 3   | Security response headers     | ✅ **Done**                    | APSC-DV-002500                       |
-| 4   | Custom generic error handlers | ☐ Planned                      | APSC-DV-002880 / 002890              |
+| 4   | Custom generic error handlers | ✅ **Done**                    | APSC-DV-002880 / 002890              |
 | 5   | Password policy hardening     | ☐ Planned                      | APSC-DV-001940 family                |
 | 6   | DoD Notice & Consent banner   | ☐ Planned                      | logon banner                         |
 | 7   | Concurrent-session limit      | ☐ Planned                      | APSC-DV-000010                       |
@@ -91,11 +91,16 @@ allows `'unsafe-inline'` for scripts/styles because the chat page ships inline
 `<script>` and inlines CSS on the dev server; tightening to nonces is tracked
 as a follow-up.
 
-### 4. Custom generic error handlers (APSC-DV-002880 / 002890)
+### 4. Custom generic error handlers — ✅ Done (APSC-DV-002880 / 002890)
 
-The app uses Flask's default error pages. Register `@app.errorhandler` for
-404/405/413/500 returning a minimal generic body so no stack trace or
-implementation detail reaches the user (the audit log holds the detail).
+`create_app` registers handlers for 400/403/404/405/413/429/500 that return a
+fixed generic message — no stack trace, framework version, or request detail in
+the body. Responses are content-negotiated: JSON (`{"error": ...}`) for API/fetch
+callers, a small branded `error.html` page for browsers, with a plain-text
+fallback if the template cannot render. The 500 handler relies on Flask logging
+the traceback to the (admin-only) application log and additionally records a
+generic `server_error` event in the audit trail; the exception text never
+reaches the client.
 
 ### 5. Password policy hardening (APSC-DV-001940 family)
 

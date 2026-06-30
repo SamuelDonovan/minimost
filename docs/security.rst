@@ -354,6 +354,23 @@ Every response carries a set of defensive headers:
   (the same condition that gates the ``Secure`` session cookie), so a
   plain-HTTP reverse-proxy deployment is unaffected.
 
+Error handling
+--------------
+
+MiniMost registers generic handlers for the common HTTP errors (400, 403, 404,
+405, 413, 429, 500). Error responses contain only the status code and a fixed,
+non-revealing message — never a stack trace, framework version, or request
+detail — and are content-negotiated: a JSON ``{"error": ...}`` body for
+API/fetch callers and a small branded ``error.html`` page for browsers (falling
+back to plain text if the template cannot render). The development server and
+Gunicorn both run with Flask debugging off, so the interactive debugger is never
+exposed.
+
+For a server error, Flask logs the full traceback to the application log (which
+only administrators can read) and MiniMost additionally records a generic
+``server_error`` entry in the audit trail; the exception text never reaches the
+client.
+
 Known Limitations
 -----------------
 

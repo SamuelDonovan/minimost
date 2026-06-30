@@ -1,0 +1,19 @@
+<!doctype html>
+{% from "_assets.html" import stylesheet %}
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{{ status }} – MiniMost</title>
+    {{ stylesheet('auth.css') }}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+</head>
+<body>
+    <div class="auth-brand">Mini<span style="color:#007acc">Most</span></div>
+    <div class="auth-card">
+        <h2>{{ status }}</h2>
+        <div class="auth-error" role="alert">{{ message }}</div>
+        <p class="auth-footer"><a href="/">Return home</a></p>
+    </div>
+</body>
+</html>

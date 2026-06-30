@@ -35,7 +35,16 @@ from contextlib import suppress
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, abort, redirect, request, send_file, session
+from flask import (
+    Flask,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+)
 
 from . import audit
 from . import calls as calls_mod
@@ -62,6 +71,20 @@ _HERE = Path(__file__).resolve().parent
 # With a single, non-privileged user role the 10-minute privileged bound
 # (APSC-DV-000080) collapses onto the same value.
 _SESSION_IDLE_SECONDS = 15 * 60
+
+# Generic, non-revealing error messages shown to users (ASD STIG APSC-DV-002880:
+# error messages must not reveal information an adversary could exploit, and
+# APSC-DV-002890: detail is for administrators only). The detail — stack traces
+# and the like — stays in the server logs, never the response body.
+_GENERIC_ERROR_MESSAGES = {
+    400: "Bad request.",
+    403: "You do not have permission to access this resource.",
+    404: "The requested resource was not found.",
+    405: "Method not allowed.",
+    413: "The request is too large.",
+    429: "Too many requests. Please slow down and try again.",
+    500: "An internal error occurred. Please try again later.",
+}
 
 # Endpoints the frontend hits automatically on timers — the SSE stream (and its
 # periodic reconnect), the presence heartbeat, the sidebar badge pollers, and
@@ -524,6 +547,60 @@ def create_app():
         ):
             presence.bump_event_signal()
         return response
+
+    def _wants_json() -> bool:
+        """Return ``True`` when the caller is an API/fetch request, not a browser.
+
+        Used to decide whether an error is returned as a JSON object or a small
+        HTML page. A request counts as wanting JSON when it carries a JSON body,
+        is an ``XMLHttpRequest``, or its ``Accept`` header prefers JSON over HTML.
+        """
+        if (
+            request.is_json
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        ):
+            return True
+        accept = request.accept_mimetypes
+        return accept["application/json"] > accept["text/html"]
+
+    def _error_response(status: int, message: str):
+        """Build a generic error response, content-negotiated, never revealing.
+
+        No stack trace, framework version, or request detail reaches the body —
+        only the status and a fixed generic message. Falls back to plain text if
+        the HTML template cannot be rendered, so the error handler can never
+        itself raise.
+        """
+        if _wants_json():
+            return jsonify(error=message), status
+        try:
+            return render_template("error.html", status=status, message=message), status
+        except Exception:  # nosec B110 - degrade to plain text; never re-raise
+            return message, status, {"Content-Type": "text/plain; charset=utf-8"}
+
+    def _handle_http_error(error):
+        """Generic handler for expected HTTP errors (404, 405, 413, …)."""
+        status = getattr(error, "code", 500) or 500
+        message = _GENERIC_ERROR_MESSAGES.get(status, _GENERIC_ERROR_MESSAGES[500])
+        return _error_response(status, message)
+
+    for _code in (400, 403, 404, 405, 413, 429):
+        app.register_error_handler(_code, _handle_http_error)
+
+    @app.errorhandler(500)
+    def _handle_server_error(error):
+        """Return a generic 500 without leaking the exception.
+
+        Flask has already logged the traceback to the application logger (which
+        only administrators can read — APSC-DV-002890); here we additionally drop
+        a generic marker in the audit trail and return a non-revealing body.
+        """
+        audit.log_event(
+            "server_error",
+            "failure",
+            detail="{0} {1}".format(request.method, request.path),
+        )
+        return _error_response(500, _GENERIC_ERROR_MESSAGES[500])
 
     @app.context_processor
     def inject_globals():
