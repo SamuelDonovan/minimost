@@ -1,0 +1,125 @@
+# MiniMost — ASD STIG Compliance Plan
+
+This document tracks MiniMost's conformance to the **Application Security and
+Development (ASD) STIG, V6R1** (DISA / cyber.mil) — the STIG that applies to
+custom-developed applications. Scope is limited to the shippable code under
+`src/minimost/`. Every item is achievable with **stdlib + Flask/Werkzeug only**
+and runs on **Python 3.6** (no new dependencies).
+
+> Full STIG compliance for a fielded DoD system also depends on the _hosting
+> environment_ (DoD PKI certificates, a central audit/SIEM aggregator, CAC/PIV
+> authentication, an approved OS baseline). Those are deployment concerns the
+> application code cannot satisfy alone. This plan covers what the **code** can
+> do to be as compliant as possible.
+
+## Already compliant (keep it)
+
+- **SQL injection (APSC-DV-002500)** — all queries use `?` bound parameters;
+  dynamic SQL only concatenates constant clause fragments.
+- **Password storage (APSC-DV-002560)** — PBKDF2-HMAC-SHA256 (Werkzeug), salted;
+  only the hash is stored.
+- **XSS (APSC-DV-002490/002500)** — Jinja2 autoescaping on; the only `| safe` is
+  first-party CSS inlining.
+- **Account lockout** — failed-attempt counting + timed lockout; login is
+  rate-limited per IP.
+- **Path traversal** — username regex `[A-Za-z0-9_\-]{1,32}`, `secure_filename`,
+  UUID upload names.
+- **CSRF on auth forms (APSC-DV-002500)** — per-session token + `SameSite=Lax`.
+- **Transport** — TLS provisioned; session cookies `Secure`/`HttpOnly`.
+- Dev server runs `debug=False` (no Werkzeug debugger / info leak).
+
+## Work items
+
+| #   | Item                          | Status                         | STIG refs                            |
+| --- | ----------------------------- | ------------------------------ | ------------------------------------ |
+| 1   | Security audit logging        | ✅ **Done** (`minimost.audit`) | APSC-DV-000340–000430, 000810–000900 |
+| 2   | Session inactivity timeout    | ☐ Planned                      | APSC-DV-000070 / 000080              |
+| 3   | Security response headers     | ☐ Planned                      | APSC-DV-002500                       |
+| 4   | Custom generic error handlers | ☐ Planned                      | APSC-DV-002880 / 002890              |
+| 5   | Password policy hardening     | ☐ Planned                      | APSC-DV-001940 family                |
+| 6   | DoD Notice & Consent banner   | ☐ Planned                      | logon banner                         |
+| 7   | Concurrent-session limit      | ☐ Planned                      | APSC-DV-000010                       |
+| 8   | Logoff confirmation page      | ☐ Planned                      | APSC-DV-000100                       |
+| 9   | Session ID rotation on auth   | ☐ Planned                      | APSC-DV-002250                       |
+
+### 1. Security audit logging — ✅ Done
+
+Implemented in `src/minimost/audit.py` (stdlib `logging` only). Appends one
+machine-parseable line per security event to `audit.log` in the data root, each
+record carrying _what_ (event), _when_ (ISO-8601 UTC), _where_ (source IP),
+_who_ (user), and _outcome_. Events covered: login success/failure (incl.
+non-existent and locked accounts), account lockout, logout, account
+create/remove, password change/reset, and any 401/403 access denial (failed
+CSRF, forbidden channel/DM/message access). Values are stripped of control
+characters (log-injection defence); passwords, tokens, and message bodies are
+never written. See `docs/security.rst` → _Audit logging_.
+
+### 2. Session inactivity timeout (APSC-DV-000070 / 000080)
+
+No `PERMANENT_SESSION_LIFETIME` is set, so sessions have no idle timeout. STIG
+requires auto-termination after **15 min** of inactivity (10 min privileged).
+Set `PERMANENT_SESSION_LIFETIME = timedelta(minutes=15)`, mark sessions
+permanent at login, and clear the session in a `before_request` when the idle
+window is exceeded.
+
+### 3. Security response headers (APSC-DV-002500)
+
+No security headers are emitted. Add an `after_request` hook setting
+`X-Frame-Options: DENY` (clickjacking), `X-Content-Type-Options: nosniff`, a
+conservative `Content-Security-Policy`, `Strict-Transport-Security` (when on
+TLS), and `Cache-Control: no-store` on authenticated responses.
+
+### 4. Custom generic error handlers (APSC-DV-002880 / 002890)
+
+The app uses Flask's default error pages. Register `@app.errorhandler` for
+404/405/413/500 returning a minimal generic body so no stack trace or
+implementation detail reaches the user (the audit log holds the detail).
+
+### 5. Password policy hardening (APSC-DV-001940 family)
+
+Current: ≥8 chars, ≥1 digit, ≥1 uppercase, ≥1 special. DoD requires:
+
+- **≥15 characters** (currently 8) — APSC-DV-001955
+- **≥1 lowercase** — not currently enforced — APSC-DV-001960
+- **Password history / reuse prohibition** (≥5 generations) — APSC-DV-001980
+- **Min 24h / max 60-day password age** — APSC-DV-001990 / 002000
+
+Enforced in `auth._validate_password` plus small schema additions
+(`password_history` table, `password_set_ts` column).
+
+### 6. DoD Notice and Consent banner
+
+DoD systems must display the Standard Mandatory DoD Notice and Consent Banner
+before granting access, with explicit acknowledgement. Add it to `login.html`
+with a click-through gate.
+
+### 7. Concurrent-session limit (APSC-DV-000010)
+
+No limit on simultaneous logins per account. Track an active-session marker
+server-side (a small table in `auth.db` keyed by username + a session token)
+and reject/evict additional sessions.
+
+### 8. Logoff confirmation page (APSC-DV-000100)
+
+`/logout` silently redirects. STIG wants an explicit "you have been logged out"
+confirmation. Render a logged-out page (or a flash on the login page).
+
+### 9. Session ID rotation on auth (APSC-DV-002250)
+
+Regenerate the session identifier on login and password change to prevent
+session fixation (`session.clear()` then set `session["user"]` fresh).
+
+## Environment / deployment notes (not code changes)
+
+- **DoD PKI** — for compliance the served certificate must come from DoD PKI.
+  The code already prefers an operator-supplied `cert.pem`/`key.pem` and only
+  self-signs as a fallback; document the PKI path as the compliant deployment.
+- **FIPS** — PBKDF2-SHA256 and TLS via the system OpenSSL are acceptable when
+  running on a FIPS-validated OS module; avoid introducing any non-stdlib crypto.
+- **Central audit aggregation** — forward `audit.log` to a SIEM via journald /
+  rsyslog and restrict its filesystem permissions.
+
+## References
+
+- [ASD STIG on STIG Viewer](https://www.stigviewer.com/stigs/application_security_and_development)
+- [ASD STIG V6R1 (cyber.trackr.live)](https://cyber.trackr.live/stig/Application_Security_and_Development/6/1)
