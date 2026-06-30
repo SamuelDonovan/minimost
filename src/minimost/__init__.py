@@ -32,9 +32,10 @@ import secrets
 import threading
 import time
 from contextlib import suppress
+from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, abort, request, send_file, session
+from flask import Flask, abort, redirect, request, send_file, session
 
 from . import audit
 from . import calls as calls_mod
@@ -52,6 +53,37 @@ from .paths import data_dir
 from .presence import presence_bp
 
 _HERE = Path(__file__).resolve().parent
+
+# Inactivity timeout for an authenticated session (ASD STIG APSC-DV-000070:
+# auto-terminate a non-privileged session after 15 minutes of inactivity).
+# MiniMost has a single, non-privileged user role, so the 10-minute privileged
+# bound (APSC-DV-000080) collapses onto this same value.
+_SESSION_IDLE_SECONDS = 15 * 60
+
+# Endpoints the frontend hits automatically on timers — the SSE stream (and its
+# periodic reconnect), the presence heartbeat, the sidebar badge pollers, and
+# the in-call signal/state pollers. These are background traffic, NOT user
+# interaction, so they must not refresh the inactivity timer; otherwise an
+# unattended-but-open tab would never time out. Every *other* authenticated
+# endpoint counts as activity. A newly added poller must be listed here.
+_PASSIVE_ENDPOINTS = frozenset(
+    {
+        "static",
+        "events.events",
+        "presence.presence",
+        "presence.typing_get",
+        "presence.presence_override_get",
+        "chat.online_users",
+        "chat.unread_count",
+        "chat.channel_unreads",
+        "chat.mentions",
+        "chat.dms",
+        "calls.incoming_calls",
+        "calls.get_signals",
+        "calls.call_state",
+        "calls.get_share_signals",
+    }
+)
 
 
 def _read_version() -> str:
@@ -240,6 +272,12 @@ def create_app():
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SECURE"] = not os.environ.get("MINIMOST_SKIP_TLS")
 
+    # Bound the signed session cookie to the inactivity window so the cookie
+    # itself expires alongside the server-side idle check in
+    # ``_enforce_idle_timeout`` (see APSC-DV-000070). Sessions are marked
+    # permanent at login so this lifetime applies.
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=_SESSION_IDLE_SECONDS)
+
     # In-process DoS throttles (per-IP/per-user rate limits and the per-user
     # concurrent SSE-stream cap). Default on; an operator can disable via the
     # ``rate_limit_enabled`` key in settings.json, and the test suite turns it
@@ -322,6 +360,34 @@ def create_app():
     app.jinja_env.globals["csrf_token"] = _csrf_token
 
     @app.before_request
+    def _enforce_idle_timeout():
+        """Terminate an authenticated session after inactivity (APSC-DV-000070).
+
+        Runs before every request. For a logged-in session it compares the
+        time since the last *user-initiated* request against
+        :data:`_SESSION_IDLE_SECONDS`; once exceeded, the session is cleared
+        (logging the user out) and the timeout is audited. The check fires on
+        background polls too — so an idle, unattended tab is logged out by its
+        own next heartbeat — but only genuine interaction (any endpoint not in
+        :data:`_PASSIVE_ENDPOINTS`) refreshes the timer.
+        """
+        user = session.get("user")
+        if not user:
+            return
+        session.permanent = True
+        now = time.time()
+        last = session.get("_last_active")
+        if last is not None and (now - last) > _SESSION_IDLE_SECONDS:
+            session.clear()
+            audit.log_event("session_timeout", "success", user=user)
+            # Mirror login_required's behaviour: send the caller to /login. A
+            # fetch() poll follows the redirect, sees the login page, and the
+            # frontend navigates there — the same path as any invalid session.
+            return redirect("/login")
+        if request.endpoint not in _PASSIVE_ENDPOINTS:
+            session["_last_active"] = now
+
+    @app.before_request
     def _enforce_csrf():
         # Only validate on state-changing methods and only when CSRF is enabled.
         if not app.config.get("CSRF_ENABLED", True):
@@ -352,6 +418,49 @@ def create_app():
             audit.access_denied(
                 session.get("user"),
                 "{0} {1}".format(request.method, request.path),
+            )
+        return response
+
+    @app.after_request
+    def _security_headers(response):
+        """Add defensive HTTP response headers (APSC-DV-002500 and related).
+
+        - ``X-Frame-Options: DENY`` and ``frame-ancestors 'none'`` in the CSP
+          stop the UI being framed (clickjacking).
+        - ``X-Content-Type-Options: nosniff`` stops MIME sniffing.
+        - ``Referrer-Policy`` keeps the (token-bearing) URL out of referrers.
+        - A conservative ``Content-Security-Policy`` constrains where scripts,
+          styles, images, media and connections may come from. ``'unsafe-inline'``
+          is required for now because the chat page ships inline ``<script>`` and
+          the stylesheet macro inlines CSS on the dev server; tightening this to
+          nonces is tracked separately.
+        - ``Strict-Transport-Security`` is sent only when MiniMost actually
+          serves TLS (the same condition that gates the Secure cookie), so a
+          plain-HTTP reverse-proxy or the test suite is unaffected.
+
+        ``setdefault`` is used so a route that sets its own value (e.g. the
+        service worker's ``Content-Type``) is never overridden.
+        """
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "connect-src 'self'; "
+            "worker-src 'self'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'",
+        )
+        if not os.environ.get("MINIMOST_SKIP_TLS"):
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
             )
         return response
 

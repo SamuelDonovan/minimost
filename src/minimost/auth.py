@@ -365,6 +365,10 @@ def login_post():
     db.close()
 
     session["user"] = canonical
+    # Start the inactivity clock at authentication and bind the session to the
+    # configured lifetime (see _enforce_idle_timeout / PERMANENT_SESSION_LIFETIME).
+    session.permanent = True
+    session["_last_active"] = time.time()
     common.init_user_db(canonical)
     presence.update_presence(canonical, "active")
     audit.login_success(canonical)
@@ -551,6 +555,8 @@ def signup_post():
     chat.post_welcome_message(username)
 
     session["user"] = username
+    session.permanent = True
+    session["_last_active"] = time.time()
     presence.update_presence(username, "active")
     audit.account_created(username)
     audit.login_success(username)

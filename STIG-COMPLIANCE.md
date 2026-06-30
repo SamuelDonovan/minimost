@@ -33,8 +33,8 @@ and runs on **Python 3.6** (no new dependencies).
 | #   | Item                          | Status                         | STIG refs                            |
 | --- | ----------------------------- | ------------------------------ | ------------------------------------ |
 | 1   | Security audit logging        | ✅ **Done** (`minimost.audit`) | APSC-DV-000340–000430, 000810–000900 |
-| 2   | Session inactivity timeout    | ☐ Planned                      | APSC-DV-000070 / 000080              |
-| 3   | Security response headers     | ☐ Planned                      | APSC-DV-002500                       |
+| 2   | Session inactivity timeout    | ✅ **Done**                    | APSC-DV-000070 / 000080              |
+| 3   | Security response headers     | ✅ **Done**                    | APSC-DV-002500                       |
 | 4   | Custom generic error handlers | ☐ Planned                      | APSC-DV-002880 / 002890              |
 | 5   | Password policy hardening     | ☐ Planned                      | APSC-DV-001940 family                |
 | 6   | DoD Notice & Consent banner   | ☐ Planned                      | logon banner                         |
@@ -54,20 +54,28 @@ CSRF, forbidden channel/DM/message access). Values are stripped of control
 characters (log-injection defence); passwords, tokens, and message bodies are
 never written. See `docs/security.rst` → _Audit logging_.
 
-### 2. Session inactivity timeout (APSC-DV-000070 / 000080)
+### 2. Session inactivity timeout — ✅ Done (APSC-DV-000070 / 000080)
 
-No `PERMANENT_SESSION_LIFETIME` is set, so sessions have no idle timeout. STIG
-requires auto-termination after **15 min** of inactivity (10 min privileged).
-Set `PERMANENT_SESSION_LIFETIME = timedelta(minutes=15)`, mark sessions
-permanent at login, and clear the session in a `before_request` when the idle
-window is exceeded.
+`PERMANENT_SESSION_LIFETIME` is set to 15 minutes and sessions are marked
+permanent at login, so the signed cookie itself expires after the idle window.
+A `_enforce_idle_timeout` `before_request` hook (in `minimost.create_app`)
+clears the session and redirects to `/login` once 15 minutes elapse since the
+last user-initiated request, and audits a `session_timeout` event. Background
+pollers (the SSE stream and its reconnect, the presence heartbeat, the sidebar
+badge pollers, and in-call signal/state pollers — see `_PASSIVE_ENDPOINTS`) do
+**not** refresh the timer, so an unattended-but-open tab is still logged out by
+its own next poll. MiniMost has a single non-privileged role, so the 10-minute
+privileged bound (APSC-DV-000080) collapses onto the same value.
 
-### 3. Security response headers (APSC-DV-002500)
+### 3. Security response headers — ✅ Done (APSC-DV-002500)
 
-No security headers are emitted. Add an `after_request` hook setting
-`X-Frame-Options: DENY` (clickjacking), `X-Content-Type-Options: nosniff`, a
-conservative `Content-Security-Policy`, `Strict-Transport-Security` (when on
-TLS), and `Cache-Control: no-store` on authenticated responses.
+A `_security_headers` `after_request` hook sets `X-Frame-Options: DENY` and a
+CSP `frame-ancestors 'none'` (clickjacking), `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer`, a conservative `Content-Security-Policy`, and
+`Strict-Transport-Security` (only when MiniMost serves TLS). The CSP still
+allows `'unsafe-inline'` for scripts/styles because the chat page ships inline
+`<script>` and inlines CSS on the dev server; tightening to nonces is tracked
+as a follow-up.
 
 ### 4. Custom generic error handlers (APSC-DV-002880 / 002890)
 

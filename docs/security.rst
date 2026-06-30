@@ -297,6 +297,43 @@ aggregator/SIEM (for example via journald or rsyslog) and restrict its
 permissions, since it is the authoritative record of authentication and
 access-control activity.
 
+Session inactivity timeout
+--------------------------
+
+Authenticated sessions are terminated after 15 minutes of inactivity
+(``minimost._SESSION_IDLE_SECONDS``). The signed session cookie is bound to the
+same lifetime via ``PERMANENT_SESSION_LIFETIME``, and a ``before_request`` hook
+clears the session and redirects to ``/login`` once the idle window is exceeded,
+auditing a ``session_timeout`` event.
+
+Only genuine user interaction refreshes the timer. The frontend hits a number
+of endpoints automatically on timers — the ``/events`` SSE stream and its
+periodic reconnect, the presence heartbeat, the sidebar badge pollers, and the
+in-call signal/state pollers — and these are excluded from refreshing activity
+(``minimost._PASSIVE_ENDPOINTS``). As a result an unattended tab that is left
+open is still logged out by its own next background poll once it has been idle
+for 15 minutes. MiniMost has a single, non-privileged user role, so no separate
+(shorter) administrator timeout applies.
+
+Security response headers
+-------------------------
+
+Every response carries a set of defensive headers:
+
+- ``X-Frame-Options: DENY`` and a Content-Security-Policy ``frame-ancestors
+  'none'`` prevent the UI from being framed (clickjacking).
+- ``X-Content-Type-Options: nosniff`` disables MIME sniffing.
+- ``Referrer-Policy: no-referrer`` keeps URLs (which may carry a reset token)
+  out of the ``Referer`` header.
+- A conservative ``Content-Security-Policy`` constrains the origins for scripts,
+  styles, images, media, and connections. It still permits ``'unsafe-inline'``
+  for scripts and styles because the chat page ships inline ``<script>`` and the
+  stylesheet macro inlines CSS on the dev server; moving to nonces is a planned
+  hardening step.
+- ``Strict-Transport-Security`` is sent only when MiniMost actually serves TLS
+  (the same condition that gates the ``Secure`` session cookie), so a
+  plain-HTTP reverse-proxy deployment is unaffected.
+
 Known Limitations
 -----------------
 
