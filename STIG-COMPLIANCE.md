@@ -40,7 +40,7 @@ and runs on **Python 3.6** (no new dependencies).
 | 6   | DoD Notice & Consent banner   | ☐ Planned                      | logon banner                         |
 | 7   | Concurrent-session limit      | ☐ Planned                      | APSC-DV-000010                       |
 | 8   | Logoff confirmation page      | ✅ **Done**                    | APSC-DV-000100                       |
-| 9   | Session ID rotation on auth   | ☐ Planned                      | APSC-DV-002250                       |
+| 9   | Session ID rotation on auth   | ✅ **Done**                    | APSC-DV-002250                       |
 
 ### 1. Security audit logging — ✅ Done
 
@@ -134,10 +134,17 @@ Your session was securely terminated.") via a new `.auth-notice` style. The
 banner shows only when the flag is present, and an `error` takes precedence over
 it. The logout is still audited (`event=logout`).
 
-### 9. Session ID rotation on auth (APSC-DV-002250)
+### 9. Session ID rotation on auth — ✅ Done (APSC-DV-002250)
 
-Regenerate the session identifier on login and password change to prevent
-session fixation (`session.clear()` then set `session["user"]` fresh).
+On login and signup, `_start_authenticated_session` calls `session.clear()`
+before establishing the authenticated session, so any session an attacker fixed
+in the victim's browser is discarded rather than inherited, and a fresh session
+identifier (`_sid`) is minted. On a password change, `_rotate_session_id`
+regenerates `_sid` without clearing the session (the user stays logged in and
+the CSRF token is preserved so an open page keeps working). Logout already
+clears the session. Note that Flask's signed-cookie sessions are themselves
+resistant to classic fixation — an attacker cannot mint a valid cookie without
+the secret key — so this is defence in depth.
 
 ## Environment / deployment notes (not code changes)
 

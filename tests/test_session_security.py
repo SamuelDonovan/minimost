@@ -140,3 +140,57 @@ def test_background_poll_does_not_refresh_the_timer(alice):
     alice.get("/online_users")
     with alice.session_transaction() as s:
         assert s["_last_active"] == marker
+
+
+# --- Session ID rotation / fixation (APSC-DV-002250) ------------------------
+
+
+def _signup(client, username, password="Password1!"):
+    client.post(
+        "/signup",
+        data={"username": username, "password": password, "confirm_password": password},
+    )
+
+
+def test_login_regenerates_session_and_drops_fixed_session(client):
+    _signup(client, "carol")
+    client.get("/logout")
+    # An attacker fixes a session value and a known session id in the browser.
+    with client.session_transaction() as s:
+        s["planted"] = "evil"
+        s["_sid"] = "attacker-known-sid"
+    client.post("/login", data={"username": "carol", "password": "Password1!"})
+    with client.session_transaction() as s:
+        assert s.get("user") == "carol"
+        assert "planted" not in s  # the fixed session was discarded
+        assert s.get("_sid") not in (None, "attacker-known-sid")  # regenerated
+
+
+def test_login_uses_a_fresh_session_id_each_time(client):
+    _signup(client, "dave")
+    client.get("/logout")
+    client.post("/login", data={"username": "dave", "password": "Password1!"})
+    with client.session_transaction() as s:
+        first = s["_sid"]
+    client.get("/logout")
+    client.post("/login", data={"username": "dave", "password": "Password1!"})
+    with client.session_transaction() as s:
+        assert s["_sid"] != first
+
+
+def test_password_change_rotates_session_id_but_stays_logged_in(client):
+    _signup(client, "erin")  # signup logs the user in
+    with client.session_transaction() as s:
+        before = s["_sid"]
+    resp = client.post(
+        "/change-password",
+        data={
+            "current_password": "Password1!",
+            "new_password": "Password2!",
+            "confirm_password": "Password2!",
+        },
+    )
+    assert resp.status_code == 200
+    with client.session_transaction() as s:
+        assert s.get("user") == "erin"  # still authenticated
+        assert s["_sid"] != before  # identifier rotated

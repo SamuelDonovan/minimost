@@ -35,6 +35,7 @@ _USERNAME_RE : re.Pattern
 # From the python standard library
 import json
 import re
+import secrets
 from functools import wraps
 import sqlite3
 import time
@@ -152,6 +153,36 @@ def hash_password(password: str) -> str:
         assert check_password_hash(hashed, "S3cr3t!")
     """
     return generate_password_hash(password)
+
+
+def _start_authenticated_session(username: str) -> None:
+    """Establish a fresh authenticated session for *username*.
+
+    Any pre-existing session is cleared first, so a session an attacker may have
+    fixed in the victim's browser is discarded rather than inherited, and a new
+    session identifier (``_sid``) is minted. Regenerating the identifier on
+    authentication is the session-fixation defence required by ASD STIG
+    APSC-DV-002250. The inactivity clock is also seeded here (see
+    :func:`minimost._enforce_idle_timeout`).
+
+    :param username: The canonical username that just authenticated.
+    """
+    session.clear()
+    session["user"] = username
+    session["_sid"] = secrets.token_hex(32)
+    session.permanent = True
+    session["_last_active"] = time.time()
+
+
+def _rotate_session_id() -> None:
+    """Regenerate the current session's identifier (ASD STIG APSC-DV-002250).
+
+    Called after a credential change so the session is not the same identifier
+    that existed before the change. The session is *not* cleared (the user stays
+    logged in) and the CSRF token is left in place so a still-open page keeps
+    working.
+    """
+    session["_sid"] = secrets.token_hex(32)
 
 
 def _seed_channel_history(_new_user: str) -> None:
@@ -368,11 +399,9 @@ def login_post():
         db.commit()
     db.close()
 
-    session["user"] = canonical
-    # Start the inactivity clock at authentication and bind the session to the
-    # configured lifetime (see _enforce_idle_timeout / PERMANENT_SESSION_LIFETIME).
-    session.permanent = True
-    session["_last_active"] = time.time()
+    # Establish a fresh session (regenerating the session identifier defeats
+    # session fixation) and seed the inactivity clock.
+    _start_authenticated_session(canonical)
     common.init_user_db(canonical)
     presence.update_presence(canonical, "active")
     audit.login_success(canonical)
@@ -560,9 +589,7 @@ def signup_post():
 
     chat.post_welcome_message(username)
 
-    session["user"] = username
-    session.permanent = True
-    session["_last_active"] = time.time()
+    _start_authenticated_session(username)
     presence.update_presence(username, "active")
     audit.account_created(username)
     audit.login_success(username)
@@ -639,6 +666,8 @@ def change_password_post():
     )
     db.commit()
     db.close()
+    # Regenerate the session identifier after a credential change.
+    _rotate_session_id()
     audit.password_changed(username)
     return {"ok": True}
 

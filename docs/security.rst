@@ -335,6 +335,19 @@ past the window. MiniMost has a single, non-privileged user role, so no separate
    never terminated for being idle), which likewise does not satisfy
    APSC-DV-000070.
 
+Session identifier rotation
+---------------------------
+
+To defeat session fixation, the session identifier is regenerated whenever
+authentication state changes. On login and signup the existing session is
+cleared before the authenticated session is established, so a session an
+attacker may have fixed in the victim's browser is discarded rather than
+inherited, and a fresh identifier is minted; a password change rotates the
+identifier while keeping the user logged in. Logout clears the session
+entirely. (Flask's signed-cookie sessions are themselves resistant to classic
+fixation — an attacker cannot forge a valid cookie without the secret key — so
+this is defence in depth.)
+
 Security response headers
 -------------------------
 
