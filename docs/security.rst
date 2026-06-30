@@ -300,11 +300,13 @@ access-control activity.
 Session inactivity timeout
 --------------------------
 
-Authenticated sessions are terminated after 15 minutes of inactivity
-(``minimost._SESSION_IDLE_SECONDS``). The signed session cookie is bound to the
-same lifetime via ``PERMANENT_SESSION_LIFETIME``, and a ``before_request`` hook
-clears the session and redirects to ``/login`` once the idle window is exceeded,
-auditing a ``session_timeout`` event.
+Authenticated sessions are terminated after a period of inactivity, configured
+by ``session_idle_minutes`` in ``settings.json``. The signed session cookie is
+bound to the same lifetime via ``PERMANENT_SESSION_LIFETIME``, and a
+``before_request`` hook clears the session and redirects to ``/login`` once the
+idle window is exceeded, auditing a ``session_timeout`` event. If
+``settings.json`` cannot be read the timeout falls back to
+``minimost._SESSION_IDLE_SECONDS`` (the 15-minute STIG baseline).
 
 Only genuine user interaction refreshes the timer. The frontend hits a number
 of endpoints automatically on timers — the ``/events`` SSE stream and its
@@ -312,8 +314,14 @@ periodic reconnect, the presence heartbeat, the sidebar badge pollers, and the
 in-call signal/state pollers — and these are excluded from refreshing activity
 (``minimost._PASSIVE_ENDPOINTS``). As a result an unattended tab that is left
 open is still logged out by its own next background poll once it has been idle
-for 15 minutes. MiniMost has a single, non-privileged user role, so no separate
+past the window. MiniMost has a single, non-privileged user role, so no separate
 (shorter) administrator timeout applies.
+
+.. note::
+
+   The shipped default for ``session_idle_minutes`` is **2 weeks**, chosen for
+   usability and intentionally outside the APSC-DV-000070 band. A deployment
+   that must satisfy that control should set ``session_idle_minutes`` to ``15``.
 
 Security response headers
 -------------------------

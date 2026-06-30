@@ -28,6 +28,7 @@ Example (showing all available keys with their defaults)::
         "stun_port": 3478,
         "max_login_attempts": 5,
         "lockout_duration_minutes": 15,
+        "session_idle_minutes": 20160,
         "rate_limit_enabled": true,
         "max_event_streams_per_user": 12,
         "rate_limits": {
@@ -165,6 +166,21 @@ content. The two are independent, so you can cap by age, by size, or both.
        lockout message confirms that the account exists, which is a deliberate
        trade-off for clear user feedback; the rest of the login flow keeps
        invalid-username and invalid-password failures indistinguishable.
+
+``session_idle_minutes``
+    How long, in minutes, an authenticated session may sit **idle** before it is
+    terminated and the user is redirected to the login page. The signed session
+    cookie is bound to the same lifetime, and only genuine user interaction
+    resets the timer (background pollers do not). Defaults to ``20160`` (two
+    weeks). Read fresh when the application starts, so a change requires a
+    **server restart**.
+
+    .. note::
+
+       The two-week default is chosen for usability and is intentionally outside
+       the DISA ASD STIG inactivity-timeout control (APSC-DV-000070, 15 minutes).
+       For a deployment that must satisfy that control, set this to ``15``. If
+       this file cannot be read the timeout falls back to the 15-minute baseline.
 
 ``rate_limit_enabled``
     Master switch for the in-process denial-of-service throttles — the per-route

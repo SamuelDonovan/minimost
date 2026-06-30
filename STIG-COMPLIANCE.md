@@ -54,18 +54,25 @@ CSRF, forbidden channel/DM/message access). Values are stripped of control
 characters (log-injection defence); passwords, tokens, and message bodies are
 never written. See `docs/security.rst` → _Audit logging_.
 
-### 2. Session inactivity timeout — ✅ Done (APSC-DV-000070 / 000080)
+### 2. Session inactivity timeout — ✅ Mechanism done; default needs tuning for compliance (APSC-DV-000070 / 000080)
 
-`PERMANENT_SESSION_LIFETIME` is set to 15 minutes and sessions are marked
-permanent at login, so the signed cookie itself expires after the idle window.
-A `_enforce_idle_timeout` `before_request` hook (in `minimost.create_app`)
-clears the session and redirects to `/login` once 15 minutes elapse since the
-last user-initiated request, and audits a `session_timeout` event. Background
-pollers (the SSE stream and its reconnect, the presence heartbeat, the sidebar
-badge pollers, and in-call signal/state pollers — see `_PASSIVE_ENDPOINTS`) do
-**not** refresh the timer, so an unattended-but-open tab is still logged out by
-its own next poll. MiniMost has a single non-privileged role, so the 10-minute
-privileged bound (APSC-DV-000080) collapses onto the same value.
+The timeout mechanism is implemented and configurable via `session_idle_minutes`
+in `settings.json`. `PERMANENT_SESSION_LIFETIME` is bound to that window and
+sessions are marked permanent at login, so the signed cookie expires with it. A
+`_enforce_idle_timeout` `before_request` hook (in `minimost.create_app`) clears
+the session and redirects to `/login` once the window elapses since the last
+user-initiated request, and audits a `session_timeout` event. Background pollers
+(the SSE stream and its reconnect, the presence heartbeat, the sidebar badge
+pollers, and in-call signal/state pollers — see `_PASSIVE_ENDPOINTS`) do **not**
+refresh the timer, so an unattended-but-open tab is still logged out by its own
+next poll. MiniMost has a single non-privileged role, so the 10-minute privileged
+bound (APSC-DV-000080) collapses onto the same value.
+
+> **Deployment note:** the shipped default (`session_idle_minutes`) is **2 weeks**
+> for usability, which is intentionally **outside** the APSC-DV-000070 band. To
+> meet the control, set `session_idle_minutes` to `15`. If `settings.json` is
+> unreadable the code fails closed to the 15-minute baseline. Any value above 15
+> minutes should be recorded as a documented risk acceptance.
 
 ### 3. Security response headers — ✅ Done (APSC-DV-002500)
 

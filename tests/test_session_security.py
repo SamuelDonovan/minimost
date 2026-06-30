@@ -7,7 +7,7 @@ referrer/CSP).
 
 import time
 
-from minimost import _PASSIVE_ENDPOINTS, _SESSION_IDLE_SECONDS
+from minimost import _PASSIVE_ENDPOINTS, _session_idle_seconds, _SESSION_IDLE_SECONDS
 
 
 def _audit_text():
@@ -50,8 +50,10 @@ def test_hsts_absent_when_tls_skipped(client):
 
 
 def test_idle_session_is_terminated_and_audited(alice):
+    # Pin a short window so the test is independent of the shipped default.
+    alice.application.config["SESSION_IDLE_SECONDS"] = 15 * 60
     with alice.session_transaction() as s:
-        s["_last_active"] = time.time() - (_SESSION_IDLE_SECONDS + 5)
+        s["_last_active"] = time.time() - (15 * 60 + 5)
     r = alice.get("/channels")
     assert r.status_code == 302
     assert r.headers["Location"].endswith("/login")
@@ -61,8 +63,9 @@ def test_idle_session_is_terminated_and_audited(alice):
 
 
 def test_active_session_within_window_is_not_terminated(alice):
+    alice.application.config["SESSION_IDLE_SECONDS"] = 15 * 60
     with alice.session_transaction() as s:
-        s["_last_active"] = time.time() - 60  # one minute ago: well inside 15 min
+        s["_last_active"] = time.time() - 60  # one minute ago: well inside window
     r = alice.get("/channels")
     assert r.status_code == 200
 
@@ -74,6 +77,29 @@ def test_user_interaction_refreshes_the_timer(alice):
     alice.get("/channels")  # an active (non-passive) endpoint
     with alice.session_transaction() as s:
         assert s["_last_active"] > old
+
+
+def test_shipped_default_idle_window_is_two_weeks(client):
+    # The bundled settings.json ships a 2-week default for usability (outside the
+    # STIG band by design — set session_idle_minutes to 15 for APSC-DV-000070).
+    assert _session_idle_seconds() == 14 * 24 * 60 * 60
+    assert client.application.config["SESSION_IDLE_SECONDS"] == 14 * 24 * 60 * 60
+
+
+def test_fallback_constant_is_the_stig_baseline():
+    # If settings.json is ever unreadable the timeout fails closed to 15 minutes.
+    assert _SESSION_IDLE_SECONDS == 15 * 60
+
+
+def test_idle_timeout_respects_configured_window(app):
+    # The window is read live from config, so a longer setting keeps an
+    # otherwise-stale session alive.
+    app.config["SESSION_IDLE_SECONDS"] = 3600  # one hour
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user"] = "alice"
+        s["_last_active"] = time.time() - (16 * 60)  # 16 min: inside the hour
+    assert c.get("/channels").status_code == 200
 
 
 def test_background_poll_does_not_refresh_the_timer(alice):

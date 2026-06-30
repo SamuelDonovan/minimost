@@ -54,10 +54,13 @@ from .presence import presence_bp
 
 _HERE = Path(__file__).resolve().parent
 
-# Inactivity timeout for an authenticated session (ASD STIG APSC-DV-000070:
-# auto-terminate a non-privileged session after 15 minutes of inactivity).
-# MiniMost has a single, non-privileged user role, so the 10-minute privileged
-# bound (APSC-DV-000080) collapses onto this same value.
+# Fail-safe fallback for the session inactivity timeout, used only when
+# settings.json cannot be read. It is the ASD STIG APSC-DV-000070 value (15
+# minutes), so an unreadable config fails closed to the compliant baseline
+# rather than to a permissive window. The operative window is configured via
+# ``session_idle_minutes`` in settings.json (see :func:`_session_idle_seconds`).
+# With a single, non-privileged user role the 10-minute privileged bound
+# (APSC-DV-000080) collapses onto the same value.
 _SESSION_IDLE_SECONDS = 15 * 60
 
 # Endpoints the frontend hits automatically on timers — the SSE stream (and its
@@ -117,7 +120,7 @@ _SETTINGS_FILE = _HERE / "settings.json"
 
 
 def _max_upload_size_mb() -> int:
-    """Return the configured max upload size in MB (default 25)."""
+    """Return the configured max upload size in MB, read from ``settings.json``."""
     import json
 
     with suppress(Exception):
@@ -129,7 +132,7 @@ def _max_upload_size_mb() -> int:
 
 
 def _max_avatar_size_mb() -> int:
-    """Return the configured max avatar size in MB (default 5)."""
+    """Return the configured max avatar size in MB, read from ``settings.json``."""
     import json
 
     with suppress(Exception):
@@ -141,11 +144,12 @@ def _max_avatar_size_mb() -> int:
 
 
 def _ratelimit_enabled() -> bool:
-    """Return whether abuse rate limiting is on (default ``True``).
+    """Return whether abuse rate limiting is on.
 
     Read from the ``rate_limit_enabled`` key in ``settings.json`` so an operator
     can disable the in-process DoS throttles (e.g. when a reverse proxy already
-    enforces stricter limits). Any read/parse error leaves it enabled.
+    enforces stricter limits). A read/parse error fails safe by keeping the
+    throttles on.
     """
     import json
 
@@ -158,7 +162,7 @@ def _ratelimit_enabled() -> bool:
 
 
 def _stun_port() -> int:
-    """Return the configured STUN UDP port (default 3478).
+    """Return the configured STUN UDP port, read from ``settings.json``.
 
     The bundled STUN server lets LAN WebRTC peers gather a real-IP
     server-reflexive candidate, avoiding the mDNS ``.local`` host-candidate
@@ -174,6 +178,32 @@ def _stun_port() -> int:
         if isinstance(value, int) and 0 < value < 65536:
             return value
     return DEFAULT_STUN_PORT
+
+
+def _session_idle_seconds() -> int:
+    """Return the session inactivity timeout in seconds.
+
+    Read from the ``session_idle_minutes`` key in ``settings.json`` so an
+    operator can lengthen (or shorten) the idle window without code changes. A
+    missing, non-positive or malformed value falls back to
+    :data:`_SESSION_IDLE_SECONDS`. ``bool`` is rejected explicitly because
+    ``True``/``False`` are ``int`` instances in Python.
+
+    See ``settings.json`` for the shipped default and ``STIG-COMPLIANCE.md`` for
+    the value required by APSC-DV-000070.
+    """
+    import json
+
+    with suppress(Exception):
+        data = json.loads(_SETTINGS_FILE.read_text())
+        value = data.get("session_idle_minutes")
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value > 0
+        ):
+            return int(value * 60)
+    return _SESSION_IDLE_SECONDS
 
 
 def _provision_tls(app) -> None:
@@ -225,8 +255,8 @@ def create_app():
        root, generating a fresh 64-character hex token if the file does not
        exist.  The secret key is required for Flask's signed session cookies.
     3. **Set upload limit** via ``MAX_CONTENT_LENGTH`` from ``max_upload_size_mb``
-       in ``settings.json`` (default 25 MiB).  Requests that exceed this size are
-       rejected by Flask before the route handler runs.
+       in ``settings.json``.  Requests that exceed this size are rejected by
+       Flask before the route handler runs.
     4. **Inject the version** into every Jinja2 template context via a context
        processor, making ``{{ app_version }}`` available in all templates.
     5. **Register blueprints** — :data:`auth_bp <minimost.auth.auth_bp>`,
@@ -275,8 +305,11 @@ def create_app():
     # Bound the signed session cookie to the inactivity window so the cookie
     # itself expires alongside the server-side idle check in
     # ``_enforce_idle_timeout`` (see APSC-DV-000070). Sessions are marked
-    # permanent at login so this lifetime applies.
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=_SESSION_IDLE_SECONDS)
+    # permanent at login so this lifetime applies. The window is operator-tunable
+    # via ``session_idle_minutes`` in settings.json.
+    _idle_seconds = _session_idle_seconds()
+    app.config["SESSION_IDLE_SECONDS"] = _idle_seconds
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=_idle_seconds)
 
     # In-process DoS throttles (per-IP/per-user rate limits and the per-user
     # concurrent SSE-stream cap). Default on; an operator can disable via the
@@ -364,11 +397,12 @@ def create_app():
         """Terminate an authenticated session after inactivity (APSC-DV-000070).
 
         Runs before every request. For a logged-in session it compares the
-        time since the last *user-initiated* request against
-        :data:`_SESSION_IDLE_SECONDS`; once exceeded, the session is cleared
-        (logging the user out) and the timeout is audited. The check fires on
-        background polls too — so an idle, unattended tab is logged out by its
-        own next heartbeat — but only genuine interaction (any endpoint not in
+        time since the last *user-initiated* request against the configured
+        idle window (``SESSION_IDLE_SECONDS``, from ``session_idle_minutes`` in
+        settings.json); once exceeded, the session is cleared (logging the user
+        out) and the timeout is audited. The check fires on background polls too
+        — so an idle, unattended tab is logged out by its own next heartbeat —
+        but only genuine interaction (any endpoint not in
         :data:`_PASSIVE_ENDPOINTS`) refreshes the timer.
         """
         user = session.get("user")
@@ -377,7 +411,7 @@ def create_app():
         session.permanent = True
         now = time.time()
         last = session.get("_last_active")
-        if last is not None and (now - last) > _SESSION_IDLE_SECONDS:
+        if last is not None and (now - last) > app.config["SESSION_IDLE_SECONDS"]:
             session.clear()
             audit.log_event("session_timeout", "success", user=user)
             # Mirror login_required's behaviour: send the caller to /login. A

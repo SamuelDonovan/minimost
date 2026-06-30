@@ -10,6 +10,7 @@
   "stun_port": 3478,
   "max_login_attempts": 5,
   "lockout_duration_minutes": 15,
+  "session_idle_minutes": 20160,
   "rate_limit_enabled": true,
   "max_event_streams_per_user": 12,
   "rate_limits": {
