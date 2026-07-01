@@ -30,6 +30,7 @@ root access, no infrastructure required. Just Flask and a browser.
    api_reference
    frontend
    security
+   stig_compliance
 
 .. toctree::
    :maxdepth: 2

@@ -213,9 +213,9 @@ def _session_idle_seconds() -> int:
     :data:`_SESSION_IDLE_SECONDS`. ``bool`` is rejected explicitly because
     ``True``/``False`` are ``int`` instances in Python.
 
-    See ``settings.json`` for the shipped default and ``STIG-COMPLIANCE.md`` for
-    the value required by APSC-DV-000070 (disabling the timeout does not satisfy
-    that control).
+    See ``settings.json`` for the shipped default and the STIG Compliance page
+    in the docs for the value required by APSC-DV-000070 (disabling the timeout
+    does not satisfy that control).
     """
     import json
 
