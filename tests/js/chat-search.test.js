@@ -979,7 +979,7 @@ describe("_previewCodeEl()", () => {
       code: "x = 1\ny = 2",
       first_line_num: 1,
     });
-    expect(el.querySelectorAll(".code-row").length).toBe(2);
+    expect(el.querySelectorAll(".code-row")).toHaveLength(2);
   });
   test("highlights specified line", () => {
     const el = _previewCodeEl({

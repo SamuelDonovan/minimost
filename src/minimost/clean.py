@@ -43,6 +43,9 @@ import time
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
+# SQLite journal mode used for every connection opened here.
+_WAL_PRAGMA = "PRAGMA journal_mode=WAL"
+
 
 def _maybe_delete_file(
     path: Path, image_cutoff: float, file_cutoff: float, dry_run: bool
@@ -142,7 +145,7 @@ def _file_owners(owner_db: str) -> dict:
         return {}
     conn = sqlite3.connect(str(path))
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(_WAL_PRAGMA)
         if not _has_table(conn, "messages"):
             return {}
         rows = conn.execute(
@@ -153,7 +156,7 @@ def _file_owners(owner_db: str) -> dict:
         return {}
     finally:
         conn.close()
-    return {filename: sender for filename, sender in rows}
+    return dict(rows)
 
 
 def _fair_file_order(entries, owners: dict):
@@ -337,6 +340,63 @@ def _heaviest_sender(conn):
     return row[0] if row else None
 
 
+def _evict_until_under_cap(conn, size: int, max_bytes: int, batch: int) -> int:
+    """Delete oldest messages in fair batches until the live size fits the cap.
+
+    Fair eviction: each batch trims the sender currently consuming the most space
+    (see :func:`_heaviest_sender`), oldest of theirs first. A flood from one
+    account makes that account the heaviest, so its own messages are purged
+    before any other user's history — a single spammer cannot evict everyone
+    else's data the way a pure global-oldest pass would. With one dominant sender
+    this naturally reduces to oldest-first.
+
+    :param conn: Open connection to the message database.
+    :param size: The current live size in bytes (already known to exceed the cap).
+    :param max_bytes: Target size cap in bytes.
+    :param batch: Number of oldest messages to delete per cycle.
+    :returns: The total number of messages deleted.
+    :rtype: int
+    """
+    deleted_total = 0
+    while size > max_bytes:
+        sender = _heaviest_sender(conn)
+        if sender is None:
+            break  # table is empty but the schema still exceeds the cap
+        ids = [
+            row[0]
+            for row in conn.execute(
+                "SELECT id FROM messages WHERE sender = ? "
+                "ORDER BY ts ASC, id ASC LIMIT ?",
+                (sender, batch),
+            ).fetchall()
+        ]
+        if not ids:
+            break  # table is empty but the schema still exceeds the cap
+        placeholders = ",".join("?" * len(ids))
+        # nosec B608 — placeholders is a string of bound-parameter markers,
+        # never message data; the ids are passed as parameters.
+        conn.execute(
+            f"DELETE FROM messages WHERE id IN ({placeholders})", ids  # nosec B608
+        )
+        # Reactions reference messages by id; drop any now-orphaned rows.
+        # (The FTS index self-cleans via its delete trigger.)
+        if _has_table(conn, "reactions"):
+            conn.execute(
+                "DELETE FROM reactions WHERE message_id NOT IN "
+                "(SELECT id FROM messages)"
+            )
+        conn.commit()
+        deleted_total += len(ids)
+
+        new_size = _live_size_bytes(conn)
+        if new_size >= size:
+            # A batch freed no whole page (e.g. many tiny rows). Stop rather
+            # than loop forever making no progress toward the cap.
+            break
+        size = new_size
+    return deleted_total
+
+
 def delete_messages_over_size(
     db_path: str,
     max_size_mb: float,
@@ -384,7 +444,7 @@ def delete_messages_over_size(
 
     conn = sqlite3.connect(str(path))
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(_WAL_PRAGMA)
         if not _has_table(conn, "messages"):
             return
 
@@ -400,49 +460,7 @@ def delete_messages_over_size(
             )
             return
 
-        deleted_total = 0
-        while size > max_bytes:
-            # Fair eviction: trim the sender currently consuming the most space,
-            # oldest of theirs first. A flood from one account makes that account
-            # the heaviest, so its own messages are purged before any other
-            # user's history — a single spammer cannot evict everyone else's
-            # data the way a pure global-oldest pass would. With one dominant
-            # sender this naturally reduces to oldest-first.
-            sender = _heaviest_sender(conn)
-            if sender is None:
-                break  # table is empty but the schema still exceeds the cap
-            ids = [
-                row[0]
-                for row in conn.execute(
-                    "SELECT id FROM messages WHERE sender = ? "
-                    "ORDER BY ts ASC, id ASC LIMIT ?",
-                    (sender, batch),
-                ).fetchall()
-            ]
-            if not ids:
-                break  # table is empty but the schema still exceeds the cap
-            placeholders = ",".join("?" * len(ids))
-            # nosec B608 — placeholders is a string of bound-parameter markers,
-            # never message data; the ids are passed as parameters.
-            conn.execute(
-                f"DELETE FROM messages WHERE id IN ({placeholders})", ids  # nosec B608
-            )
-            # Reactions reference messages by id; drop any now-orphaned rows.
-            # (The FTS index self-cleans via its delete trigger.)
-            if _has_table(conn, "reactions"):
-                conn.execute(
-                    "DELETE FROM reactions WHERE message_id NOT IN "
-                    "(SELECT id FROM messages)"
-                )
-            conn.commit()
-            deleted_total += len(ids)
-
-            new_size = _live_size_bytes(conn)
-            if new_size >= size:
-                # A batch freed no whole page (e.g. many tiny rows). Stop rather
-                # than loop forever making no progress toward the cap.
-                break
-            size = new_size
+        deleted_total = _evict_until_under_cap(conn, size, max_bytes, batch)
 
         if deleted_total:
             # Reclaim the freed pages and collapse the WAL into the main file so
@@ -475,7 +493,7 @@ def _clean_user_db(db_file: Path, cutoff: float, dry_run: bool) -> None:
     # so without this the connection would leak and surface as a ResourceWarning.
     conn = sqlite3.connect(str(db_file))
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(_WAL_PRAGMA)
         if dry_run:
             row = conn.execute(
                 "SELECT COUNT(*) FROM messages WHERE ts < ?", (cutoff,)

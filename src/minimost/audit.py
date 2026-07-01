@@ -326,9 +326,9 @@ def _get_logger():
     global _configured_path
     logger = logging.getLogger(_LOGGER_NAME)
     if _configured_path != AUDIT_LOG:
-        for existing in list(logger.handlers):
-            logger.removeHandler(existing)
+        for existing in logger.handlers:
             existing.close()
+        logger.handlers.clear()
         handler = _make_handler(AUDIT_LOG)
         if handler is not None:
             logger.addHandler(handler)

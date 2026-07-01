@@ -276,7 +276,7 @@ describe("filterUsersModal()", () => {
     const hidden = Array.from(list.children).filter(
       (r) => r.style.display === "none",
     );
-    expect(hidden.length).toBe(0);
+    expect(hidden).toHaveLength(0);
   });
 
   test("non-matching query hides rows", () => {

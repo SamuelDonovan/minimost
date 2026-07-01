@@ -97,6 +97,7 @@ button[type="submit"]:disabled {
    message shown on the login page after logout). Mirrors .auth-error but in a
    reassuring green rather than an alarming red. */
 .auth-notice {
+  display: block;
   background: rgba(60, 160, 90, 0.15);
   border: 1px solid #3ca05a;
   border-radius: 4px;

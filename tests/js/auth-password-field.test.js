@@ -75,7 +75,7 @@ test("enhances every password field (e.g. password + confirm)", () => {
   boot(
     '<form><input type="password" id="a"><input type="password" id="b"><input type="text" id="u"></form>',
   );
-  expect(document.querySelectorAll(".pw-wrap").length).toBe(2);
-  expect(document.querySelectorAll(".pw-reveal").length).toBe(2);
-  expect(document.querySelectorAll(".caps-warning").length).toBe(2);
+  expect(document.querySelectorAll(".pw-wrap")).toHaveLength(2);
+  expect(document.querySelectorAll(".pw-reveal")).toHaveLength(2);
+  expect(document.querySelectorAll(".caps-warning")).toHaveLength(2);
 });

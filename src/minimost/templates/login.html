@@ -17,9 +17,9 @@
         {% if error %}
         <div class="auth-error">{{ error }}</div>
         {% elif logged_out %}
-        <div class="auth-notice" role="status">
+        <output class="auth-notice">
             You have been logged out. Your session was securely terminated.
-        </div>
+        </output>
         {% endif %}
 
         <form method="post" autocomplete="on">

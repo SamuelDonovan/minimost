@@ -254,7 +254,7 @@ describe("filterReactions()", () => {
     const hidden = Array.from(items).filter(
       (el) => el.style.display === "none",
     );
-    expect(hidden.length).toBe(0);
+    expect(hidden).toHaveLength(0);
   });
 
   test("query matches label (case-insensitive)", () => {

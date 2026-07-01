@@ -205,7 +205,126 @@ _CHANNEL_COLLECTORS = (
 )
 
 
-@events_bp.route("/events")
+def _open_signal_conn():
+    """Open the long-lived connection used for the per-tick counter read.
+
+    One persistent connection keeps that hot path off the connect/close cost the
+    view-function collectors pay. Returns ``None`` on failure so the caller falls
+    back to per-read connections.
+    """
+    try:
+        conn = sqlite3.connect(presence.PRESENCE_DB)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+    except Exception:  # noqa: BLE001 — fall back to per-read connections
+        return None
+
+
+def _collect_messages(channel, user, after, now, wrote, next_due):
+    """Return ``(after, sse_event_or_None)`` for new messages this tick.
+
+    Messages are cursor-based and write-driven, with a slow time-driven floor
+    (:data:`_MESSAGE_RECONCILE_SECONDS`) as a safety net against a lost counter
+    bump; :data:`_MESSAGE_MIN_INTERVAL` still caps how often a write storm can
+    re-query. The (possibly advanced) cursor is returned so the caller can carry
+    it into the next tick.
+    """
+    reconcile = now >= next_due.get("messages_floor", 0)
+    if not ((wrote or reconcile) and now >= next_due.get("messages", 0)):
+        return after, None
+    next_due["messages"] = now + _MESSAGE_MIN_INTERVAL
+    next_due["messages_floor"] = now + _MESSAGE_RECONCILE_SECONDS
+    msgs = _safe_messages(channel, user, after)
+    if not msgs:
+        return after, None
+    after = _advance_cursor(after, msgs)
+    event = _sse(
+        "messages",
+        json.dumps(msgs, separators=(",", ":")),
+        event_id=repr(after),
+    )
+    return after, event
+
+
+def _emit_collector_updates(collectors, now, wrote, next_due, last_sent, *args):
+    """Yield SSE frames for any *collectors* whose JSON changed this tick.
+
+    A collector runs when the change counter moved (*wrote*) or, for a
+    time-driven one, once its interval elapses; its output is emitted only when
+    it differs from the last frame sent for that event.
+    """
+    for name, interval, time_driven, collector in collectors:
+        if (wrote or time_driven) and now >= next_due.get(name, 0):
+            next_due[name] = now + interval
+            text = _safe_text(collector, *args)
+            if text is not None and text != last_sent.get(name):
+                last_sent[name] = text
+                yield _sse(name, text)
+
+
+def _event_stream(user, channel, channel_ok, after, cap_streams):
+    """Generate the SSE frames for one held-open :func:`events` connection.
+
+    Kept at module scope (rather than nested in the view) so its tick loop does
+    not inherit the view's nesting depth. Releases the per-user stream slot in
+    its ``finally`` when the stream ends.
+    """
+    # Tell the browser how long to wait before reconnecting after a drop.
+    yield "retry: 3000\n\n"
+
+    signal_conn = _open_signal_conn()
+    try:
+        start = time.monotonic()
+        # Per-stream lifetime, jittered so tabs that connected together do not
+        # all recycle in the same instant.
+        max_seconds = _MAX_STREAM_SECONDS + secrets.randbelow(
+            _MAX_STREAM_JITTER_SECONDS + 1
+        )
+        next_due = {}
+        last_sent = {}
+        last_keepalive = start
+        last_gen = None  # None forces a full initial sweep on the first tick
+
+        while time.monotonic() - start < max_seconds:
+            now = time.monotonic()
+
+            # The only work every tick: read the shared change counter. A move
+            # means some worker committed a state change; an unchanged value
+            # means write-driven collectors can be skipped entirely.
+            gen = presence.read_event_signal(signal_conn)
+            wrote = last_gen is None or gen != last_gen
+            last_gen = gen
+
+            # Channel-scoped state: messages (cursor-based) plus typing,
+            # receipts and screen shares.
+            if channel_ok:
+                after, event = _collect_messages(
+                    channel, user, after, now, wrote, next_due
+                )
+                if event:
+                    yield event
+                yield from _emit_collector_updates(
+                    _CHANNEL_COLLECTORS, now, wrote, next_due, last_sent, channel
+                )
+
+            # Global state (presence, sidebar badges, incoming calls).
+            yield from _emit_collector_updates(
+                _GLOBAL_COLLECTORS, now, wrote, next_due, last_sent
+            )
+
+            if now - last_keepalive >= _KEEPALIVE_SECONDS:
+                last_keepalive = now
+                yield ": keep-alive\n\n"
+
+            time.sleep(_TICK_SECONDS)
+    finally:
+        if signal_conn is not None:
+            signal_conn.close()
+        if cap_streams:
+            ratelimit.release_stream(user)
+
+
+@events_bp.route("/events", methods=["GET"])
 @auth.login_required
 def events():
     """Hold a Server-Sent Events stream open, pushing change-based updates.
@@ -231,7 +350,7 @@ def events():
     # actor who opens many streams could exhaust the pool and lock everyone out.
     # Cap the number a single user may hold at once; the browser uses one per
     # open tab, so the default ceiling allows plenty of real tabs. A slot is
-    # taken here and released in the generator's finally when the stream ends.
+    # taken here and released in _event_stream's finally when the stream ends.
     cap_streams = current_app.config.get("RATELIMIT_ENABLED", True)
     if cap_streams and not ratelimit.acquire_stream(user):
         return Response(
@@ -250,93 +369,6 @@ def events():
         after = resume
     channel_ok = bool(channel) and chat.is_valid_channel(channel, user)
 
-    def generate():
-        nonlocal after
-        # Tell the browser how long to wait before reconnecting after a drop.
-        yield "retry: 3000\n\n"
-
-        # One long-lived connection for the per-tick counter read keeps that hot
-        # path off the connect/close cost the view-function collectors pay.
-        signal_conn = None
-        try:
-            signal_conn = sqlite3.connect(presence.PRESENCE_DB)
-            signal_conn.execute("PRAGMA journal_mode=WAL")
-        except Exception:  # noqa: BLE001 — fall back to per-read connections
-            signal_conn = None
-
-        try:
-            start = time.monotonic()
-            # Per-stream lifetime, jittered so tabs that connected together do
-            # not all recycle in the same instant.
-            max_seconds = _MAX_STREAM_SECONDS + secrets.randbelow(
-                _MAX_STREAM_JITTER_SECONDS + 1
-            )
-            next_due = {}
-            last_sent = {}
-            last_keepalive = start
-            last_gen = None  # None forces a full initial sweep on the first tick
-
-            while time.monotonic() - start < max_seconds:
-                now = time.monotonic()
-
-                # The only work every tick: read the shared change counter. A
-                # move means some worker committed a state change; an unchanged
-                # value means write-driven collectors can be skipped entirely.
-                gen = presence.read_event_signal(signal_conn)
-                wrote = last_gen is None or gen != last_gen
-                last_gen = gen
-
-                # Messages are cursor-based and write-driven, with a slow
-                # time-driven floor (_MESSAGE_RECONCILE_SECONDS) as a safety net
-                # against a lost counter bump. _MESSAGE_MIN_INTERVAL still caps
-                # how often a write storm can re-query.
-                reconcile = now >= next_due.get("messages_floor", 0)
-                if (
-                    channel_ok
-                    and (wrote or reconcile)
-                    and now >= next_due.get("messages", 0)
-                ):
-                    next_due["messages"] = now + _MESSAGE_MIN_INTERVAL
-                    next_due["messages_floor"] = now + _MESSAGE_RECONCILE_SECONDS
-                    msgs = _safe_messages(channel, user, after)
-                    if msgs:
-                        after = _advance_cursor(after, msgs)
-                        yield _sse(
-                            "messages",
-                            json.dumps(msgs, separators=(",", ":")),
-                            event_id=repr(after),
-                        )
-
-                # Channel-scoped state (typing, receipts, screen shares).
-                if channel_ok:
-                    for name, interval, time_driven, collector in _CHANNEL_COLLECTORS:
-                        if (wrote or time_driven) and now >= next_due.get(name, 0):
-                            next_due[name] = now + interval
-                            text = _safe_text(collector, channel)
-                            if text is not None and text != last_sent.get(name):
-                                last_sent[name] = text
-                                yield _sse(name, text)
-
-                # Global state (presence, sidebar badges, incoming calls).
-                for name, interval, time_driven, collector in _GLOBAL_COLLECTORS:
-                    if (wrote or time_driven) and now >= next_due.get(name, 0):
-                        next_due[name] = now + interval
-                        text = _safe_text(collector)
-                        if text is not None and text != last_sent.get(name):
-                            last_sent[name] = text
-                            yield _sse(name, text)
-
-                if now - last_keepalive >= _KEEPALIVE_SECONDS:
-                    last_keepalive = now
-                    yield ": keep-alive\n\n"
-
-                time.sleep(_TICK_SECONDS)
-        finally:
-            if signal_conn is not None:
-                signal_conn.close()
-            if cap_streams:
-                ratelimit.release_stream(user)
-
     headers = {
         "Cache-Control": "no-cache",
         # Disable response buffering on nginx-style proxies so events flush live.
@@ -344,7 +376,9 @@ def events():
         "Connection": "keep-alive",
     }
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(
+            _event_stream(user, channel, channel_ok, after, cap_streams)
+        ),
         mimetype="text/event-stream",
         headers=headers,
     )

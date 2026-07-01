@@ -364,7 +364,7 @@ describe("endCall()", () => {
     await endCall();
     // If no call active, fetch should not be called with /end
     const endCalls = fetchSpy.mock.calls.filter((c) => c[0].includes("/end"));
-    expect(endCalls.length).toBe(0);
+    expect(endCalls).toHaveLength(0);
   });
 
   test("calls /calls/:id/end after starting a call", async () => {
@@ -594,7 +594,7 @@ describe("refreshScreenShares()", () => {
     global.channel = "general";
     const fetchBefore = global.fetch.mock.calls.length;
     await refreshScreenShares();
-    expect(global.fetch.mock.calls.length).toBe(fetchBefore);
+    expect(global.fetch.mock.calls).toHaveLength(fetchBefore);
   });
 
   test("fetches screenshare/active for DM channel", async () => {
@@ -802,7 +802,7 @@ describe("_pollCallState()", () => {
     const fetchBefore = global.fetch.mock.calls.length;
     await _pollCallState();
     // No new calls to /calls/*/state if no active call
-    expect(global.fetch.mock.calls.length).toBe(fetchBefore);
+    expect(global.fetch.mock.calls).toHaveLength(fetchBefore);
   });
 });
 

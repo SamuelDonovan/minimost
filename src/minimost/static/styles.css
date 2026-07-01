@@ -157,7 +157,8 @@ body {
   vertical-align: middle;
   flex-shrink: 0;
 }
-@-moz-document url-prefix() {
+@supports (-moz-appearance: none) {
+  /* Firefox-only override */
   .presence {
     font-size: 1em; /* Firefox size */
   }
@@ -404,7 +405,6 @@ body {
 .msg-body {
   margin-top: 2px;
   overflow-wrap: break-word;
-  word-break: break-word;
 }
 .msg-actions {
   display: inline-flex;
@@ -762,7 +762,7 @@ body {
   margin: 0;
   line-height: 1.4;
   white-space: normal;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 #dm-hover-card .avatar-wrap {
   cursor: default;
@@ -1137,7 +1137,7 @@ mark.fuzzy-highlight {
   color: #ddd;
   line-height: 1.4;
   margin-top: 2px;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 .mentions-empty {
   padding: 32px 16px;
@@ -2047,7 +2047,7 @@ a {
   font-weight: 600;
   font-size: 16px;
   color: #eee;
-  word-break: break-word;
+  overflow-wrap: break-word;
   flex: 1;
   min-width: 0;
 }

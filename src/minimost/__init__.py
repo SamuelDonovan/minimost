@@ -38,6 +38,7 @@ from pathlib import Path
 from flask import (
     Flask,
     abort,
+    current_app,
     jsonify,
     redirect,
     render_template,
@@ -263,6 +264,309 @@ def _provision_tls(app) -> None:
         app.config["TLS_KEY_FILE"] = str(key)
 
 
+def _register_template_globals(app, upload_mb, avatar_mb, stun):
+    """Register the Jinja globals and the static cache-busting/inlining helpers.
+
+    Kept together (and holding the per-app inline cache as a closure) so the
+    application factory can wire up template support in a single call.
+    """
+
+    @app.url_defaults
+    def _static_cache_bust(endpoint, values):
+        """Append ``?v=<mtime>`` to ``static`` URLs for cache-busting.
+
+        With assets cached for a day (see ``SEND_FILE_MAX_AGE_DEFAULT``), a
+        plain ``/static/styles.css`` URL could serve a stale copy after an edit
+        or upgrade. Keying the URL on the file's modification time changes it the
+        instant the file changes, so the browser fetches the new bytes
+        immediately while still caching aggressively in between. Applies to every
+        ``url_for('static', filename=...)`` call, so all templates benefit.
+        """
+        static_folder = app.static_folder
+        if endpoint != "static" or "filename" not in values or not static_folder:
+            return
+        with suppress(Exception):
+            asset = Path(static_folder) / values["filename"]
+            values["v"] = int(asset.stat().st_mtime)
+
+    # Inline a static asset's bytes directly into the page (see the
+    # ``stylesheet`` macro in templates/_assets.html). On the built-in dev
+    # server every response carries ``Connection: close`` and Chrome can still
+    # lose a *separate* asset request to a connection reset under heavy refresh
+    # stress — a separate request is the only thing that can be lost. The HTML
+    # document request is the one the navigation is already riding on, so it
+    # never fails; CSS carried *inside* that document therefore cannot fail to
+    # load. The result is keyed on mtime so an edit is picked up immediately,
+    # and only ever used on the dev server (``dev_server`` is True), so Gunicorn
+    # keeps serving cacheable, separately-requested stylesheets.
+    # Returns the raw file text; the template marks it safe with ``| safe`` so
+    # there is no need to import a Markup wrapper.
+    _inline_cache: dict[str, tuple[float, str]] = {}
+
+    def _inline_static(filename: str) -> str:
+        path = Path(app.static_folder or "") / filename
+        mtime = path.stat().st_mtime
+        cached = _inline_cache.get(filename)
+        if cached is None or cached[0] != mtime:
+            cached = (mtime, path.read_text(encoding="utf-8"))
+            _inline_cache[filename] = cached
+        return cached[1]
+
+    # Exposed as environment globals (not a context processor) so the
+    # ``stylesheet`` macro can use them even though it is imported without
+    # context. ``dev_server`` is a *function* read live at render time rather
+    # than a bare value: Jinja caches imported macros and would otherwise freeze
+    # whatever the value happened to be at the first render, so the dev-server
+    # entry point (minimost.__main__) must be able to flip ``app.config`` and
+    # have every subsequent render see it regardless of import timing.
+    app.config.setdefault("DEV_SERVER", False)
+    app.jinja_env.globals["inline_static"] = _inline_static
+    app.jinja_env.globals["dev_server"] = lambda: app.config["DEV_SERVER"]
+
+    def _csrf_token() -> str:
+        """Return a per-session CSRF token, generating one if absent."""
+        if "_csrf_token" not in session:
+            session["_csrf_token"] = secrets.token_hex(32)
+        return session["_csrf_token"]  # type: ignore[return-value]
+
+    app.jinja_env.globals["csrf_token"] = _csrf_token
+
+    @app.context_processor
+    def inject_globals():
+        """Inject global template variables."""
+        return {
+            "app_version": _APP_VERSION,
+            "max_upload_mb": upload_mb,
+            "max_avatar_mb": avatar_mb,
+            "max_message_chars": chat_mod.MAX_MESSAGE_LEN,
+            "stun_port": stun,
+        }
+
+
+def _enforce_idle_timeout():
+    """Terminate an authenticated session after inactivity (APSC-DV-000070).
+
+    Runs before every request. For a logged-in session it compares the
+    time since the last *user-initiated* request against the configured
+    idle window (``SESSION_IDLE_SECONDS``, from ``session_idle_minutes`` in
+    settings.json); once exceeded, the session is cleared (logging the user
+    out) and the timeout is audited. The check fires on background polls too
+    — so an idle, unattended tab is logged out by its own next heartbeat —
+    but only genuine interaction (any endpoint not in
+    :data:`_PASSIVE_ENDPOINTS`) refreshes the timer.
+
+    A configured window of ``0`` disables the idle logout entirely: the
+    session is kept (and marked permanent) and never terminated for
+    inactivity.
+    """
+    user = session.get("user")
+    if not user:
+        return
+    session.permanent = True
+    idle_seconds = current_app.config["SESSION_IDLE_SECONDS"]
+    if idle_seconds <= 0:
+        return
+    now = time.time()
+    last = session.get("_last_active")
+    if last is not None and (now - last) > idle_seconds:
+        session.clear()
+        audit.log_event("session_timeout", "success", user=user)
+        # Mirror login_required's behaviour: send the caller to /login. A
+        # fetch() poll follows the redirect, sees the login page, and the
+        # frontend navigates there — the same path as any invalid session.
+        return redirect("/login")
+    if request.endpoint not in _PASSIVE_ENDPOINTS:
+        session["_last_active"] = now
+
+
+def _enforce_csrf():
+    # Only validate on state-changing methods and only when CSRF is enabled.
+    if not current_app.config.get("CSRF_ENABLED", True):
+        return
+    if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
+        return
+    # Chat and presence routes are API endpoints protected by session auth;
+    # CSRF validation applies only to the HTML form routes in the auth blueprint.
+    if request.blueprint != "auth":
+        return
+    expected = session.get("_csrf_token", "")
+    submitted = request.form.get("csrf_token", "")
+    if not expected or not secrets.compare_digest(expected, submitted):
+        abort(403)
+
+
+def _audit_access_denied(response):
+    """Record access-control denials (forbidden resource / failed CSRF).
+
+    A single hook on the response captures every 401/403 the app emits —
+    the CSRF rejection in :func:`_enforce_csrf`, the explicit
+    ``"forbidden", 403`` returns guarding channel/DM access, and any
+    ``abort(403)`` — without threading an audit call through each route.
+    Only the method and path are logged (no bodies, no query string), so
+    no message content or token is written to the trail.
+    """
+    if response.status_code in (401, 403):
+        audit.access_denied(
+            session.get("user"),
+            "{0} {1}".format(request.method, request.path),
+        )
+    return response
+
+
+def _security_headers(response):
+    """Add defensive HTTP response headers (APSC-DV-002500 and related).
+
+    - ``X-Frame-Options: DENY`` and ``frame-ancestors 'none'`` in the CSP
+      stop the UI being framed (clickjacking).
+    - ``X-Content-Type-Options: nosniff`` stops MIME sniffing.
+    - ``Referrer-Policy`` keeps the (token-bearing) URL out of referrers.
+    - A conservative ``Content-Security-Policy`` constrains where scripts,
+      styles, images, media and connections may come from. ``'unsafe-inline'``
+      is required for now because the chat page ships inline ``<script>`` and
+      the stylesheet macro inlines CSS on the dev server; tightening this to
+      nonces is tracked separately.
+    - ``Strict-Transport-Security`` is sent only when MiniMost actually
+      serves TLS (the same condition that gates the Secure cookie), so a
+      plain-HTTP reverse-proxy or the test suite is unaffected.
+
+    ``setdefault`` is used so a route that sets its own value (e.g. the
+    service worker's ``Content-Type``) is never overridden.
+    """
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "media-src 'self' blob:; "
+        "connect-src 'self'; "
+        "worker-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'",
+    )
+    if not os.environ.get("MINIMOST_SKIP_TLS"):
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
+
+
+def _signal_state_change(response):
+    """Wake held-open SSE streams after a state-changing request.
+
+    The push stream (:mod:`minimost.events`) watches a shared counter rather
+    than re-querying on a timer; bumping it here is what turns a write into
+    a near-immediate push. Over-signalling is harmless — a stream just
+    re-runs its diff and finds nothing new — so we gate on method, success,
+    and blueprint instead of enumerating every mutating route. ``/events``
+    itself is a GET and never triggers this.
+    """
+    if (
+        request.method in ("POST", "PUT", "PATCH", "DELETE")
+        and response.status_code < 400
+        and request.blueprint in ("chat", "presence", "calls")
+    ):
+        presence.bump_event_signal()
+    return response
+
+
+def _wants_json() -> bool:
+    """Return ``True`` when the caller is an API/fetch request, not a browser.
+
+    Used to decide whether an error is returned as a JSON object or a small
+    HTML page. A request counts as wanting JSON when it carries a JSON body,
+    is an ``XMLHttpRequest``, or its ``Accept`` header prefers JSON over HTML.
+    """
+    if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return True
+    accept = request.accept_mimetypes
+    return accept["application/json"] > accept["text/html"]
+
+
+def _error_response(status: int, message: str):
+    """Build a generic error response, content-negotiated, never revealing.
+
+    No stack trace, framework version, or request detail reaches the body —
+    only the status and a fixed generic message. Falls back to plain text if
+    the HTML template cannot be rendered, so the error handler can never
+    itself raise.
+    """
+    if _wants_json():
+        return jsonify(error=message), status, {}
+    try:
+        return render_template("error.html", status=status, message=message), status, {}
+    except Exception:  # nosec B110 - degrade to plain text; never re-raise
+        return message, status, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+def _handle_http_error(error):
+    """Generic handler for expected HTTP errors (404, 405, 413, …)."""
+    status = getattr(error, "code", 500) or 500
+    message = _GENERIC_ERROR_MESSAGES.get(status, _GENERIC_ERROR_MESSAGES[500])
+    return _error_response(status, message)
+
+
+def _handle_server_error(error):
+    """Return a generic 500 without leaking the exception.
+
+    Flask has already logged the traceback to the application logger (which
+    only administrators can read — APSC-DV-002890); here we additionally drop
+    a generic marker in the audit trail and return a non-revealing body.
+    """
+    audit.log_event(
+        "server_error",
+        "failure",
+        detail="{0} {1}".format(request.method, request.path),
+    )
+    return _error_response(500, _GENERIC_ERROR_MESSAGES[500])
+
+
+def service_worker():
+    """Serve the PWA service worker from the root scope.
+
+    The ``Service-Worker-Allowed: /`` header lets a script served from
+    ``/sw.js`` control the entire origin, so the installed PWA hides the
+    browser URL bar across all routes.
+    """
+    return (
+        current_app.send_static_file("sw.js"),
+        200,
+        {
+            "Content-Type": "application/javascript",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
+def download_ca_cert():
+    """Serve the local CA certificate so clients can trust this server.
+
+    Importing this public certificate into the browser/OS trust store makes
+    the self-signed TLS leaf MiniMost serves trusted, which clears the
+    "Not secure" warning and lets the installed PWA hide the URL bar. Only
+    the public CA cert is exposed; the signing key (``ca-key.pem``) never
+    leaves the server. ``ca.pem`` lives in the fixed data root alongside
+    ``cert.pem``/``key.pem`` (see :func:`minimost.certs.default_cert_dir`).
+    """
+    from .certs import default_cert_dir
+
+    ca_path = default_cert_dir() / "ca.pem"
+    if not ca_path.is_file():
+        abort(404)
+    return common.send_attachment(
+        send_file,
+        ca_path,
+        mimetype="application/x-pem-file",
+        as_attachment=True,
+        name="minimost-ca.pem",
+    )
+
+
 def create_app():
     """Create and configure the MiniMost Flask application.
 
@@ -356,303 +660,20 @@ def create_app():
     # bounds how long any unversioned asset (e.g. manifest icons) can be stale.
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 86400  # seconds (1 day)
 
-    @app.url_defaults
-    def _static_cache_bust(endpoint, values):
-        """Append ``?v=<mtime>`` to ``static`` URLs for cache-busting.
+    _register_template_globals(app, _upload_mb, _avatar_mb, _stun)
 
-        With assets cached for a day (see ``SEND_FILE_MAX_AGE_DEFAULT``), a
-        plain ``/static/styles.css`` URL could serve a stale copy after an edit
-        or upgrade. Keying the URL on the file's modification time changes it the
-        instant the file changes, so the browser fetches the new bytes
-        immediately while still caching aggressively in between. Applies to every
-        ``url_for('static', filename=...)`` call, so all templates benefit.
-        """
-        static_folder = app.static_folder
-        if endpoint != "static" or "filename" not in values or not static_folder:
-            return
-        with suppress(Exception):
-            asset = Path(static_folder) / values["filename"]
-            values["v"] = int(asset.stat().st_mtime)
-
-    # Inline a static asset's bytes directly into the page (see the
-    # ``stylesheet`` macro in templates/_assets.html). On the built-in dev
-    # server every response carries ``Connection: close`` and Chrome can still
-    # lose a *separate* asset request to a connection reset under heavy refresh
-    # stress — a separate request is the only thing that can be lost. The HTML
-    # document request is the one the navigation is already riding on, so it
-    # never fails; CSS carried *inside* that document therefore cannot fail to
-    # load. The result is keyed on mtime so an edit is picked up immediately,
-    # and only ever used on the dev server (``dev_server`` is True), so Gunicorn
-    # keeps serving cacheable, separately-requested stylesheets.
-    # Returns the raw file text; the template marks it safe with ``| safe`` so
-    # there is no need to import a Markup wrapper.
-    _inline_cache: dict[str, tuple[float, str]] = {}
-
-    def _inline_static(filename: str) -> str:
-        path = Path(app.static_folder or "") / filename
-        mtime = path.stat().st_mtime
-        cached = _inline_cache.get(filename)
-        if cached is None or cached[0] != mtime:
-            cached = (mtime, path.read_text(encoding="utf-8"))
-            _inline_cache[filename] = cached
-        return cached[1]
-
-    # Exposed as environment globals (not a context processor) so the
-    # ``stylesheet`` macro can use them even though it is imported without
-    # context. ``dev_server`` is a *function* read live at render time rather
-    # than a bare value: Jinja caches imported macros and would otherwise freeze
-    # whatever the value happened to be at the first render, so the dev-server
-    # entry point (minimost.__main__) must be able to flip ``app.config`` and
-    # have every subsequent render see it regardless of import timing.
-    app.config.setdefault("DEV_SERVER", False)
-    app.jinja_env.globals["inline_static"] = _inline_static
-    app.jinja_env.globals["dev_server"] = lambda: app.config["DEV_SERVER"]
-
-    def _csrf_token() -> str:
-        """Return a per-session CSRF token, generating one if absent."""
-        if "_csrf_token" not in session:
-            session["_csrf_token"] = secrets.token_hex(32)
-        return session["_csrf_token"]  # type: ignore[return-value]
-
-    app.jinja_env.globals["csrf_token"] = _csrf_token
-
-    @app.before_request
-    def _enforce_idle_timeout():
-        """Terminate an authenticated session after inactivity (APSC-DV-000070).
-
-        Runs before every request. For a logged-in session it compares the
-        time since the last *user-initiated* request against the configured
-        idle window (``SESSION_IDLE_SECONDS``, from ``session_idle_minutes`` in
-        settings.json); once exceeded, the session is cleared (logging the user
-        out) and the timeout is audited. The check fires on background polls too
-        — so an idle, unattended tab is logged out by its own next heartbeat —
-        but only genuine interaction (any endpoint not in
-        :data:`_PASSIVE_ENDPOINTS`) refreshes the timer.
-
-        A configured window of ``0`` disables the idle logout entirely: the
-        session is kept (and marked permanent) and never terminated for
-        inactivity.
-        """
-        user = session.get("user")
-        if not user:
-            return
-        session.permanent = True
-        idle_seconds = app.config["SESSION_IDLE_SECONDS"]
-        if idle_seconds <= 0:
-            return
-        now = time.time()
-        last = session.get("_last_active")
-        if last is not None and (now - last) > idle_seconds:
-            session.clear()
-            audit.log_event("session_timeout", "success", user=user)
-            # Mirror login_required's behaviour: send the caller to /login. A
-            # fetch() poll follows the redirect, sees the login page, and the
-            # frontend navigates there — the same path as any invalid session.
-            return redirect("/login")
-        if request.endpoint not in _PASSIVE_ENDPOINTS:
-            session["_last_active"] = now
-
-    @app.before_request
-    def _enforce_csrf():
-        # Only validate on state-changing methods and only when CSRF is enabled.
-        if not app.config.get("CSRF_ENABLED", True):
-            return
-        if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
-            return
-        # Chat and presence routes are API endpoints protected by session auth;
-        # CSRF validation applies only to the HTML form routes in the auth blueprint.
-        if request.blueprint != "auth":
-            return
-        expected = session.get("_csrf_token", "")
-        submitted = request.form.get("csrf_token", "")
-        if not expected or not secrets.compare_digest(expected, submitted):
-            abort(403)
-
-    @app.after_request
-    def _audit_access_denied(response):
-        """Record access-control denials (forbidden resource / failed CSRF).
-
-        A single hook on the response captures every 401/403 the app emits —
-        the CSRF rejection in :func:`_enforce_csrf`, the explicit
-        ``"forbidden", 403`` returns guarding channel/DM access, and any
-        ``abort(403)`` — without threading an audit call through each route.
-        Only the method and path are logged (no bodies, no query string), so
-        no message content or token is written to the trail.
-        """
-        if response.status_code in (401, 403):
-            audit.access_denied(
-                session.get("user"),
-                "{0} {1}".format(request.method, request.path),
-            )
-        return response
-
-    @app.after_request
-    def _security_headers(response):
-        """Add defensive HTTP response headers (APSC-DV-002500 and related).
-
-        - ``X-Frame-Options: DENY`` and ``frame-ancestors 'none'`` in the CSP
-          stop the UI being framed (clickjacking).
-        - ``X-Content-Type-Options: nosniff`` stops MIME sniffing.
-        - ``Referrer-Policy`` keeps the (token-bearing) URL out of referrers.
-        - A conservative ``Content-Security-Policy`` constrains where scripts,
-          styles, images, media and connections may come from. ``'unsafe-inline'``
-          is required for now because the chat page ships inline ``<script>`` and
-          the stylesheet macro inlines CSS on the dev server; tightening this to
-          nonces is tracked separately.
-        - ``Strict-Transport-Security`` is sent only when MiniMost actually
-          serves TLS (the same condition that gates the Secure cookie), so a
-          plain-HTTP reverse-proxy or the test suite is unaffected.
-
-        ``setdefault`` is used so a route that sets its own value (e.g. the
-        service worker's ``Content-Type``) is never overridden.
-        """
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("Referrer-Policy", "no-referrer")
-        response.headers.setdefault(
-            "Content-Security-Policy",
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob:; "
-            "media-src 'self' blob:; "
-            "connect-src 'self'; "
-            "worker-src 'self'; "
-            "base-uri 'self'; "
-            "form-action 'self'; "
-            "frame-ancestors 'none'",
-        )
-        if not os.environ.get("MINIMOST_SKIP_TLS"):
-            response.headers.setdefault(
-                "Strict-Transport-Security",
-                "max-age=31536000; includeSubDomains",
-            )
-        return response
-
-    @app.after_request
-    def _signal_state_change(response):
-        """Wake held-open SSE streams after a state-changing request.
-
-        The push stream (:mod:`minimost.events`) watches a shared counter rather
-        than re-querying on a timer; bumping it here is what turns a write into
-        a near-immediate push. Over-signalling is harmless — a stream just
-        re-runs its diff and finds nothing new — so we gate on method, success,
-        and blueprint instead of enumerating every mutating route. ``/events``
-        itself is a GET and never triggers this.
-        """
-        if (
-            request.method in ("POST", "PUT", "PATCH", "DELETE")
-            and response.status_code < 400
-            and request.blueprint in ("chat", "presence", "calls")
-        ):
-            presence.bump_event_signal()
-        return response
-
-    def _wants_json() -> bool:
-        """Return ``True`` when the caller is an API/fetch request, not a browser.
-
-        Used to decide whether an error is returned as a JSON object or a small
-        HTML page. A request counts as wanting JSON when it carries a JSON body,
-        is an ``XMLHttpRequest``, or its ``Accept`` header prefers JSON over HTML.
-        """
-        if (
-            request.is_json
-            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
-        ):
-            return True
-        accept = request.accept_mimetypes
-        return accept["application/json"] > accept["text/html"]
-
-    def _error_response(status: int, message: str):
-        """Build a generic error response, content-negotiated, never revealing.
-
-        No stack trace, framework version, or request detail reaches the body —
-        only the status and a fixed generic message. Falls back to plain text if
-        the HTML template cannot be rendered, so the error handler can never
-        itself raise.
-        """
-        if _wants_json():
-            return jsonify(error=message), status
-        try:
-            return render_template("error.html", status=status, message=message), status
-        except Exception:  # nosec B110 - degrade to plain text; never re-raise
-            return message, status, {"Content-Type": "text/plain; charset=utf-8"}
-
-    def _handle_http_error(error):
-        """Generic handler for expected HTTP errors (404, 405, 413, …)."""
-        status = getattr(error, "code", 500) or 500
-        message = _GENERIC_ERROR_MESSAGES.get(status, _GENERIC_ERROR_MESSAGES[500])
-        return _error_response(status, message)
+    app.before_request(_enforce_idle_timeout)
+    app.before_request(_enforce_csrf)
+    app.after_request(_audit_access_denied)
+    app.after_request(_security_headers)
+    app.after_request(_signal_state_change)
 
     for _code in (400, 403, 404, 405, 413, 429):
         app.register_error_handler(_code, _handle_http_error)
+    app.register_error_handler(500, _handle_server_error)
 
-    @app.errorhandler(500)
-    def _handle_server_error(error):
-        """Return a generic 500 without leaking the exception.
-
-        Flask has already logged the traceback to the application logger (which
-        only administrators can read — APSC-DV-002890); here we additionally drop
-        a generic marker in the audit trail and return a non-revealing body.
-        """
-        audit.log_event(
-            "server_error",
-            "failure",
-            detail="{0} {1}".format(request.method, request.path),
-        )
-        return _error_response(500, _GENERIC_ERROR_MESSAGES[500])
-
-    @app.context_processor
-    def inject_globals():
-        """Inject global template variables."""
-        return {
-            "app_version": _APP_VERSION,
-            "max_upload_mb": _upload_mb,
-            "max_avatar_mb": _avatar_mb,
-            "max_message_chars": chat_mod.MAX_MESSAGE_LEN,
-            "stun_port": _stun,
-        }
-
-    @app.route("/sw.js", methods=["GET"])
-    def service_worker():
-        """Serve the PWA service worker from the root scope.
-
-        The ``Service-Worker-Allowed: /`` header lets a script served from
-        ``/sw.js`` control the entire origin, so the installed PWA hides the
-        browser URL bar across all routes.
-        """
-        return (
-            app.send_static_file("sw.js"),
-            200,
-            {
-                "Content-Type": "application/javascript",
-                "Service-Worker-Allowed": "/",
-            },
-        )
-
-    @app.route("/ca.pem", methods=["GET"])
-    def download_ca_cert():
-        """Serve the local CA certificate so clients can trust this server.
-
-        Importing this public certificate into the browser/OS trust store makes
-        the self-signed TLS leaf MiniMost serves trusted, which clears the
-        "Not secure" warning and lets the installed PWA hide the URL bar. Only
-        the public CA cert is exposed; the signing key (``ca-key.pem``) never
-        leaves the server. ``ca.pem`` lives in the fixed data root alongside
-        ``cert.pem``/``key.pem`` (see :func:`minimost.certs.default_cert_dir`).
-        """
-        from .certs import default_cert_dir
-
-        ca_path = default_cert_dir() / "ca.pem"
-        if not ca_path.is_file():
-            abort(404)
-        return common.send_attachment(
-            send_file,
-            ca_path,
-            mimetype="application/x-pem-file",
-            as_attachment=True,
-            name="minimost-ca.pem",
-        )
+    app.add_url_rule("/sw.js", view_func=service_worker, methods=["GET"])
+    app.add_url_rule("/ca.pem", view_func=download_ca_cert, methods=["GET"])
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(calls_bp)

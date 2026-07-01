@@ -340,6 +340,61 @@ def about():
     return render_template(_ABOUT_TEMPLATE)
 
 
+def _handle_failed_login(
+    db,
+    row,
+    canonical: str,
+    username: str,
+    max_attempts: int,
+    lockout_enabled: bool,
+    lockout_seconds: float,
+    now: float,
+):
+    """Record a failed login attempt and render the generic error response.
+
+    Against an existing account the failed-attempt counter is incremented and,
+    once it reaches ``max_attempts``, the account is locked for
+    ``lockout_seconds``. Every attempt is written to the audit trail, including
+    those against a non-existent account (``row`` is None) so credential-guessing
+    stays visible; the username is recorded as typed and no password is logged.
+    Closes *db* before returning.
+
+    :returns: A rendered ``login.html`` response.
+    :rtype: flask.Response
+    """
+    if row and lockout_enabled:
+        attempts = row[2] + 1
+        if attempts >= max_attempts:
+            db.execute(
+                "UPDATE users SET failed_attempts = 0, lockout_until = ?"
+                " WHERE username = ?",
+                (now + lockout_seconds, canonical),
+            )
+            db.commit()
+            db.close()
+            audit.login_failure(canonical)
+            audit.account_lockout(canonical)
+            return render_template(
+                _LOGIN_TEMPLATE,
+                error=_lockout_message(lockout_seconds // 60),
+                username=username,
+            )
+        db.execute(
+            "UPDATE users SET failed_attempts = ? WHERE username = ?",
+            (attempts, canonical),
+        )
+        db.commit()
+    db.close()
+    audit.login_failure(username if not row else canonical)
+    # Brute force is bounded two ways without parking a worker thread on a sleep:
+    # per-IP request rate limiting on this route (the ``@rate_limit("login")``
+    # decorator) caps how fast an attacker can guess, and per-account lockout
+    # (above) disables a targeted account after ``max_login_attempts`` failures.
+    return render_template(
+        _LOGIN_TEMPLATE, error="Invalid credentials", username=username
+    )
+
+
 @auth_bp.route("/login", methods=["POST"])
 @ratelimit.rate_limit(
     "login",
@@ -429,40 +484,15 @@ def login_post():
     if not row or not check_password_hash(row[1], password):
         # Record the failed attempt against an existing account and lock it once
         # the threshold is reached.
-        if row and lockout_enabled:
-            attempts = row[2] + 1
-            if attempts >= max_attempts:
-                db.execute(
-                    "UPDATE users SET failed_attempts = 0, lockout_until = ?"
-                    " WHERE username = ?",
-                    (now + lockout_seconds, canonical),
-                )
-                db.commit()
-                db.close()
-                audit.login_failure(canonical)
-                audit.account_lockout(canonical)
-                return render_template(
-                    _LOGIN_TEMPLATE,
-                    error=_lockout_message(lockout_seconds // 60),
-                    username=username,
-                )
-            db.execute(
-                "UPDATE users SET failed_attempts = ? WHERE username = ?",
-                (attempts, canonical),
-            )
-            db.commit()
-        db.close()
-        # Log every failed attempt, including those against a non-existent
-        # account (``row`` is None) so credential-guessing is visible in the
-        # trail. The username is recorded as typed; no password is ever logged.
-        audit.login_failure(username if not row else canonical)
-        # Brute force is bounded two ways without parking a worker thread on a
-        # sleep: per-IP request rate limiting on this route (see the
-        # ``@rate_limit("login")`` decorator) caps how fast an attacker can guess,
-        # and per-account lockout (above) disables a targeted account after
-        # ``max_login_attempts`` failures.
-        return render_template(
-            _LOGIN_TEMPLATE, error="Invalid credentials", username=username
+        return _handle_failed_login(
+            db,
+            row,
+            canonical,
+            username,
+            max_attempts,
+            lockout_enabled,
+            lockout_seconds,
+            now,
         )
 
     # Success — clear any recorded failed-attempt / lockout state.

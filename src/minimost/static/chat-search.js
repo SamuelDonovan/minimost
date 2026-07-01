@@ -945,9 +945,9 @@ const _HL_RULES = (() => {
   const INCL_ANG = /<[^\s>][^>\n]*>/y;
   const DEC_PY = /@[\w.]+/y;
   const kw = (s) =>
-    new RegExp(String.raw`\b(?:${s.trim().split(/\s+/).join("|")})\b`, "y");
+    new RegExp(String.raw`\b(?:${s.trim().replaceAll(/\s+/g, "|")})\b`, "y");
   const kwi = (s) =>
-    new RegExp(String.raw`\b(?:${s.trim().split(/\s+/).join("|")})\b`, "yi");
+    new RegExp(String.raw`\b(?:${s.trim().replaceAll(/\s+/g, "|")})\b`, "yi");
 
   return {
     python: [

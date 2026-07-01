@@ -277,7 +277,7 @@ describe("mentions channel", () => {
     ];
     renderMentionsView();
     const cards = document.querySelectorAll(".mention-list-item");
-    expect(cards.length).toBe(1);
+    expect(cards).toHaveLength(1);
     expect(cards[0].textContent).toContain("bob");
     expect(cards[0].textContent).toContain("label:general");
     cards[0].onclick();
@@ -307,7 +307,7 @@ describe("mentions channel", () => {
     expect(channel).toBe(MENTIONS_CHANNEL);
     expect(document.getElementById("input").style.display).toBe("none");
     expect(document.getElementById("chan").innerText).toBe("Mentions");
-    expect(document.querySelectorAll(".mention-list-item").length).toBe(1);
+    expect(document.querySelectorAll(".mention-list-item")).toHaveLength(1);
   });
 
   test("fetchMentions caches the payload and refreshes the sidebar", async () => {
@@ -325,7 +325,7 @@ describe("mentions channel", () => {
         ]),
     });
     await fetchMentions();
-    expect(mentionItems.length).toBe(1);
+    expect(mentionItems).toHaveLength(1);
     expect(document.getElementById("mentions-sidebar-item")).not.toBeNull();
   });
 });

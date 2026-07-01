@@ -747,7 +747,7 @@ def certificate_subject_common_name(cert_der: bytes) -> Optional[str]:
                 inner = atv_end
             pointer = set_end
         return None
-    except (IndexError, ValueError, UnicodeDecodeError):
+    except (IndexError, ValueError):  # UnicodeDecodeError is a ValueError subclass
         return None
 
 
