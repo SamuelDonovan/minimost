@@ -745,6 +745,14 @@ def _start_cleanup_scheduler(
         cleanup run, giving the server time to finish booting.  Defaults to
         ``5``.
     """
+    # Set ``MINIMOST_SKIP_CLEANUP=1`` to skip the daemon entirely. The test suite
+    # sets this: the thread is a daemon that outlives the test that created it and
+    # its size-cap pass reaches the *live* ``common.shared_db_path()``, so a leaked
+    # thread would open a concurrent WAL connection on whichever test's messages.db
+    # is current 5s later and intermittently lock it.
+    if os.environ.get("MINIMOST_SKIP_CLEANUP"):
+        return
+
     # Resolve the data directories from the live module attributes (rather than
     # re-deriving them) so the worker honours any monkeypatched paths — this is
     # what keeps the test suite's cleanup runs confined to their temp dirs

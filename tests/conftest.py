@@ -33,6 +33,12 @@ def isolated_dbs(tmp_path, monkeypatch):
     # Skip the (relatively slow) TLS keygen in create_app for every test; the
     # certificate logic is covered directly in test_pki.py instead.
     monkeypatch.setenv("MINIMOST_SKIP_TLS", "1")
+    # Skip the background cleanup daemon: it's a leaked thread that fires ~5s
+    # after the app is created and reaches the live common.shared_db_path(), so
+    # left running it opens a concurrent WAL connection on an unrelated test's
+    # messages.db and intermittently locks it. The cleanup logic is covered
+    # directly in test_clean.py instead.
+    monkeypatch.setenv("MINIMOST_SKIP_CLEANUP", "1")
     # Confine the security audit trail to the temp dir so tests never append to a
     # real audit.log; pointing AUDIT_LOG at a fresh path also makes the logger
     # reattach its file handler there on the next event (see audit._get_logger).
