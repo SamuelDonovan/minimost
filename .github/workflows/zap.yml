@@ -23,7 +23,9 @@ jobs:
           python-version: "3.x"
 
       - name: Install app
-        run: pip install -e .
+        # gunicorn is a deploy-time tool, not a runtime dependency of the wheel
+        # (setup.cfg install_requires is flask only), so install it explicitly.
+        run: pip install -e . gunicorn
 
       - name: Start MiniMost
         env:
@@ -31,12 +33,19 @@ jobs:
           # cert; ensure_certs() is skipped entirely (see gunicorn_conf.py).
           MINIMOST_SKIP_TLS: "1"
         run: |
-          gunicorn "minimost:create_app()" -c gunicorn.conf.py &
-          # Wait for the app to answer before scanning.
+          gunicorn "minimost:create_app()" -c gunicorn.conf.py > gunicorn.log 2>&1 &
+          # Wait for the app to answer; fail loudly (with logs) if it never does,
+          # rather than letting ZAP run against a dead port.
           for i in $(seq 1 30); do
-            curl -sf http://localhost:6767/login && break
+            if curl -sf http://localhost:6767/login >/dev/null; then
+              echo "MiniMost is up"
+              exit 0
+            fi
             sleep 1
           done
+          echo "MiniMost failed to start within 30s:" >&2
+          cat gunicorn.log >&2
+          exit 1
 
       - name: ZAP baseline scan
         uses: zaproxy/action-baseline@v0.14.0
