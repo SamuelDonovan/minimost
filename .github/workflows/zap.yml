@@ -1,0 +1,47 @@
+name: ZAP DAST
+
+# Dynamic scan of a running MiniMost instance. Unlike the SAST jobs
+# (bandit/semgrep/codeql/sonar) this boots the app and attacks it over HTTP, so
+# it is slow — run it weekly and on demand rather than on every push.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, matching the other security scans
+  workflow_dispatch: {}
+
+# The baseline action opens/updates a tracking issue with its findings.
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install app
+        run: pip install -e .
+
+      - name: Start MiniMost
+        env:
+          # Serve plain HTTP so ZAP need not trust the auto-generated self-signed
+          # cert; ensure_certs() is skipped entirely (see gunicorn_conf.py).
+          MINIMOST_SKIP_TLS: "1"
+        run: |
+          gunicorn "minimost:create_app()" -c gunicorn.conf.py &
+          # Wait for the app to answer before scanning.
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:6767/login && break
+            sleep 1
+          done
+
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: "http://localhost:6767"
+          # -I: report warnings without failing the build while the baseline is
+          # triaged. Drop this once findings are tuned so regressions fail CI.
+          cmd_options: "-I"
