@@ -449,6 +449,16 @@ def password_reset(user, outcome="success"):
     log_event("password_reset", outcome, user=user)
 
 
+def password_expired(user):
+    """Record a login refused because the password exceeded its maximum age."""
+    log_event(
+        "password_expired",
+        "failure",
+        user=user,
+        detail="login refused; password past maximum age",
+    )
+
+
 def access_denied(user, resource):
     """Record an access-control denial (forbidden resource / failed CSRF)."""
     log_event("access_denied", "failure", user=user, detail=resource)

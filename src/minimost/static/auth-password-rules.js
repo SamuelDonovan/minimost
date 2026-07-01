@@ -9,7 +9,9 @@
 
   // Keep this character class in sync with minimost.auth._validate_password.
   const SPECIAL = /[!@#$%^&*()\-_=+[\]{};':"\\|,.<>/?`~]/;
-  const MIN_LENGTH = 8;
+  // Keep in sync with password_min_length in settings.json (the server is the
+  // authoritative check; this is the default for immediate UX feedback).
+  const MIN_LENGTH = 15;
 
   function setReq(id, met, active) {
     const el = document.getElementById(id);
@@ -34,15 +36,18 @@
 
       const hasLength = pw.length >= MIN_LENGTH;
       const hasUpper = /[A-Z]/.test(pw);
+      const hasLower = /[a-z]/.test(pw);
       const hasNumber = /\d/.test(pw);
       const hasSpecial = SPECIAL.test(pw);
 
       setReq("req-length", hasLength, active);
       setReq("req-upper", hasUpper, active);
+      setReq("req-lower", hasLower, active);
       setReq("req-number", hasNumber, active);
       setReq("req-special", hasSpecial, active);
 
-      const requirementsMet = hasLength && hasUpper && hasNumber && hasSpecial;
+      const requirementsMet =
+        hasLength && hasUpper && hasLower && hasNumber && hasSpecial;
 
       if (!active && !confirm.value) {
         message.textContent = "";

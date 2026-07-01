@@ -98,7 +98,7 @@ def test_reset_post_success(client):
     token = _insert_token("alice")
     resp = client.post(
         f"/reset-password/{token}",
-        data={"password": "NewPass1!", "confirm_password": "NewPass1!"},
+        data={"password": "NewPass1!longer", "confirm_password": "NewPass1!longer"},
     )
     assert resp.status_code == 200
     assert b"updated" in resp.data.lower() or b"success" in resp.data.lower()
@@ -109,11 +109,11 @@ def test_reset_post_updates_password_hash(client):
     token = _insert_token("alice")
     client.post(
         f"/reset-password/{token}",
-        data={"password": "NewPass1!", "confirm_password": "NewPass1!"},
+        data={"password": "NewPass1!longer", "confirm_password": "NewPass1!longer"},
     )
     new_hash = _get_password_hash("alice")
     assert new_hash is not None
-    assert check_password_hash(new_hash, "NewPass1!")
+    assert check_password_hash(new_hash, "NewPass1!longer")
     assert not check_password_hash(new_hash, "Password1!")
 
 
@@ -122,7 +122,7 @@ def test_reset_post_marks_token_used(client):
     token = _insert_token("alice")
     client.post(
         f"/reset-password/{token}",
-        data={"password": "NewPass1!", "confirm_password": "NewPass1!"},
+        data={"password": "NewPass1!longer", "confirm_password": "NewPass1!longer"},
     )
     assert _token_used(token)
 
@@ -132,11 +132,14 @@ def test_reset_post_token_cannot_be_reused(client):
     token = _insert_token("alice")
     client.post(
         f"/reset-password/{token}",
-        data={"password": "NewPass1!", "confirm_password": "NewPass1!"},
+        data={"password": "NewPass1!longer", "confirm_password": "NewPass1!longer"},
     )
     resp = client.post(
         f"/reset-password/{token}",
-        data={"password": "AnotherPass1!", "confirm_password": "AnotherPass1!"},
+        data={
+            "password": "AnotherPass1!longer",
+            "confirm_password": "AnotherPass1!longer",
+        },
     )
     assert resp.status_code == 200
     assert b"invalid" in resp.data.lower() or b"expired" in resp.data.lower()
@@ -145,7 +148,7 @@ def test_reset_post_token_cannot_be_reused(client):
 def test_reset_post_invalid_token(client):
     resp = client.post(
         "/reset-password/notarealtoken",
-        data={"password": "NewPass1!", "confirm_password": "NewPass1!"},
+        data={"password": "NewPass1!longer", "confirm_password": "NewPass1!longer"},
     )
     assert resp.status_code == 200
     assert b"invalid" in resp.data.lower() or b"expired" in resp.data.lower()
@@ -156,7 +159,7 @@ def test_reset_post_expired_token(client):
     token = _insert_token("alice", expires_delta=-1)
     resp = client.post(
         f"/reset-password/{token}",
-        data={"password": "NewPass1!", "confirm_password": "NewPass1!"},
+        data={"password": "NewPass1!longer", "confirm_password": "NewPass1!longer"},
     )
     assert resp.status_code == 200
     assert b"invalid" in resp.data.lower() or b"expired" in resp.data.lower()
@@ -170,7 +173,7 @@ def test_reset_post_password_too_short(client):
         data={"password": "Short1!", "confirm_password": "Short1!"},
     )
     assert resp.status_code == 200
-    assert b"8 characters" in resp.data
+    assert b"15 characters" in resp.data
 
 
 def test_reset_post_no_uppercase(client):
@@ -211,7 +214,7 @@ def test_reset_post_passwords_mismatch(client):
     token = _insert_token("alice")
     resp = client.post(
         f"/reset-password/{token}",
-        data={"password": "NewPass1!", "confirm_password": "NewPass1!!"},
+        data={"password": "NewPass1!longer", "confirm_password": "NewPass1!longerX"},
     )
     assert resp.status_code == 200
     assert b"match" in resp.data

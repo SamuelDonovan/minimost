@@ -11,6 +11,7 @@ const FORM = `
   <ul id="password-requirements" hidden>
     <li id="req-length"><span class="req-icon">•</span></li>
     <li id="req-upper"><span class="req-icon">•</span></li>
+    <li id="req-lower"><span class="req-icon">•</span></li>
     <li id="req-number"><span class="req-icon">•</span></li>
     <li id="req-special"><span class="req-icon">•</span></li>
   </ul>
@@ -18,6 +19,9 @@ const FORM = `
   <p id="password-message"></p>
   <button type="submit" disabled>Submit</button>
 </form>`;
+
+// Satisfies the full policy: >= 15 chars with upper/lower/digit/special.
+const STRONG = "Strong1!password";
 
 function boot(html) {
   document.body.innerHTML = html;
@@ -47,19 +51,26 @@ test("submit stays disabled until rules pass and passwords match", () => {
   expect(document.getElementById("req-length").className).toBe("req-unmet");
   expect(btn.disabled).toBe(true);
 
-  // strong password, no confirm yet -> still disabled
+  // a short-but-complex password fails only the >= 15 length rule
   type(pw, "Strong1!");
+  expect(document.getElementById("req-length").className).toBe("req-unmet");
+  expect(document.getElementById("req-special").className).toBe("req-met");
+  expect(btn.disabled).toBe(true);
+
+  // strong password, no confirm yet -> still disabled
+  type(pw, STRONG);
   expect(document.getElementById("req-length").className).toBe("req-met");
+  expect(document.getElementById("req-lower").className).toBe("req-met");
   expect(document.getElementById("req-special").className).toBe("req-met");
   expect(btn.disabled).toBe(true);
 
   // mismatched confirm
-  type(confirm, "Different1!");
+  type(confirm, "Different1!longer");
   expect(msg.className).toBe("no-match");
   expect(btn.disabled).toBe(true);
 
   // matching confirm -> enabled
-  type(confirm, "Strong1!");
+  type(confirm, STRONG);
   expect(msg.className).toBe("match");
   expect(btn.disabled).toBe(false);
 });

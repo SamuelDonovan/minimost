@@ -145,7 +145,7 @@ def test_background_poll_does_not_refresh_the_timer(alice):
 # --- Session ID rotation / fixation (APSC-DV-002250) ------------------------
 
 
-def _signup(client, username, password="Password1!"):
+def _signup(client, username, password="Password1!longer"):
     client.post(
         "/signup",
         data={"username": username, "password": password, "confirm_password": password},
@@ -159,7 +159,7 @@ def test_login_regenerates_session_and_drops_fixed_session(client):
     with client.session_transaction() as s:
         s["planted"] = "evil"
         s["_sid"] = "attacker-known-sid"
-    client.post("/login", data={"username": "carol", "password": "Password1!"})
+    client.post("/login", data={"username": "carol", "password": "Password1!longer"})
     with client.session_transaction() as s:
         assert s.get("user") == "carol"
         assert "planted" not in s  # the fixed session was discarded
@@ -169,25 +169,39 @@ def test_login_regenerates_session_and_drops_fixed_session(client):
 def test_login_uses_a_fresh_session_id_each_time(client):
     _signup(client, "dave")
     client.get("/logout")
-    client.post("/login", data={"username": "dave", "password": "Password1!"})
+    client.post("/login", data={"username": "dave", "password": "Password1!longer"})
     with client.session_transaction() as s:
         first = s["_sid"]
     client.get("/logout")
-    client.post("/login", data={"username": "dave", "password": "Password1!"})
+    client.post("/login", data={"username": "dave", "password": "Password1!longer"})
     with client.session_transaction() as s:
         assert s["_sid"] != first
 
 
 def test_password_change_rotates_session_id_but_stays_logged_in(client):
+    import sqlite3
+    import time as _time
+
+    import minimost.auth as auth_mod
+
     _signup(client, "erin")  # signup logs the user in
+    # Backdate the password so the change is not refused by the minimum-age
+    # control (APSC-DV-001990); this test is about session-id rotation, not age.
+    db = sqlite3.connect(auth_mod.AUTH_DB)
+    db.execute(
+        "UPDATE users SET password_set_ts = ? WHERE username = 'erin'",
+        (_time.time() - 2 * 86400,),
+    )
+    db.commit()
+    db.close()
     with client.session_transaction() as s:
         before = s["_sid"]
     resp = client.post(
         "/change-password",
         data={
-            "current_password": "Password1!",
-            "new_password": "Password2!",
-            "confirm_password": "Password2!",
+            "current_password": "Password1!longer",
+            "new_password": "Password2!longer",
+            "confirm_password": "Password2!longer",
         },
     )
     assert resp.status_code == 200

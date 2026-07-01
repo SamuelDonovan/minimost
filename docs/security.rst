@@ -19,12 +19,48 @@ never stored.
 Both the frontend (JavaScript, for immediate feedback) and the backend (Python,
 as the authoritative check) enforce the following rules:
 
-- At least 8 characters, and at most 1024 (the upper bound is also guarded at
-  login so an oversized password cannot force the server to spend CPU hashing
-  it).
+- At least ``password_min_length`` characters (default ``15``), and at most
+  1024 (the upper bound is also guarded at login so an oversized password cannot
+  force the server to spend CPU hashing it). The minimum can be raised in
+  ``settings.json`` but never lowered below the built-in default.
 - At least one uppercase ASCII letter.
+- At least one lowercase ASCII letter.
 - At least one digit.
 - At least one special character from ``!@#$%^&*()_+-=[]{};\\':|,./<>?`~``.
+
+These implement the ASD STIG APSC-DV-001940 family (length APSC-DV-001955,
+lowercase APSC-DV-001960). See :doc:`configuration` for the tunable keys.
+
+**Password reuse and age**
+
+Three further controls limit how passwords may be reused and how long they live;
+all are tunable in ``settings.json`` and a value of ``0`` disables the
+individual control:
+
+- **Reuse prohibition** (``password_history_count``, default ``5`` —
+  APSC-DV-001980). Every password an account has used is recorded as a salted
+  hash in the ``password_history`` table; a change or reset is rejected if the
+  new password matches any of the most recent generations. Only hashes are kept,
+  and the table is pruned to the configured number of generations per account.
+- **Minimum age** (``password_min_age_hours`` — APSC-DV-001990). A
+  user-initiated *change* is refused until the current password has been in
+  place for the minimum age, which stops a user cycling through changes to flush
+  the reuse history. The admin-mediated reset flow is exempt, since it is a
+  recovery action rather than user churn.
+- **Maximum age** (``password_max_age_days`` — APSC-DV-002000). At login a
+  password older than the maximum is refused even when correct; the user is
+  directed to the administrator reset flow (the same recovery path the
+  forgot-password page describes). The ``users.password_set_ts`` column records
+  when each password was set and backs both age checks; accounts that predate
+  the feature are backfilled with the upgrade time so they are not treated as
+  already expired.
+
+Both age checks ship **disabled** (``0``) in the bundled ``settings.json`` for
+usability — the same posture as ``session_idle_minutes`` — with built-in
+fallbacks of ``24`` hours and ``60`` days. Set ``password_min_age_hours`` to
+``24`` and ``password_max_age_days`` to ``60`` to enforce APSC-DV-001990 /
+002000; leaving them disabled should be a documented risk acceptance. See
+:doc:`configuration` for the tunable keys.
 
 **Usernames**
 

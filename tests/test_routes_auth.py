@@ -145,8 +145,8 @@ def test_signup_success(client):
         "/signup",
         data={
             "username": "newuser",
-            "password": "Password1!",
-            "confirm_password": "Password1!",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
         },
         follow_redirects=False,
     )
@@ -159,8 +159,8 @@ def test_signup_creates_user_in_db(client):
         "/signup",
         data={
             "username": "newuser",
-            "password": "Password1!",
-            "confirm_password": "Password1!",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
         },
     )
     db = sqlite3.connect(auth_mod.AUTH_DB)
@@ -175,8 +175,8 @@ def test_signup_duplicate_user(client):
         "/signup",
         data={
             "username": "alice",
-            "password": "Password1!",
-            "confirm_password": "Password1!",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
         },
     )
     assert resp.status_code == 200
@@ -188,8 +188,8 @@ def test_signup_sets_session(client):
         "/signup",
         data={
             "username": "newuser",
-            "password": "Password1!",
-            "confirm_password": "Password1!",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
         },
     )
     with client.session_transaction() as sess:
@@ -213,8 +213,8 @@ def test_signup_seeds_history(client):
         "/signup",
         data={
             "username": "newuser",
-            "password": "Password1!",
-            "confirm_password": "Password1!",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
         },
     )
 
@@ -236,8 +236,8 @@ def test_signup_posts_welcome_message(client):
         "/signup",
         data={
             "username": "newuser",
-            "password": "Password1!",
-            "confirm_password": "Password1!",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
         },
     )
 
@@ -263,8 +263,8 @@ def test_signup_welcome_reaches_existing_users(client):
         "/signup",
         data={
             "username": "newuser",
-            "password": "Password1!",
-            "confirm_password": "Password1!",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
         },
     )
 

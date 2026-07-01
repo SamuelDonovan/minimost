@@ -5,6 +5,10 @@ from werkzeug.security import check_password_hash
 from minimost.auth import hash_password, _validate_signup, _seed_channel_history
 import minimost.common as common_mod
 
+# A password that satisfies the full policy: >= 15 chars with an uppercase,
+# lowercase, digit, and special character (ASD STIG APSC-DV-001940 family).
+VALID_PW = "Password1!longer"
+
 
 def test_hash_password_returns_string():
     h = hash_password("Password1!")
@@ -20,7 +24,7 @@ def test_hash_password_different_each_call():
 
 
 def test_validate_signup_ok():
-    assert _validate_signup("alice", "Password1!", "Password1!") is None
+    assert _validate_signup("alice", VALID_PW, VALID_PW) is None
 
 
 def test_validate_signup_missing_username():
@@ -44,32 +48,38 @@ def test_validate_signup_username_too_long():
 
 
 def test_validate_signup_password_too_short():
-    err = _validate_signup("alice", "Pa1!", "Pa1!")
-    assert err and "8 characters" in err
+    # 14 chars: satisfies every complexity rule but is one short of the minimum.
+    err = _validate_signup("alice", "Password1!abcd", "Password1!abcd")
+    assert err and "15 characters" in err
 
 
 def test_validate_signup_no_digit():
-    err = _validate_signup("alice", "Password!", "Password!")
+    err = _validate_signup("alice", "Passwordlongenough!", "Passwordlongenough!")
     assert err and "number" in err
 
 
 def test_validate_signup_no_uppercase():
-    err = _validate_signup("alice", "password1!", "password1!")
+    err = _validate_signup("alice", "password1!longer", "password1!longer")
     assert err and "uppercase" in err
 
 
+def test_validate_signup_no_lowercase():
+    err = _validate_signup("alice", "PASSWORD1!LONGER", "PASSWORD1!LONGER")
+    assert err and "lowercase" in err
+
+
 def test_validate_signup_no_special():
-    err = _validate_signup("alice", "Password1", "Password1")
+    err = _validate_signup("alice", "Password1longenough", "Password1longenough")
     assert err and "special" in err
 
 
 def test_validate_signup_passwords_mismatch():
-    err = _validate_signup("alice", "Password1!", "Password1!!")
+    err = _validate_signup("alice", VALID_PW, VALID_PW + "X")
     assert err and "match" in err
 
 
 def test_validate_signup_valid_hyphens_underscores():
-    assert _validate_signup("alice_bob-123", "Password1!", "Password1!") is None
+    assert _validate_signup("alice_bob-123", VALID_PW, VALID_PW) is None
 
 
 @pytest.mark.parametrize(

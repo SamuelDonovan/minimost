@@ -24,6 +24,7 @@ correct schema before any authentication route is reached.
 
 # From the python standard library
 import sqlite3
+import time
 
 # Local Imports
 from . import auth
@@ -63,6 +64,16 @@ def init_auth_db():
          - Unix timestamp until which logins are rejected, or ``NULL`` when the
            account is not locked.  Set once ``failed_attempts`` reaches the
            configured threshold.  See :func:`minimost.auth.login_post`.
+       * - ``password_set_ts``
+         - REAL
+         - Unix timestamp of the last time the password was set (signup, change,
+           or reset).  Backs the minimum/maximum password-age controls
+           (ASD STIG APSC-DV-001990 / 002000).  See
+           :func:`minimost.auth._password_policy`.
+
+    A companion ``password_history`` table records the hash of every password
+    each account has used, so a change/reset can reject reuse of a recent
+    password (ASD STIG APSC-DV-001980).
 
     This function is idempotent — safe to call multiple times.
 
@@ -75,9 +86,21 @@ def init_auth_db():
             username TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
             failed_attempts INTEGER NOT NULL DEFAULT 0,
-            lockout_until REAL
+            lockout_until REAL,
+            password_set_ts REAL
         )
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS password_history (
+            username      TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            set_ts        REAL NOT NULL
+        )
+    """)
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_password_history_user"
+        " ON password_history (username, set_ts)"
+    )
     db.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
             username    TEXT PRIMARY KEY,
@@ -113,6 +136,29 @@ def init_auth_db():
         db.execute("ALTER TABLE users ADD COLUMN lockout_until REAL")
     except sqlite3.OperationalError:
         pass
+    # Password-age column — added by migration for databases created before the
+    # password-policy feature existed. Existing accounts are backfilled with the
+    # current time below so they start a fresh maximum-age window rather than
+    # being treated as already expired on first login after the upgrade.
+    backfill_ts = None
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN password_set_ts REAL")
+        backfill_ts = time.time()
+    except sqlite3.OperationalError:
+        pass
+    if backfill_ts is not None:
+        db.execute(
+            "UPDATE users SET password_set_ts = ? WHERE password_set_ts IS NULL",
+            (backfill_ts,),
+        )
+        # Seed the reuse-history with each account's current password so the
+        # prohibition (APSC-DV-001980) has a baseline to compare against.
+        db.execute(
+            "INSERT INTO password_history (username, password_hash, set_ts)"
+            " SELECT username, password_hash, ? FROM users"
+            " WHERE username NOT IN (SELECT username FROM password_history)",
+            (backfill_ts,),
+        )
     db.commit()
     db.close()
 

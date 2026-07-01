@@ -28,6 +28,10 @@ Example (showing all available keys with their defaults)::
         "stun_port": 3478,
         "max_login_attempts": 5,
         "lockout_duration_minutes": 15,
+        "password_min_length": 15,
+        "password_history_count": 5,
+        "password_min_age_hours": 0,
+        "password_max_age_days": 0,
         "session_idle_minutes": 20160,
         "rate_limit_enabled": true,
         "max_event_streams_per_user": 12,
@@ -166,6 +170,46 @@ content. The two are independent, so you can cap by age, by size, or both.
        lockout message confirms that the account exists, which is a deliberate
        trade-off for clear user feedback; the rest of the login flow keeps
        invalid-username and invalid-password failures indistinguishable.
+
+``password_min_length``
+    Minimum number of characters a new password must have, on top of the
+    complexity rules (one each of uppercase, lowercase, digit, and special
+    character). Defaults to ``15`` (the DoD ASD STIG minimum). The value may be
+    **raised** above the default but never lowered below it, so a
+    misconfiguration cannot weaken the requirement. Read fresh on every
+    signup/change/reset, so changes take effect without a restart.
+
+``password_history_count``
+    Number of previous passwords whose **reuse is prohibited**. When a user
+    changes their password (or resets it), the new password is rejected if it
+    matches any of this many most-recent generations, recorded as salted hashes
+    in the ``password_history`` table. Defaults to ``5``. Set to ``0`` (or any
+    non-positive value) to **disable** the reuse check. Read fresh on every
+    change/reset, so changes take effect without a restart.
+
+``password_min_age_hours``
+    Minimum time, in hours, that must pass after a password is set before the
+    same user may **change** it again. This stops a user cycling rapidly through
+    changes to flush the reuse history. The admin-mediated reset flow
+    (``minimost reset-password``) is exempt. Read fresh on every change, so
+    changes take effect without a restart.
+
+    The bundled ``settings.json`` ships ``0`` (**disabled**) for usability; the
+    built-in fallback used when the key is absent or unreadable is ``24``. To
+    meet **APSC-DV-001990**, set it to ``24``.
+
+``password_max_age_days``
+    Maximum age, in days, a password may reach before it must be replaced. Once
+    a password is older than this, login is refused even when the password is
+    correct, and the user is directed to the administrator reset flow; the
+    ``users.password_set_ts`` column records when each password was set. Read
+    fresh on every login, so changes take effect without a restart.
+
+    The bundled ``settings.json`` ships ``0`` (**disabled**) for usability; the
+    built-in fallback used when the key is absent or unreadable is ``60``. To
+    meet **APSC-DV-002000**, set it to ``60``. Any value above these bounds (or
+    ``0``) should be recorded as a documented risk acceptance, exactly as for
+    ``session_idle_minutes``.
 
 ``session_idle_minutes``
     How long, in minutes, an authenticated session may sit **idle** before it is

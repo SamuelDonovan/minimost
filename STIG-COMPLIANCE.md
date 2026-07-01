@@ -36,7 +36,7 @@ and runs on **Python 3.6** (no new dependencies).
 | 2   | Session inactivity timeout    | ✅ **Done**                    | APSC-DV-000070 / 000080              |
 | 3   | Security response headers     | ✅ **Done**                    | APSC-DV-002500                       |
 | 4   | Custom generic error handlers | ✅ **Done**                    | APSC-DV-002880 / 002890              |
-| 5   | Password policy hardening     | ☐ Planned                      | APSC-DV-001940 family                |
+| 5   | Password policy hardening     | ✅ **Done**                    | APSC-DV-001940 family                |
 | 6   | DoD Notice & Consent banner   | ☐ Planned                      | logon banner                         |
 | 7   | Concurrent-session limit      | ☐ Planned                      | APSC-DV-000010                       |
 | 8   | Logoff confirmation page      | ✅ **Done**                    | APSC-DV-000100                       |
@@ -102,17 +102,34 @@ the traceback to the (admin-only) application log and additionally records a
 generic `server_error` event in the audit trail; the exception text never
 reaches the client.
 
-### 5. Password policy hardening (APSC-DV-001940 family)
+### 5. Password policy hardening — ✅ Done (APSC-DV-001940 family)
 
-Current: ≥8 chars, ≥1 digit, ≥1 uppercase, ≥1 special. DoD requires:
+Complexity is enforced in `auth._validate_password` (frontend mirror in
+`auth-password-rules.js` / `_password_fields.html`); reuse and age are enforced
+in the signup/change/reset/login flows, backed by a `password_set_ts` column on
+`users` and a `password_history` table (schema in `database.py`, with a
+migration that backfills existing accounts so they are neither expired nor
+historyless after upgrade). All four knobs ship DoD-compliant defaults in
+`settings.json` and are read fresh per request; `0` disables the reuse/age
+checks, while the length minimum can only be raised, never lowered below 15.
 
-- **≥15 characters** (currently 8) — APSC-DV-001955
-- **≥1 lowercase** — not currently enforced — APSC-DV-001960
-- **Password history / reuse prohibition** (≥5 generations) — APSC-DV-001980
-- **Min 24h / max 60-day password age** — APSC-DV-001990 / 002000
+- **≥15 characters** — `password_min_length` (default 15) — APSC-DV-001955
+- **≥1 lowercase** (plus the existing digit/uppercase/special) — APSC-DV-001960
+- **Reuse prohibition** of the last `password_history_count` (default 5)
+  generations, on change _and_ reset — APSC-DV-001980
+- **Minimum age** `password_min_age_hours` on user-initiated change; the admin
+  reset flow is exempt — APSC-DV-001990
+- **Maximum age** `password_max_age_days`: an aged password is refused at login
+  and the user is routed to the admin reset flow — APSC-DV-002000
 
-Enforced in `auth._validate_password` plus small schema additions
-(`password_history` table, `password_set_ts` column).
+> **Deployment note:** like `session_idle_minutes`, the two password-age controls
+> ship **disabled** (`0`) in `settings.json` for usability, while length,
+> lowercase, and reuse ship enforced. The code fails back to `24` hours / `60`
+> days when the keys are absent. To meet APSC-DV-001990 / 002000 set
+> `password_min_age_hours` to `24` and `password_max_age_days` to `60`; leaving
+> either at `0` should be recorded as a documented risk acceptance.
+
+See `docs/security.rst` → _Password reuse and age_ and `docs/configuration.rst`.
 
 ### 6. DoD Notice and Consent banner
 

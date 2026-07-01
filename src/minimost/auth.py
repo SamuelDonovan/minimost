@@ -76,6 +76,16 @@ _SETTINGS_FILE = _HERE / "settings.json"
 _DEFAULT_MAX_LOGIN_ATTEMPTS = 5
 _DEFAULT_LOCKOUT_MINUTES = 15
 
+# Password-policy defaults (ASD STIG APSC-DV-001940 family).  These are the
+# DoD-compliant values shipped in settings.json; an operator can override any of
+# them there.  A value of ``0`` disables the corresponding control (history
+# reuse check, minimum age, or maximum age) the same way ``max_login_attempts``
+# of ``0`` disables lockout.
+_DEFAULT_PASSWORD_MIN_LENGTH = 15  # APSC-DV-001955
+_DEFAULT_PASSWORD_HISTORY = 5  # APSC-DV-001980
+_DEFAULT_PASSWORD_MIN_AGE_HOURS = 24  # APSC-DV-001990
+_DEFAULT_PASSWORD_MAX_AGE_DAYS = 60  # APSC-DV-002000
+
 # Upper bound on password length.  Enforced at signup/reset and guarded at login
 # so an attacker cannot force the server to hash a huge string (PBKDF2 cost
 # scales with input length).
@@ -115,6 +125,72 @@ def _lockout_settings() -> tuple:
     except (OSError, json.JSONDecodeError):
         pass
     return max_attempts, int(minutes * 60)
+
+
+def _password_policy() -> dict:
+    """Return the password-policy knobs, read from ``settings.json`` each call.
+
+    Reading on every call means an operator's edits take effect without a
+    restart, matching :func:`_lockout_settings`.  Missing, malformed, or
+    out-of-range values fall back to the DoD-compliant defaults
+    (see the ``_DEFAULT_PASSWORD_*`` constants).  ``bool`` is rejected
+    explicitly because ``True``/``False`` are ``int`` instances in Python.
+
+    A non-positive ``history_count``, ``min_age_seconds``, or ``max_age_seconds``
+    **disables** that individual control.  ``min_length`` always keeps at least
+    the built-in default — it cannot be configured below the STIG minimum, only
+    above it — so a misconfiguration can never weaken the length requirement.
+
+    :returns: ``{"min_length", "history_count", "min_age_seconds",
+        "max_age_seconds"}``.
+    :rtype: dict
+    """
+    min_length = _DEFAULT_PASSWORD_MIN_LENGTH
+    history = _DEFAULT_PASSWORD_HISTORY
+    min_age_hours = _DEFAULT_PASSWORD_MIN_AGE_HOURS
+    max_age_days = _DEFAULT_PASSWORD_MAX_AGE_DAYS
+    try:
+        data = json.loads(_SETTINGS_FILE.read_text())
+
+        def _num(key, default):
+            value = data.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return value
+            return default
+
+        # Length may only be raised above the compliant floor, never lowered.
+        configured_len = _num("password_min_length", min_length)
+        min_length = max(min_length, int(configured_len))
+        history = int(_num("password_history_count", history))
+        min_age_hours = _num("password_min_age_hours", min_age_hours)
+        max_age_days = _num("password_max_age_days", max_age_days)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {
+        "min_length": min_length,
+        "history_count": max(0, history),
+        "min_age_seconds": int(max(0, min_age_hours) * 3600),
+        "max_age_seconds": int(max(0, max_age_days) * 86400),
+    }
+
+
+def _reuse_message(count: int) -> str:
+    """Return the error shown when a new password repeats a recent one."""
+    generations = "password" if count == 1 else f"{count} passwords"
+    return f"New password must not match any of your last {generations}."
+
+
+def _min_age_message(seconds_remaining) -> str:
+    """Return the error shown when a password is changed before its minimum age.
+
+    :param seconds_remaining: Seconds left before a change is permitted; the
+        message rounds up to whole hours (a minimum of ``1`` is always shown).
+    """
+    hours = max(1, int((seconds_remaining + 3599) // 3600))
+    unit = "hour" if hours == 1 else "hours"
+    return (
+        "Your password was changed too recently. " f"Try again in about {hours} {unit}."
+    )
 
 
 def _lockout_message(minutes) -> str:
@@ -335,8 +411,8 @@ def login_post():
     # used for the session and every follow-up query so per-user DB paths and
     # cross-references stay consistent regardless of the case the user typed.
     row = db.execute(
-        "SELECT username, password_hash, failed_attempts, lockout_until"
-        " FROM users WHERE username = ? COLLATE NOCASE",
+        "SELECT username, password_hash, failed_attempts, lockout_until,"
+        " password_set_ts FROM users WHERE username = ? COLLATE NOCASE",
         (username,),
     ).fetchone()
     canonical = row[0] if row else username
@@ -399,6 +475,25 @@ def login_post():
         db.commit()
     db.close()
 
+    # Maximum password age (APSC-DV-002000): a correct password that is older
+    # than the configured limit may not be used. The credentials verified above,
+    # so we refuse the login (no session established) and direct the user to the
+    # admin-mediated reset flow — the same recovery path the forgot-password page
+    # describes. Accounts predating the feature were backfilled with a fresh
+    # timestamp, so this only fires once a password genuinely ages out.
+    max_age = _password_policy()["max_age_seconds"]
+    password_set_ts = row[4]
+    if max_age and password_set_ts and (now - password_set_ts) > max_age:
+        audit.password_expired(canonical)
+        return render_template(
+            _LOGIN_TEMPLATE,
+            error=(
+                "Your password has expired. Ask an administrator to reset it "
+                "(minimost reset-password)."
+            ),
+            username=username,
+        )
+
     # Establish a fresh session (regenerating the session identifier defeats
     # session fixation) and seed the inactivity clock.
     _start_authenticated_session(canonical)
@@ -435,23 +530,84 @@ def logout():
 def _validate_password(password: str):
     """Return an error string if *password* fails the strength rules, else ``None``.
 
-    Shared by signup and password reset so the rules stay in one place.
+    Shared by signup and password reset so the rules stay in one place.  The
+    complexity rules implement the ASD STIG APSC-DV-001940 family: a minimum
+    length of ``password_min_length`` (default ``15`` — APSC-DV-001955) and at
+    least one lowercase (APSC-DV-001960), uppercase, digit, and special
+    character.
 
     :param password: The submitted password.
     :returns: A human-readable error message, or ``None`` if all rules pass.
     :rtype: str or None
     """
-    if len(password) < 8:
-        return "Password must be at least 8 characters"
+    min_length = _password_policy()["min_length"]
+    if len(password) < min_length:
+        return f"Password must be at least {min_length} characters"
     if len(password) > _MAX_PASSWORD_LEN:
         return f"Password must be at most {_MAX_PASSWORD_LEN} characters"
     if not re.search(r"\d", password):
         return "Password must contain at least one number"
     if not re.search(r"[A-Z]", password):
         return "Password must contain at least one uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter"
     if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password):
         return "Password must contain at least one special character"
     return None
+
+
+def _password_reused(db, username: str, new_password: str, count: int) -> bool:
+    """Return ``True`` if *new_password* matches one of the last *count* passwords.
+
+    Implements the password-reuse prohibition (ASD STIG APSC-DV-001980).  The
+    ``password_history`` table holds the hash of every password an account has
+    used, most recent first; the current password is its newest entry, so
+    comparing against the newest *count* hashes covers the current password and
+    the ``count - 1`` before it.  A *count* of ``0`` disables the check.
+
+    :param db: An open ``auth.db`` connection.
+    :param username: The account whose history to check.
+    :param new_password: The candidate plaintext password.
+    :param count: How many recent generations to prohibit reuse of.
+    :returns: ``True`` if the password was used recently, else ``False``.
+    :rtype: bool
+    """
+    if count <= 0:
+        return False
+    rows = db.execute(
+        "SELECT password_hash FROM password_history WHERE username = ?"
+        " ORDER BY set_ts DESC, rowid DESC LIMIT ?",
+        (username, count),
+    ).fetchall()
+    return any(check_password_hash(row[0], new_password) for row in rows)
+
+
+def _record_password(db, username: str, password_hash: str, set_ts, count: int) -> None:
+    """Append *password_hash* to the account's history and prune old entries.
+
+    Keeps only the newest *count* generations per account (always at least one,
+    so the current password is retained even when the reuse check is disabled),
+    bounding the table's growth.  The caller is responsible for committing.
+
+    :param db: An open ``auth.db`` connection.
+    :param username: The account the password belongs to.
+    :param password_hash: The Werkzeug hash just stored on the account.
+    :param set_ts: Unix timestamp the password was set.
+    :param count: How many generations to retain.
+    """
+    db.execute(
+        "INSERT INTO password_history (username, password_hash, set_ts)"
+        " VALUES (?, ?, ?)",
+        (username, password_hash, set_ts),
+    )
+    keep = max(1, count)
+    db.execute(
+        "DELETE FROM password_history WHERE username = ? AND rowid NOT IN ("
+        "  SELECT rowid FROM password_history WHERE username = ?"
+        "  ORDER BY set_ts DESC, rowid DESC LIMIT ?"
+        ")",
+        (username, username, keep),
+    )
 
 
 def _validate_signup(username: str, password: str, confirm: str):
@@ -516,9 +672,11 @@ def signup_post():
     **Validation rules (enforced server-side):**
 
     * ``username`` must fully match ``[A-Za-z0-9_\\-]{1,32}``.
-    * ``password`` must be at least 8 characters long.
+    * ``password`` must be at least ``password_min_length`` characters (default
+      ``15``; see :func:`_password_policy`).
     * ``password`` must contain at least one digit (``\\d``).
     * ``password`` must contain at least one uppercase ASCII letter.
+    * ``password`` must contain at least one lowercase ASCII letter.
     * ``password`` must contain at least one special character from the
       set ``!@#$%^&*()_+-=[]{};\\':|,./<>?`~``.
     * ``password`` and ``confirm_password`` must match.
@@ -564,10 +722,18 @@ def signup_post():
         return render_template(
             _SIGNUP_TEMPLATE, error="User already exists", username=username
         )
+    now = time.time()
+    pw_hash = hash_password(password)
     try:
         db.execute(
-            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-            (username, hash_password(password)),
+            "INSERT INTO users (username, password_hash, password_set_ts)"
+            " VALUES (?, ?, ?)",
+            (username, pw_hash, now),
+        )
+        # Seed the reuse history so a later change cannot revert to this password
+        # within the prohibited window (APSC-DV-001980).
+        _record_password(
+            db, username, pw_hash, now, _password_policy()["history_count"]
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -647,7 +813,8 @@ def change_password_post():
     db = sqlite3.connect(AUTH_DB)
     db.execute(_WAL)
     row = db.execute(
-        "SELECT password_hash FROM users WHERE username = ?", (username,)
+        "SELECT password_hash, password_set_ts FROM users WHERE username = ?",
+        (username,),
     ).fetchone()
 
     if not row or not check_password_hash(row[0], current):
@@ -655,15 +822,33 @@ def change_password_post():
         audit.password_changed(username, outcome="failure")
         return {"error": "Current password is incorrect"}, 400
 
+    policy = _password_policy()
+    now = time.time()
+
+    # Minimum password age (APSC-DV-001990): a user-initiated change is refused
+    # until the password has been in place long enough, which stops cycling
+    # through changes to flush the reuse history. The admin-driven reset flow is
+    # intentionally exempt (it is a recovery action, not user churn).
+    min_age = policy["min_age_seconds"]
+    if min_age and row[1] and (now - row[1]) < min_age:
+        db.close()
+        return {"error": _min_age_message(min_age - (now - row[1]))}, 400
+
     error = _validate_password_reset(password, confirm)
     if error:
         db.close()
         return {"error": error}, 400
 
+    if _password_reused(db, username, password, policy["history_count"]):
+        db.close()
+        return {"error": _reuse_message(policy["history_count"])}, 400
+
+    new_hash = hash_password(password)
     db.execute(
-        "UPDATE users SET password_hash = ? WHERE username = ?",
-        (hash_password(password), username),
+        "UPDATE users SET password_hash = ?, password_set_ts = ? WHERE username = ?",
+        (new_hash, now, username),
     )
+    _record_password(db, username, new_hash, now, policy["history_count"])
     db.commit()
     db.close()
     # Regenerate the session identifier after a credential change.
@@ -733,10 +918,28 @@ def reset_password_post(token):
             _RESET_PW_TEMPLATE, token=token, error=error, username=username
         )
 
+    # The reuse prohibition (APSC-DV-001980) applies to resets too, so a token
+    # cannot be used to set the password straight back to a recent one. The
+    # minimum-age check is deliberately *not* applied here — a reset is an
+    # admin-mediated recovery action, not the user-driven churn that control
+    # guards against.
+    policy = _password_policy()
+    if _password_reused(db, username, password, policy["history_count"]):
+        db.close()
+        return render_template(
+            _RESET_PW_TEMPLATE,
+            token=token,
+            error=_reuse_message(policy["history_count"]),
+            username=username,
+        )
+
+    now = time.time()
+    new_hash = hash_password(password)
     db.execute(
-        "UPDATE users SET password_hash = ? WHERE username = ?",
-        (hash_password(password), username),
+        "UPDATE users SET password_hash = ?, password_set_ts = ? WHERE username = ?",
+        (new_hash, now, username),
     )
+    _record_password(db, username, new_hash, now, policy["history_count"])
     db.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = ?", (token,))
     db.commit()
     db.close()
