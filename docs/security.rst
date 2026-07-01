@@ -399,6 +399,15 @@ Every response carries a set of defensive headers:
   for scripts and styles because the chat page ships inline ``<script>`` and the
   stylesheet macro inlines CSS on the dev server; moving to nonces is a planned
   hardening step.
+- ``Cross-Origin-Opener-Policy: same-origin``,
+  ``Cross-Origin-Embedder-Policy: require-corp`` and
+  ``Cross-Origin-Resource-Policy: same-origin`` isolate MiniMost's browsing
+  context and its resources from other origins (mitigating Spectre-class side
+  channels and cross-origin embedding). Everything the app loads is same-origin,
+  so these do not block any legitimate request.
+- ``Permissions-Policy`` denies unused browser features (geolocation, payment,
+  USB, FLoC) and scopes camera, microphone, and screen capture — used by the
+  WebRTC calling feature — to same-origin documents.
 - ``Strict-Transport-Security`` is sent only when MiniMost actually serves TLS
   (the same condition that gates the ``Secure`` session cookie), so a
   plain-HTTP reverse-proxy deployment is unaffected.

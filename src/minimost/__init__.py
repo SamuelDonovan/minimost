@@ -27,6 +27,7 @@ _APP_VERSION : str
     ``{{ app_version }}``.
 """
 
+import hashlib
 import os
 import secrets
 import threading
@@ -271,14 +272,36 @@ def _register_template_globals(app, upload_mb, avatar_mb, stun):
     application factory can wire up template support in a single call.
     """
 
+    # Cache-bust tokens, keyed by path and refreshed when the file's mtime
+    # changes so the (relatively expensive) content hash is computed only after
+    # an edit rather than on every ``url_for``.
+    _asset_version_cache: dict[str, tuple[float, str]] = {}
+
+    def _asset_version(asset: Path) -> str:
+        """Return a short content hash used to bust a static asset's cache.
+
+        A hash of the file's bytes changes exactly when the content changes,
+        which is all cache-busting needs. It is deliberately *not* the file's
+        modification time: an mtime is a Unix timestamp that leaks the
+        deploy/build time into every page (flagged by DAST as an information
+        disclosure), whereas a content digest reveals nothing.
+        """
+        stat = asset.stat()
+        cached = _asset_version_cache.get(str(asset))
+        if cached is None or cached[0] != stat.st_mtime:
+            digest = hashlib.sha256(asset.read_bytes()).hexdigest()[:12]
+            cached = (stat.st_mtime, digest)
+            _asset_version_cache[str(asset)] = cached
+        return cached[1]
+
     @app.url_defaults
     def _static_cache_bust(endpoint, values):
-        """Append ``?v=<mtime>`` to ``static`` URLs for cache-busting.
+        """Append ``?v=<hash>`` to ``static`` URLs for cache-busting.
 
         With assets cached for a day (see ``SEND_FILE_MAX_AGE_DEFAULT``), a
         plain ``/static/styles.css`` URL could serve a stale copy after an edit
-        or upgrade. Keying the URL on the file's modification time changes it the
-        instant the file changes, so the browser fetches the new bytes
+        or upgrade. Keying the URL on a hash of the file's contents changes it
+        the instant the file changes, so the browser fetches the new bytes
         immediately while still caching aggressively in between. Applies to every
         ``url_for('static', filename=...)`` call, so all templates benefit.
         """
@@ -287,7 +310,7 @@ def _register_template_globals(app, upload_mb, avatar_mb, stun):
             return
         with suppress(Exception):
             asset = Path(static_folder) / values["filename"]
-            values["v"] = int(asset.stat().st_mtime)
+            values["v"] = _asset_version(asset)
 
     # Inline a static asset's bytes directly into the page (see the
     # ``stylesheet`` macro in templates/_assets.html). On the built-in dev
@@ -425,6 +448,14 @@ def _security_headers(response):
       is required for now because the chat page ships inline ``<script>`` and
       the stylesheet macro inlines CSS on the dev server; tightening this to
       nonces is tracked separately.
+    - The ``Cross-Origin-*-Policy`` trio isolates MiniMost's browsing context
+      and resources from other origins (Spectre-class side channels and
+      cross-origin embedding). Everything the app loads is same-origin (the CSP
+      is ``'self'``) or a same-origin ``data:``/``blob:`` URL, so
+      ``require-corp``/``same-origin`` do not block any legitimate request.
+    - ``Permissions-Policy`` denies the browser features MiniMost never uses
+      and scopes the ones it does (camera, microphone and screen capture for
+      the WebRTC calling feature) to same-origin documents only.
     - ``Strict-Transport-Security`` is sent only when MiniMost actually
       serves TLS (the same condition that gates the Secure cookie), so a
       plain-HTTP reverse-proxy or the test suite is unaffected.
@@ -447,6 +478,14 @@ def _security_headers(response):
         "base-uri 'self'; "
         "form-action 'self'; "
         "frame-ancestors 'none'",
+    )
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    response.headers.setdefault("Cross-Origin-Embedder-Policy", "require-corp")
+    response.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(self), microphone=(self), display-capture=(self), "
+        "geolocation=(), payment=(), usb=(), interest-cohort=()",
     )
     if not os.environ.get("MINIMOST_SKIP_TLS"):
         response.headers.setdefault(

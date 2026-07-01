@@ -76,6 +76,24 @@ def test_create_app_reuses_existing_secret_key(tmp_path):
     assert app.secret_key == "my-fixed-secret-key"
 
 
+def test_static_cache_bust_token_is_content_hash_not_timestamp(app):
+    """``url_for('static', …)`` must bust caches with a content hash, not an
+    mtime — an mtime is a Unix timestamp that DAST flags as disclosure."""
+    import re
+
+    from flask import url_for
+
+    with app.test_request_context("/"):
+        # conftest.py serves the real static folder, so favicon.svg exists.
+        url = url_for("static", filename="favicon.svg")
+    match = re.search(r"\?v=([^&]+)", url)
+    assert match, "expected a ?v= cache-bust token on static URLs"
+    token = match.group(1)
+    # A short lowercase hex digest — never a bare 10-digit epoch timestamp.
+    assert re.fullmatch(r"[0-9a-f]{12}", token)
+    assert not re.fullmatch(r"\d{10}", token)
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 

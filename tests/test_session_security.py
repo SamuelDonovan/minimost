@@ -31,6 +31,13 @@ def test_security_headers_present_on_login(client):
     csp = r.headers.get("Content-Security-Policy", "")
     assert "frame-ancestors 'none'" in csp
     assert "default-src 'self'" in csp
+    assert r.headers.get("Cross-Origin-Opener-Policy") == "same-origin"
+    assert r.headers.get("Cross-Origin-Embedder-Policy") == "require-corp"
+    assert r.headers.get("Cross-Origin-Resource-Policy") == "same-origin"
+    perms = r.headers.get("Permissions-Policy", "")
+    # Unused features locked off; the calling feature's devices scoped to self.
+    assert "geolocation=()" in perms
+    assert "camera=(self)" in perms
 
 
 def test_security_headers_present_on_authenticated_json(alice):

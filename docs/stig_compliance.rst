@@ -200,10 +200,14 @@ Security response headers (APSC-DV-002500)
 A ``_security_headers`` ``after_request`` hook sets ``X-Frame-Options: DENY`` and
 a CSP ``frame-ancestors 'none'`` (clickjacking), ``X-Content-Type-Options:
 nosniff``, ``Referrer-Policy: no-referrer``, a conservative
-``Content-Security-Policy``, and ``Strict-Transport-Security`` (only when
-MiniMost serves TLS). The CSP still allows ``'unsafe-inline'`` for scripts and
-styles because the chat page ships inline ``<script>`` and inlines CSS on the dev
-server; tightening to nonces is tracked as a follow-up.
+``Content-Security-Policy``, the ``Cross-Origin-Opener-Policy`` /
+``Cross-Origin-Embedder-Policy`` / ``Cross-Origin-Resource-Policy`` isolation
+trio, a ``Permissions-Policy`` that denies unused browser features (and scopes
+camera/microphone/screen-capture to same-origin for the calling feature), and
+``Strict-Transport-Security`` (only when MiniMost serves TLS). The CSP still
+allows ``'unsafe-inline'`` for scripts and styles because the chat page ships
+inline ``<script>`` and inlines CSS on the dev server; tightening to nonces is
+tracked as a follow-up.
 
 Generic error handlers (APSC-DV-002880 / 002890)
 ------------------------------------------------
