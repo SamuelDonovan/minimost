@@ -1113,6 +1113,45 @@ let unread = new Set();
 let lastRenderedDate = null;
 let forceScrollToBottom = false;
 let pendingFiles = [];
+
+// In-progress compose state, keyed by channel. The composer used to be left
+// untouched across a switch, so a half-written message (or a staged
+// attachment) followed the user into whatever channel they opened next —
+// close enough to the Send button that a private draft could land in a public
+// channel. Each conversation now keeps its own draft.
+const channelDrafts = new Map();
+
+function saveDraft(ch) {
+    if (!ch) return;
+    const text = msgBox.value;
+    if (!text && pendingFiles.length === 0 && currentReplyId === null) {
+        channelDrafts.delete(ch);
+        return;
+    }
+    channelDrafts.set(ch, {
+        text,
+        files: [...pendingFiles],
+        replyId: currentReplyId,
+    });
+}
+
+function restoreDraft(ch) {
+    // Always reset first: without a saved draft the composer must come up
+    // empty, not carrying the previous channel's contents.
+    msgBox.value = "";
+    pendingFiles = [];
+    preview.innerHTML = "";
+
+    const draft = channelDrafts.get(ch);
+    if (draft) {
+        msgBox.value = draft.text;
+        if (draft.files.length) addFiles(draft.files);
+        if (draft.replyId !== null) startReply(draft.replyId);
+    }
+    updateCharCount();
+    updateSendState();
+}
+
 globalThis.fetchController = null;
 let privateChannelMap = {};
 let privateChannelMembers = {};
@@ -1527,6 +1566,10 @@ function switchChannel(c) {
         return;
     }
 
+    // Stash the outgoing channel's compose state before anything clears it
+    // (cancelReply() below drops the reply target).
+    saveDraft(channel);
+
     closeSidebar();
 
     // 🚫 Cancel any in-flight fetch
@@ -1581,9 +1624,27 @@ function switchChannel(c) {
     const msgPrefix = isDM ? "@" : (isPrivate ? "" : "#");
     document.getElementById("msg").placeholder = `Type a message to ${msgPrefix}${channelDisplayName}…`;
 
+    // Bring back whatever was half-written here last time (and, crucially,
+    // clear the previous channel's draft if there was nothing saved for this one).
+    restoreDraft(c);
+
     forceScrollToBottom = true;
 
-    fetch(`/mark_read/${channel}`, { method: "POST" });
+    // Read the watermark before mark_read advances it past everything, then
+    // mark read. Ordered, not fired in parallel, or the two race.
+    unreadBoundaryTs = null;
+    unreadScrollPending = true;
+    suppressBottomScroll = false;
+    fetch(`/last_read/${c}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (channel !== c) return;  // user moved on while this was in flight
+            unreadBoundaryTs = data?.last_read_ts ?? null;
+            renderUnreadDivider();
+            scrollToUnreadDivider();
+        })
+        .catch(() => {})
+        .finally(() => fetch(`/mark_read/${c}`, { method: "POST" }));
 
     _cleanupStandaloneShare();
     updateCallButton();
@@ -1625,6 +1686,53 @@ function armChatLog() {
     if (_chatLogArmed) return;
     _chatLogArmed = true;
     document.getElementById("chat")?.setAttribute("aria-live", "polite");
+}
+
+// Read watermark for the open channel, captured when it was opened and held
+// fixed while the user stays there — so the "New messages" divider marks where
+// they actually left off and doesn't creep down as messages arrive. Null when
+// the channel has no unread history to divide.
+let unreadBoundaryTs = null;
+
+// Draw (or redraw) the divider above the first message newer than the
+// boundary. Runs after every render pass because messages arrive piecemeal.
+function renderUnreadDivider() {
+    const chat = document.getElementById("chat");
+    if (!chat) return;
+
+    chat.querySelector(".unread-divider")?.remove();
+    if (unreadBoundaryTs === null) return;
+
+    // Own messages don't count as "new to you" — landing the divider above
+    // something you just sent yourself reads as a bug.
+    const target = [...chat.querySelectorAll(".msg")].find(el =>
+        parseFloat(el.dataset.ts) > unreadBoundaryTs
+        && el.dataset.sender !== CURRENT_USER
+    );
+    if (!target) return;
+
+    const divider = document.createElement("div");
+    divider.className = "unread-divider";
+    divider.innerHTML = `<span class="unread-divider-label">New messages</span>`;
+    target.parentNode.insertBefore(divider, target);
+}
+
+// On opening a channel with unread messages, park the view on the divider
+// rather than the very bottom, so the user starts reading at the first thing
+// they haven't seen. Only done once per channel open.
+let unreadScrollPending = false;
+// Set for the remainder of a render pass in which we parked on the divider, so
+// the pass's own scroll-to-bottom doesn't immediately undo it.
+let suppressBottomScroll = false;
+
+function scrollToUnreadDivider() {
+    if (!unreadScrollPending) return;
+    const divider = document.querySelector("#chat .unread-divider");
+    if (!divider) return;
+    unreadScrollPending = false;
+    forceScrollToBottom = false;
+    suppressBottomScroll = true;
+    divider.scrollIntoView({ block: "center" });
 }
 
 // A brand-new DM or private channel has no backlog, which otherwise renders as
@@ -1739,16 +1847,19 @@ function _buildMsgHtml(m, time, fullTime, color) {
     let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}" data-username="${m.sender}">${displayName}</span>`;
     headerHtml += `<span class="time" title="${fullTime}">${time}</span>`;
 
-    let actionsHtml = "";
+    // Sits in the header proper, not in .msg-actions: that container is
+    // opacity:0 until the row is hovered, which hid the fact that a message had
+    // been edited unless you happened to mouse over it.
     if (m.edited) {
         const editedDate = new Date(m.edited_ts * 1000);
         const formatted = editedDate.toLocaleString('en-US', {
             month: '2-digit', day: '2-digit', year: '2-digit',
             hour: '2-digit', minute: '2-digit', hour12: true
         });
-        actionsHtml += `<span class="edit-icon"><svg class="edited-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><title>Last edited at ${formatted}</title><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></span>`;
+        headerHtml += `<span class="edited-marker" title="Last edited at ${formatted}">(edited)</span>`;
     }
 
+    let actionsHtml = "";
     if (m.sender === CURRENT_USER) {
         actionsHtml += `<button class="edit-btn" title="Edit" onclick="startEdit(${m.id})"><svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>`;
         actionsHtml += `<button class="delete-btn" title="Delete" onclick="deleteMsg(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>`;
@@ -2015,11 +2126,14 @@ function applyMessages(data, requestedChannel = channel) {
             updateReadReceiptUI();
             refreshDMs();
             updateEmptyState();
+            renderUnreadDivider();
+            scrollToUnreadDivider();
             // Backlog for this channel is on screen; anything appended from
             // here on is genuinely new and worth announcing.
             armChatLog();
 
-            if ((forceScrollToBottom || appended) && shouldAutoScroll && !pendingJumpMsgId) {
+            if ((forceScrollToBottom || appended) && shouldAutoScroll
+                && !pendingJumpMsgId && !suppressBottomScroll) {
                 requestAnimationFrame(() => {
                     chat.scrollTop = chat.scrollHeight;
                 });
@@ -2163,6 +2277,15 @@ function startEdit(msgId) {
 
     input.focus();
     input.selectionStart = input.selectionEnd = input.value.length;
+
+    // The editor is taller than the message it replaces, so on the newest
+    // message the Save/Cancel buttons land below the fold. Bring the whole
+    // editor into view once the browser has laid it out.
+    requestAnimationFrame(() => {
+        document.getElementById(`edit-input-${msgId}`)
+            ?.closest(".msg")
+            ?.scrollIntoView({ block: "nearest" });
+    });
 }
 
 function cancelEdit(msgId) {
@@ -2238,6 +2361,26 @@ function deleteMsg(msgId) {
 const quotedMsgCache = {};
 let currentReplyId = null;
 
+// One-line plain-text summary of a message body, for the reply banner and
+// quoted-reply block. Those showed the raw source, so a quoted message read
+// literally as "Testing **bold** and `code`" — markup the author never typed as
+// content. Strip the inline markers (same set formatText renders) and flatten
+// newlines rather than rendering HTML, which would drag block-level elements
+// like code blocks into a single-line preview.
+function messagePreviewText(content, maxLen) {
+    let text = (content || "")
+        .replace(/```[a-z]*\n?([\s\S]*?)```/gi, "$1")  // fenced code → its body
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/\*\*(.+?)\*\*/gs, "$1")
+        .replace(/__(.+?)__/gs, "$1")
+        .replace(/~~(.+?)~~/gs, "$1")
+        .replace(/\*(.+?)\*/gs, "$1")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (text.length > maxLen) text = text.substring(0, maxLen) + "…";
+    return text;
+}
+
 function renderQuotedBlock(containerId, msg) {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -2246,8 +2389,7 @@ function renderQuotedBlock(containerId, msg) {
     if (msg.deleted) {
         content = "<em>[deleted message]</em>";
     } else if (msg.content?.trim()) {
-        const t = msg.content.length > 100 ? msg.content.substring(0, 100) + "…" : msg.content;
-        content = escapeHtml(t);
+        content = escapeHtml(messagePreviewText(msg.content, 100));
     } else {
         content = "<em>[attachment]</em>";
     }
@@ -2300,7 +2442,7 @@ function showReplyBanner(msg) {
     if (msg.deleted) {
         preview = "[deleted message]";
     } else if (msg.content?.trim()) {
-        preview = msg.content.length > 80 ? msg.content.substring(0, 80) + "…" : msg.content;
+        preview = messagePreviewText(msg.content, 80);
     } else {
         preview = "[attachment]";
     }

@@ -393,6 +393,31 @@ body {
   margin: 6px 0 0;
   font-family: system-ui, sans-serif;
 }
+/* "New messages" rule marking where the user left off. Deliberately warmer
+   than the date dividers so the two don't read as the same thing. */
+.unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 6px;
+}
+.unread-divider::before,
+.unread-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #d9534f;
+  opacity: 0.55;
+}
+.unread-divider-label {
+  color: #e06c6c;
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 /* Shown in place of the message list in a conversation that has no messages
    yet. Centred in the available space rather than pinned to the top, so it
    reads as a deliberate state instead of a failed render. */
@@ -628,18 +653,12 @@ body {
   opacity: 0.6;
   padding: 0;
 }
-.edited-icon {
-  width: 16px;
-  height: 16px;
-  opacity: 0.6;
-  background: none;
-  cursor: pointer;
-  pointer-events: auto;
-  padding: 0;
-  display: block;
-}
-.edited-icon:hover {
-  opacity: 1;
+/* Persistent "(edited)" note in the message header. Muted enough to stay out
+   of the way, but always on screen — hover the marker for the edit time. */
+.edited-marker {
+  font-size: 0.78em;
+  color: #7a7a7a;
+  cursor: help;
 }
 .icon-btn {
   display: inline-flex;

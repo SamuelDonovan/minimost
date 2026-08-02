@@ -146,6 +146,65 @@ def test_dms_returns_conversations(alice):
     assert "bob" in data[0]["users"]
 
 
+def _client_for(app, username):
+    """Register *username* and return a client authenticated as them."""
+    _add_user(username)
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess["user"] = username
+    return c
+
+
+def _seed_dm(channel, sender, content="secret"):
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
+        (channel, sender, content, time.time()),
+    )
+    db.commit()
+    db.close()
+
+
+# Usernames may contain "_", which SQL LIKE treats as a single-character
+# wildcard. Without escaping, "a_ice" matches the channel "dm:alice:bob" and
+# the DM-membership checks hand over conversations the user is not part of.
+
+
+def test_dms_underscore_username_does_not_match_other_users(app, isolated_dbs):
+    _add_user("alice")
+    _seed_dm("dm:alice:bob", "bob")
+    attacker = _client_for(app, "a_ice")
+
+    assert attacker.get("/dms").get_json() == []
+
+
+def test_unread_count_underscore_username_does_not_match_other_users(app, isolated_dbs):
+    _add_user("alice")
+    _seed_dm("dm:alice:bob", "bob")
+    attacker = _client_for(app, "a_ice")
+
+    assert attacker.get("/unread_count").get_json()["count"] == 0
+
+
+def test_search_underscore_username_does_not_leak_dm_contents(app, isolated_dbs):
+    _add_user("alice")
+    _seed_dm("dm:alice:bob", "bob", content="find me please")
+    attacker = _client_for(app, "a_ice")
+
+    results = attacker.get("/search_messages?q=find me").get_json()
+    assert [r for r in results if r["channel"].startswith("dm:")] == []
+
+
+def test_dms_underscore_username_still_matches_own_conversations(app, isolated_dbs):
+    """The escaping must not break a genuine underscore in a username."""
+    _add_user("bob")
+    _seed_dm("dm:a_ice:bob", "bob")
+    owner = _client_for(app, "a_ice")
+
+    data = owner.get("/dms").get_json()
+    assert [d["channel"] for d in data] == ["dm:a_ice:bob"]
+
+
 # ── GET /online_users ─────────────────────────────────────────────────────────
 
 
@@ -671,6 +730,50 @@ def test_mark_read_clears_unread_count(alice):
 def test_mark_read_no_unread_messages(alice):
     resp = alice.post("/mark_read/general")
     assert resp.status_code == 204
+
+
+# ── GET /last_read/<channel> ──────────────────────────────────────────────────
+
+
+def test_last_read_unauthenticated(client):
+    resp = client.get("/last_read/general")
+    assert resp.status_code == 302
+
+
+def test_last_read_null_before_first_visit(alice):
+    resp = alice.get("/last_read/general")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"last_read_ts": None}
+
+
+def test_last_read_returns_watermark(alice):
+    ts = time.time()
+    _insert_message("alice", "general", "unread", ts=ts, sender="bob")
+    alice.post("/mark_read/general")
+
+    data = alice.get("/last_read/general").get_json()
+    assert data["last_read_ts"] >= ts
+
+
+def test_last_read_is_read_before_mark_read_advances_it(alice):
+    """The boundary the "New messages" divider is drawn at.
+
+    Reading it must reflect where the user left off, not where they are now —
+    otherwise the divider would always land past every message.
+    """
+    first = time.time() - 100
+    _insert_message("alice", "general", "old", ts=first, sender="bob")
+    alice.post("/mark_read/general")
+
+    _insert_message("alice", "general", "new", ts=time.time(), sender="bob")
+    boundary = alice.get("/last_read/general").get_json()["last_read_ts"]
+
+    assert boundary == first
+
+
+def test_last_read_rejects_channel_user_cannot_see(alice):
+    resp = alice.get("/last_read/private:9999")
+    assert resp.status_code == 403
 
 
 # ── GET /read_receipts/<channel> ──────────────────────────────────────────────

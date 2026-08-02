@@ -2449,6 +2449,38 @@ def react(msg_id):
     return jsonify(reactions)
 
 
+@chat_bp.route("/last_read/<channel>", methods=["GET"])
+@auth.login_required
+def last_read(channel):
+    """Return the current user's read watermark for a channel.
+
+    Route: ``GET /last_read/<channel>``
+
+    Requires authentication.  This is the same ``read_state.last_read_ts`` row
+    that :func:`mark_read` advances, exposed on its own so the client can learn
+    where the user left off *before* opening the channel moves the watermark
+    forward.  That boundary is what the "New messages" divider is drawn at.
+
+    :param channel: The channel name or DM identifier.
+    :type channel: str
+    :returns: JSON ``{"last_read_ts": <float>}``, or ``null`` for a channel the
+        user has never opened.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    if not is_valid_channel(channel, user):
+        return "forbidden", 403
+
+    db = get_db()
+    row = db.execute(
+        "SELECT last_read_ts FROM read_state WHERE user = ? AND channel = ?",
+        (user, channel),
+    ).fetchone()
+    db.close()
+
+    return jsonify({"last_read_ts": row["last_read_ts"] if row else None})
+
+
 @chat_bp.route("/mark_read/<channel>", methods=["POST"])
 @auth.login_required
 def mark_read(channel):
