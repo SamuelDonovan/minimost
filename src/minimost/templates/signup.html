@@ -22,12 +22,13 @@
         <form method="post" autocomplete="on">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="auth-field">
-                <input id="username" type="text" name="username" placeholder="Username" aria-label="Username" required autocomplete="username" autofocus value="{{ username or '' }}">
+                <input id="username" type="text" name="username" placeholder="Username" aria-label="Username" required autocomplete="username" autofocus value="{{ username or '' }}" pattern="[A-Za-z0-9_\-]{1,32}" maxlength="32">
+                <p id="username-message" aria-live="polite"></p>
                 {{ password_fields("Password", "Confirm password") }}
             </div>
 
             <p id="password-message" aria-live="polite"></p>
-            <p class="auth-hint">Use your name as your username — this is how others will see and search for you.</p>
+            <p class="auth-hint">Use your name as your username — this is how others will see and search for you. Letters, numbers, hyphens and underscores only.</p>
 
             <button id="signup-btn" type="submit" disabled>Sign up</button>
         </form>

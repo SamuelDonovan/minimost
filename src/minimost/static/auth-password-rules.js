@@ -1,9 +1,10 @@
-// Live password-rule feedback shared by the signup and reset-password pages.
+// Live credential feedback shared by the signup and reset-password pages.
 //
-// Shows which strength requirements are met as the user types and whether the
-// two password fields match, and enables the submit button only when both pass.
-// The server re-validates everything in minimost.auth, so this is purely a UX
-// aid.  No-ops on pages without the expected fields (e.g. login).
+// Shows which password strength requirements are met as the user types, whether
+// the two password fields match, and whether the username is well formed —
+// enabling the submit button only when all of them pass.  The server
+// re-validates everything in minimost.auth, so this is purely a UX aid.
+// No-ops on pages without the expected fields (e.g. login).
 (function () {
   "use strict";
 
@@ -12,6 +13,13 @@
   // Keep in sync with password_min_length in settings.json (the server is the
   // authoritative check; this is the default for immediate UX feedback).
   const MIN_LENGTH = 15;
+  // Keep in sync with minimost.auth._USERNAME_RE. Validated here as well as on
+  // the server because a server-side rejection re-renders the page with both
+  // password fields blank, forcing the user to retype a 15-character password
+  // to fix a typo in a different field.
+  const USERNAME_RE = /^[A-Za-z0-9_-]{1,32}$/;
+  const USERNAME_ERROR =
+    "✗ Letters, numbers, hyphens and underscores only (no spaces)";
 
   function setReq(id, met, active) {
     const el = document.getElementById(id);
@@ -28,8 +36,32 @@
     else el.className = "";
   }
 
-  function makeChecker(password, confirm, message, button, reqs) {
+  // Report on the username field, returning whether it is acceptable. Pages
+  // without a username field (reset-password) pass trivially.
+  function checkUsername(username, usernameMessage) {
+    if (!username) return true;
+    const value = username.value;
+    const valid = USERNAME_RE.test(value);
+    if (usernameMessage) {
+      // Stay quiet until there is something to complain about.
+      usernameMessage.textContent =
+        value.length > 0 && !valid ? USERNAME_ERROR : "";
+      usernameMessage.className = value.length > 0 && !valid ? "no-match" : "";
+    }
+    return valid;
+  }
+
+  function makeChecker(
+    password,
+    confirm,
+    message,
+    button,
+    reqs,
+    username,
+    usernameMessage,
+  ) {
     return function check() {
+      const usernameOk = checkUsername(username, usernameMessage);
       const pw = password.value;
       const active = pw.length > 0;
       reqs.hidden = !active;
@@ -68,8 +100,9 @@
         message.className = "";
       }
 
-      button.disabled = !(requirementsMet && passwordsMatch);
-      return requirementsMet && passwordsMatch;
+      const ok = requirementsMet && passwordsMatch && usernameOk;
+      button.disabled = !ok;
+      return ok;
     };
   }
 
@@ -83,9 +116,22 @@
     const button = form ? form.querySelector('button[type="submit"]') : null;
     if (!form || !button) return;
 
-    const check = makeChecker(password, confirm, message, button, reqs);
+    // Only present on signup; reset-password has no username field.
+    const username = document.getElementById("username");
+    const usernameMessage = document.getElementById("username-message");
+
+    const check = makeChecker(
+      password,
+      confirm,
+      message,
+      button,
+      reqs,
+      username,
+      usernameMessage,
+    );
     password.addEventListener("input", check);
     confirm.addEventListener("input", check);
+    if (username) username.addEventListener("input", check);
     form.addEventListener("submit", function (event) {
       if (!check()) event.preventDefault();
     });

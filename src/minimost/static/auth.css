@@ -177,29 +177,31 @@ button[type="submit"]:disabled {
   text-decoration: underline;
 }
 
-/* Secondary login links ("Forgot your password?", "What is MiniMost?") laid
-   out on one row with a dot divider, instead of stacked underlined links. */
+/* Secondary login links ("Forgot your password?", "What is MiniMost?"), laid
+   out as a centred column rather than a wrapping row. They don't fit on one
+   line at the card's width, so the old row layout always wrapped — stranding
+   the "·" divider alone at the end of the first line. Stacking them removes the
+   need for a divider at all. */
 .auth-links {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   margin-top: 14px;
   font-size: 13px;
 }
 
+/* Each link wraps as a unit rather than breaking mid-phrase ("What is" /
+   "MiniMost?"), so a narrow card stacks them cleanly. */
 .auth-links a {
   color: #9cdcfe;
   text-decoration: none;
+  white-space: nowrap;
+  display: inline-block;
 }
 
 .auth-links a:hover {
   text-decoration: underline;
-}
-
-.auth-links-sep {
-  color: #555;
 }
 
 .auth-hint {
@@ -214,11 +216,24 @@ button[type="submit"]:disabled {
   margin: 8px 0 0 0;
 }
 
-#password-message.match {
+/* Sits between the username and password fields, so unlike #password-message it
+   must not reserve a line while it has nothing to say. */
+#username-message {
+  font-size: 13px;
+  margin: 6px 0 0 0;
+}
+
+#username-message:empty {
+  display: none;
+}
+
+#password-message.match,
+#username-message.match {
   color: #6cf;
 }
 
-#password-message.no-match {
+#password-message.no-match,
+#username-message.no-match {
   color: #f88;
 }
 
