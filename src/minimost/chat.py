@@ -349,6 +349,32 @@ def _history_start(channel: str, user: str):
     return row["history_start_ts"] if row else None
 
 
+# SQL ``LIKE`` treats ``_`` as a single-character wildcard and ``%`` as a
+# multi-character one.  Usernames may contain ``_`` (see auth._USERNAME_RE), so
+# interpolating one straight into a DM-channel ``LIKE`` pattern lets a user
+# named ``a_ice`` match ``dm:alice:...`` and read conversations they are not a
+# party to.  Every pattern built from a username must be escaped with this and
+# paired with an ``ESCAPE '\'`` clause.
+_LIKE_ESCAPE = "\\"
+
+
+def _like_literal(value: str) -> str:
+    """Escape ``LIKE`` metacharacters so *value* only matches itself.
+
+    The backslash is escaped first so it can serve as the escape character for
+    the wildcards that follow.
+
+    :param value: Raw text to embed in a ``LIKE`` pattern (e.g. a username).
+    :returns: The same text with ``\\``, ``%`` and ``_`` backslash-escaped.
+    :rtype: str
+    """
+    return (
+        value.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+        .replace("%", _LIKE_ESCAPE + "%")
+        .replace("_", _LIKE_ESCAPE + "_")
+    )
+
+
 def _search_access(user):
     """Build the channel-access filter for a shared-database search.
 
@@ -376,11 +402,12 @@ def _search_access(user):
     placeholders = ",".join("?" * len(allowed)) if allowed else "NULL"
     clause = (
         f"(m.channel IN ({placeholders})"
-        " OR m.channel LIKE 'dm:' || ? || ':%'"
-        " OR m.channel LIKE 'dm:%:' || ?"
-        " OR m.channel LIKE 'dm:%:' || ? || ':%')"
+        " OR m.channel LIKE 'dm:' || ? || ':%' ESCAPE '\\'"
+        " OR m.channel LIKE 'dm:%:' || ? ESCAPE '\\'"
+        " OR m.channel LIKE 'dm:%:' || ? || ':%' ESCAPE '\\')"
     )
-    return clause, [*allowed, user, user, user], history_starts
+    like_user = _like_literal(user)
+    return clause, [*allowed, like_user, like_user, like_user], history_starts
 
 
 def all_users() -> List[str]:
@@ -670,12 +697,12 @@ def unread_count():
           AND m.deleted = 0
           AND m.ts > COALESCE(r.last_read_ts, 0)
           AND (
-                m.channel LIKE 'dm:' || ? || ':%'
-             OR m.channel LIKE 'dm:%:' || ?
-             OR m.channel LIKE 'dm:%:' || ? || ':%'
+                m.channel LIKE 'dm:' || ? || ':%' ESCAPE '\\'
+             OR m.channel LIKE 'dm:%:' || ? ESCAPE '\\'
+             OR m.channel LIKE 'dm:%:' || ? || ':%' ESCAPE '\\'
           )
     """,
-        (user, user, user, user, user),
+        (user, user, *([_like_literal(user)] * 3)),
     ).fetchone()
 
     count = row["unread"]
@@ -728,15 +755,15 @@ def dms():
         LEFT JOIN read_state rs ON rs.user = ? AND rs.channel = m.channel
         WHERE m.channel LIKE 'dm:%'
           AND (
-                m.channel LIKE 'dm:' || ? || ':%'
-             OR m.channel LIKE 'dm:%:' || ?
-             OR m.channel LIKE 'dm:%:' || ? || ':%'
+                m.channel LIKE 'dm:' || ? || ':%' ESCAPE '\\'
+             OR m.channel LIKE 'dm:%:' || ? ESCAPE '\\'
+             OR m.channel LIKE 'dm:%:' || ? || ':%' ESCAPE '\\'
           )
         GROUP BY m.channel
         HAVING dh.hidden_ts IS NULL OR MAX(m.ts) > dh.hidden_ts
         ORDER BY last_ts DESC
     """,
-        (user, user, user, user, user, user),
+        (user, user, user, *([_like_literal(user)] * 3)),
     ).fetchall()
 
     db.close()
