@@ -215,7 +215,25 @@ function applyDMs(dms) {
     const el = sidebarEntry(label, dm.channel, dm.unread);
 
     seen.add(dm.channel);
+    // The server knows about this conversation now, so it no longer needs to be
+    // held open client-side.
+    dropPendingDm(dm.channel);
 
+    sb.insertBefore(el, insertAfter.nextSibling);
+    insertAfter = el;
+  });
+
+  // Conversations opened but not yet posted to don't appear in /dms (it reads
+  // from the messages table), so render them from the pending set to stop them
+  // vanishing out of the sidebar the moment the user navigates away.
+  globalThis.pendingDms.forEach((dmChannel) => {
+    if (seen.has(dmChannel)) return;
+    const others = dmChannel
+      .split(":")
+      .slice(1)
+      .filter((u) => u !== CURRENT_USER);
+    const el = sidebarEntry("@ " + others.join(", "), dmChannel, 0);
+    seen.add(dmChannel);
     sb.insertBefore(el, insertAfter.nextSibling);
     insertAfter = el;
   });

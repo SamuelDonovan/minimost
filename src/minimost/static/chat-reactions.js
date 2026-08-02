@@ -632,8 +632,20 @@ function toggleReaction(msgId, reactionName) {
     })
     .then((reactions) => {
       const div = document.getElementById("reactions-" + msgId);
-      if (div)
-        div.innerHTML = buildReactionsHtml(msgId, JSON.stringify(reactions));
+      if (!div) return;
+      const chat = document.getElementById("chat");
+      // A first reaction adds a row of chips to the message. On the newest
+      // message that grows the list past the bottom of the viewport, hiding the
+      // very chip the user just added — so follow the content back down.
+      const wasAtBottom = chat && isNearBottom(chat);
+      div.innerHTML = buildReactionsHtml(msgId, JSON.stringify(reactions));
+      // Wait a frame: scrollHeight doesn't account for the new chips until the
+      // browser has laid them out.
+      if (wasAtBottom) {
+        requestAnimationFrame(() => {
+          chat.scrollTop = chat.scrollHeight;
+        });
+      }
     })
     .catch((err) => console.error("Reaction error:", err));
 }

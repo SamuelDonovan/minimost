@@ -602,7 +602,7 @@ async function toggleScreenShare() {
   // getDisplayMedia must run directly in the user-gesture handler — calling it
   // from a nested async helper drops the activation token in some browsers.
   if (!navigator.mediaDevices?.getDisplayMedia) {
-    alert("Your browser does not support screen sharing.");
+    showToast("Your browser does not support screen sharing.");
     return;
   }
   let displayStream;
@@ -686,7 +686,7 @@ async function toggleStandaloneScreenShare() {
     return;
   }
   if (!navigator.mediaDevices?.getDisplayMedia) {
-    alert("Your browser does not support screen sharing.");
+    showToast("Your browser does not support screen sharing.");
     return;
   }
   let displayStream;
@@ -1069,7 +1069,7 @@ function _cleanupStandaloneShare() {
 
 function _requireSecureContext() {
   if (globalThis.isSecureContext && navigator.mediaDevices) return true;
-  alert(
+  showToast(
     "Calling requires a secure connection (HTTPS). MiniMost generates a self-signed certificate automatically on first run — check that you are connecting via https://.",
   );
   return false;
@@ -1087,7 +1087,7 @@ async function startCall() {
     localStream = await _getLocalMedia();
   } catch (err) {
     console.warn("Microphone access denied:", err);
-    alert(
+    showToast(
       "Could not access your microphone. Please check your browser permissions.",
     );
     return;
@@ -1100,7 +1100,7 @@ async function startCall() {
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    alert(err.error || "Could not start call");
+    showToast(err.error || "Could not start call");
     if (localStream) {
       localStream.getTracks().forEach((t) => t.stop());
       localStream = null;

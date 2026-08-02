@@ -139,7 +139,7 @@ document
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > MAX_AVATAR_MB * 1024 * 1024) {
-      alert(`Avatar image must be under ${MAX_AVATAR_MB} MB.`);
+      showToast(`Avatar image must be under ${MAX_AVATAR_MB} MB.`);
       e.target.value = "";
       return;
     }
@@ -375,7 +375,7 @@ document
     });
 
     if (!resp.ok) {
-      alert("Failed to save account.");
+      showToast("Failed to save account.");
       return;
     }
 

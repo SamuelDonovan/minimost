@@ -25,7 +25,7 @@
 </script>
 
 <button id="sidebar-backdrop" aria-label="Close sidebar" onclick="closeSidebar()"></button>
-<div id="sidebar">
+<div id="sidebar" role="navigation" aria-label="Channels and direct messages">
     <div id="sidebar-static">
         <button id="new-dm-btn" class="icon-btn" title="Start new direct message">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
@@ -40,7 +40,7 @@
     <div id="sidebar-dynamic"></div>
 </div>
 
-<div id="main">
+<div id="main" role="main">
     <div id="topbar">
         <div id="topbar-user">
             <button id="account-btn" class="icon-btn" title="Account" aria-label="Account" onclick="openAccount()">
@@ -136,7 +136,10 @@
         <button id="screenshare-banner-view-btn" class="ss-banner-btn" onclick="openShareViewer()">View</button>
     </div>
 
-    <div id="chat"></div>
+    <!-- role="log" + aria-live announce incoming messages to screen readers.
+         switchChannel() flips aria-live off around the backlog render so a
+         channel switch doesn't read out the entire history. -->
+    <div id="chat" role="log" aria-live="off" aria-relevant="additions" aria-label="Messages"></div>
 
     <div id="typing-indicator"></div>
 
@@ -362,7 +365,7 @@
     <div class="modal-content">
         <h3>New Private Channel</h3>
         <label for="private-ch-name">Channel name</label><br>
-        <input type="text" id="private-ch-name" placeholder="e.g. miniost-enjoyers" maxlength="80" style="width:90%; margin-bottom:4px">
+        <input type="text" id="private-ch-name" placeholder="e.g. minimost-enjoyers" maxlength="80" style="width:90%; margin-bottom:4px">
         <div id="private-ch-name-error" style="color:var(--danger,#e53e3e); font-size:0.82em; min-height:1.2em; margin-bottom:6px"></div>
         <label for="private-ch-members-input">Members</label>
         <div class="input-suggest-wrap">
@@ -1123,7 +1126,7 @@ let mentionNotifyArmed = false;
 function addFiles(files) {
     for (const file of files) {
         if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
-            alert(`"${file.name}" exceeds the ${MAX_UPLOAD_MB} MB upload limit.`);
+            showToast(`"${file.name}" exceeds the ${MAX_UPLOAD_MB} MB upload limit.`);
             continue;
         }
 
@@ -1544,6 +1547,10 @@ function switchChannel(c) {
     mentionNotifyArmed = false;
     lastRenderedDate = null;
 
+    // Silence the live region until this channel's backlog has painted, or a
+    // screen reader would announce every message in the history. armChatLog()
+    // turns it back on after the first render pass.
+    disarmChatLog();
     document.getElementById("chat").innerHTML = "";
     _typingShowing = false;
     const _ti = document.getElementById("typing-indicator");
@@ -1592,6 +1599,72 @@ function switchChannel(c) {
 // Fetch Messages
 function isNearBottom(el, threshold = 120) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+}
+
+// Set to a message id while a search/mention jump is waiting for that message
+// to render. switchChannel() always requests a scroll to the bottom, which
+// would otherwise immediately undo the jump's scroll — so the render pass skips
+// its auto-scroll while a jump is outstanding.
+let pendingJumpMsgId = null;
+
+// The #chat log is an aria-live region so screen readers hear incoming
+// messages. It must stay silent while a channel's existing history paints —
+// both on first load and on every switch — or it would read out the entire
+// backlog. Rendering is driven from several places (one-shot fetch, SSE
+// stream, post-send refresh), so rather than tracking each, the log is
+// disarmed whenever the list is cleared and re-armed after the next render
+// pass completes.
+let _chatLogArmed = false;
+
+function disarmChatLog() {
+    _chatLogArmed = false;
+    document.getElementById("chat")?.setAttribute("aria-live", "off");
+}
+
+function armChatLog() {
+    if (_chatLogArmed) return;
+    _chatLogArmed = true;
+    document.getElementById("chat")?.setAttribute("aria-live", "polite");
+}
+
+// A brand-new DM or private channel has no backlog, which otherwise renders as
+// a large blank void with no indication of where you are or what to do.
+function updateEmptyState() {
+    const chat = document.getElementById("chat");
+    if (!chat) return;
+
+    const existing = chat.querySelector(".chat-empty-state");
+    if (chat.querySelector(".msg")) {
+        existing?.remove();
+        return;
+    }
+    if (existing) return;
+
+    const isDM = channel.startsWith("dm:");
+    const isPrivate = channel.startsWith("private:");
+    let name = channel;
+    if (isDM) {
+        const parts = channel.split(":").slice(1);
+        const others = parts.filter(u => u !== CURRENT_USER);
+        name = "@" + (others.length ? others : parts).join(", @");
+    } else if (isPrivate) {
+        name = privateChannelMap[channel] || channel;
+    } else {
+        name = "#" + channel;
+    }
+
+    const el = document.createElement("div");
+    el.className = "chat-empty-state";
+    const heading = document.createElement("p");
+    heading.className = "chat-empty-title";
+    heading.textContent = isDM
+        ? `This is the start of your conversation with ${name}`
+        : `This is the start of ${name}`;
+    const sub = document.createElement("p");
+    sub.className = "chat-empty-sub";
+    sub.textContent = "Send a message to get things going.";
+    el.append(heading, sub);
+    chat.appendChild(el);
 }
 
 function _removeDeletedMsg(existing, ts) {
@@ -1791,7 +1864,14 @@ function applyMessages(data, requestedChannel = channel) {
             // mentions seen in it are history, not fresh alerts.
             const notifyArmed = mentionNotifyArmed;
             mentionNotifyArmed = true;
-            if (!data || data.length === 0) return;
+            if (!data || data.length === 0) {
+                // An empty batch still completes the channel's load: a brand-new
+                // conversation needs its empty state, and the live region has to
+                // be armed or a channel with no backlog would never announce.
+                updateEmptyState();
+                armChatLog();
+                return;
+            }
 
             const chat = document.getElementById("chat");
             const shouldAutoScroll =
@@ -1934,8 +2014,12 @@ function applyMessages(data, requestedChannel = channel) {
 
             updateReadReceiptUI();
             refreshDMs();
+            updateEmptyState();
+            // Backlog for this channel is on screen; anything appended from
+            // here on is genuinely new and worth announcing.
+            armChatLog();
 
-            if ((forceScrollToBottom || appended) && shouldAutoScroll) {
+            if ((forceScrollToBottom || appended) && shouldAutoScroll && !pendingJumpMsgId) {
                 requestAnimationFrame(() => {
                     chat.scrollTop = chat.scrollHeight;
                 });
@@ -2094,7 +2178,7 @@ function saveEdit(msgId) {
     const newText = input.value.trim();
 
     if (!newText) {
-        alert("Message cannot be empty");
+        showToast("Message cannot be empty");
         return;
     }
 
@@ -2117,7 +2201,7 @@ function saveEdit(msgId) {
         updateReadReceiptUI();
     })
     .catch(err => {
-        alert("Could not edit message");
+        showToast("Could not edit message");
         console.error(err);
     });
 }
@@ -2145,7 +2229,7 @@ function deleteMsg(msgId) {
             }
         })
         .catch(err => {
-            alert("Could not delete message");
+            showToast("Could not delete message");
             console.error(err);
         });
 }

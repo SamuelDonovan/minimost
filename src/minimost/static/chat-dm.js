@@ -186,6 +186,45 @@ document.getElementById("dm-cancel").onclick = () => {
   dmModal.style.display = "none";
 };
 
+// DM conversations the user has opened but not yet posted to. /dms derives its
+// list from the messages table, so an empty conversation has no row there and
+// applyDMs() would prune it from the sidebar the moment the user navigated
+// away — losing the DM with no way back except starting it over. Held here
+// (and in localStorage, so a reload doesn't lose it either) until the first
+// message makes the server aware of it or the user closes it.
+const PENDING_DMS_KEY = `pendingDms:${CURRENT_USER}`;
+
+function loadPendingDms() {
+  try {
+    const raw = localStorage.getItem(PENDING_DMS_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+globalThis.pendingDms = loadPendingDms();
+
+function savePendingDms() {
+  try {
+    localStorage.setItem(
+      PENDING_DMS_KEY,
+      JSON.stringify([...globalThis.pendingDms]),
+    );
+  } catch {
+    // Storage full or blocked — the in-memory set still works for this session.
+  }
+}
+
+function addPendingDm(dmChannel) {
+  globalThis.pendingDms.add(dmChannel);
+  savePendingDms();
+}
+
+function dropPendingDm(dmChannel) {
+  if (globalThis.pendingDms.delete(dmChannel)) savePendingDms();
+}
+
 document.getElementById("dm-start").onclick = () => {
   const raw = dmUsersInput.value.trim();
   if (!raw) return;
@@ -208,6 +247,9 @@ document.getElementById("dm-start").onclick = () => {
   resetDmModal();
   dmModal.style.display = "none";
 
+  addPendingDm(dmChannel);
+  refreshDMs();
+
   switchChannel(dmChannel);
 
   focusMessageInput();
@@ -220,6 +262,7 @@ async function closeDm(dmChannel) {
     body: JSON.stringify({ channel: dmChannel }),
   });
   if (!resp.ok) return;
+  dropPendingDm(dmChannel);
   if (channel === dmChannel) switchChannel("general");
   document.querySelector(`[data-channel="${dmChannel}"]`)?.remove();
 }

@@ -75,7 +75,7 @@ document.getElementById("private-ch-create-btn").onclick = async () => {
         text || "You're creating channels too quickly. Please slow down.",
       );
     } else {
-      alert("Failed to create channel: " + text);
+      showToast("Failed to create channel: " + text);
     }
     return;
   }
@@ -210,7 +210,7 @@ document.getElementById("rename-ch-submit-btn").onclick = async () => {
   });
 
   if (!resp.ok) {
-    alert("Failed to rename channel: " + (await resp.text()));
+    showToast("Failed to rename channel: " + (await resp.text()));
     return;
   }
 
@@ -238,7 +238,7 @@ async function leaveChannel() {
     method: "POST",
   });
   if (!resp.ok) {
-    alert("Failed to leave channel: " + (await resp.text()));
+    showToast("Failed to leave channel: " + (await resp.text()));
     return;
   }
 
@@ -355,7 +355,7 @@ document.getElementById("add-member-submit-btn").onclick = async () => {
 
   if (!resp.ok) {
     const msg = await resp.text();
-    alert("Failed to add member: " + msg);
+    showToast("Failed to add member: " + msg);
     return;
   }
 

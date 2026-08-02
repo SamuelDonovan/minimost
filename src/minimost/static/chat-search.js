@@ -631,6 +631,13 @@ function closeAllModalsAndFocusChat() {
 
   closeHelp();
 
+  // Settings and Account. Account matters most: it holds the delete-account
+  // buttons, so leaving it open when every other overlay dismisses on Escape
+  // is the one place where the inconsistency is actively risky. closeAccount()
+  // also backs out of the delete/change-password confirmation sub-views.
+  if (settingsModal) settingsModal.style.display = "none";
+  if (typeof closeAccount === "function") closeAccount();
+
   // Reset DM input state
   if (dmUsersInput) {
     dmUsersInput.value = "";
@@ -656,14 +663,45 @@ function scrollIntoViewIfNeeded(el) {
   }
 }
 
+// How long to keep waiting for a jump target to render before giving up. The
+// channel's messages arrive over the network, so the element we want may not
+// exist for a while on a slow link or in a channel with a long backlog.
+const JUMP_TIMEOUT_MS = 5000;
+
+// Once the jump has scrolled, let the message settle before releasing the
+// auto-scroll suppression, so the smooth scroll isn't cut short by the next
+// render pass snapping the list back to the bottom.
+const JUMP_SETTLE_MS = 600;
+
 function _goToSearchResult(msgChannel, msgId) {
   closeSearchPanel();
   searchInput.blur();
+
+  // Claim the jump before switching: switchChannel() requests a scroll to the
+  // bottom for the incoming channel, which would otherwise land on top of ours.
+  pendingJumpMsgId = msgId;
   switchChannel(msgChannel);
-  setTimeout(() => {
-    const el = document.getElementById(`msg-${msgId}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, 200);
+
+  // Poll for the target instead of guessing a fixed delay: the message list is
+  // rendered asynchronously after switchChannel(), and a message that is slow
+  // to arrive used to leave the jump silently doing nothing.
+  const deadline = Date.now() + JUMP_TIMEOUT_MS;
+  const tryReveal = () => {
+    // scrollToMsg() also flashes the message, so it's clear which of the ones
+    // now on screen was the match — the old jump gave no such feedback.
+    if (document.getElementById(`msg-${msgId}`)) {
+      scrollToMsg(msgId);
+      setTimeout(() => {
+        if (pendingJumpMsgId === msgId) pendingJumpMsgId = null;
+      }, JUMP_SETTLE_MS);
+    } else if (Date.now() < deadline) {
+      requestAnimationFrame(tryReveal);
+    } else {
+      pendingJumpMsgId = null;
+      showToast("Couldn't jump to that message — it may have been deleted.");
+    }
+  };
+  requestAnimationFrame(tryReveal);
 }
 
 // Collect the active filters into a query string. A date picker value is

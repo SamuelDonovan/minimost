@@ -286,7 +286,7 @@ describe("closeActiveCallUI()", () => {
 describe("startCall()", () => {
   beforeEach(() => {
     global.isSecureContext = true;
-    global.alert = jest.fn();
+    global.showToast = jest.fn();
     global.navigator.mediaDevices = {
       getUserMedia: jest.fn().mockResolvedValue({
         getAudioTracks: jest.fn(() => []),
@@ -297,11 +297,11 @@ describe("startCall()", () => {
     };
   });
 
-  test("shows alert if not secure context", async () => {
+  test("shows toast if not secure context", async () => {
     global.isSecureContext = false;
     global.navigator.mediaDevices = null;
     await startCall();
-    expect(global.alert).toHaveBeenCalled();
+    expect(global.showToast).toHaveBeenCalled();
     global.isSecureContext = true;
     global.navigator.mediaDevices = {
       getUserMedia: jest.fn().mockResolvedValue({
@@ -338,7 +338,7 @@ describe("startCall()", () => {
       getDisplayMedia: jest.fn(),
     };
     await startCall();
-    expect(global.alert).toHaveBeenCalled();
+    expect(global.showToast).toHaveBeenCalled();
   });
 
   test("handles initiate endpoint failure", async () => {
@@ -347,7 +347,7 @@ describe("startCall()", () => {
       json: () => Promise.resolve({ error: "busy" }),
     });
     await startCall();
-    expect(global.alert).toHaveBeenCalled();
+    expect(global.showToast).toHaveBeenCalled();
   });
 });
 
@@ -636,12 +636,12 @@ describe("refreshScreenShares()", () => {
 
 // ── toggleStandaloneScreenShare ────────────────────────────────────────────────
 describe("toggleStandaloneScreenShare()", () => {
-  test("shows alert if getDisplayMedia not available", async () => {
+  test("shows toast if getDisplayMedia not available", async () => {
     global.isSecureContext = true;
     global.navigator.mediaDevices = { getUserMedia: jest.fn() }; // no getDisplayMedia
-    global.alert = jest.fn();
+    global.showToast = jest.fn();
     await toggleStandaloneScreenShare();
-    expect(global.alert).toHaveBeenCalled();
+    expect(global.showToast).toHaveBeenCalled();
     global.navigator.mediaDevices = {
       getUserMedia: jest.fn(),
       getDisplayMedia: jest.fn(),

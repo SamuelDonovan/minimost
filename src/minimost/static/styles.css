@@ -221,14 +221,15 @@ body {
   list-style: none;
 }
 
+/* Normal inline flow, not flex: these items are prose containing the odd <kbd>
+   or <b>. Under `display: flex` each text node became its own flex item, so a
+   sentence like "Click <b>×</b> on a DM to hide it" could only break *between*
+   the elements — stranding "Click ×" on a line of its own. */
 #help-modal li {
   padding: 3px 0;
   font-size: 13px;
+  line-height: 1.5;
   color: #ccc;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
 }
 
 #help-modal kbd {
@@ -240,6 +241,7 @@ body {
   border-radius: 3px;
   padding: 1px 5px;
   white-space: nowrap;
+  vertical-align: baseline;
 }
 
 .help-presence {
@@ -247,6 +249,7 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  vertical-align: middle;
 }
 .help-presence.active {
   background: #6cf;
@@ -390,6 +393,31 @@ body {
   margin: 6px 0 0;
   font-family: system-ui, sans-serif;
 }
+/* Shown in place of the message list in a conversation that has no messages
+   yet. Centred in the available space rather than pinned to the top, so it
+   reads as a deliberate state instead of a failed render. */
+.chat-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 60%;
+  padding: 24px 16px;
+  text-align: center;
+  color: #888;
+  font-family: system-ui, sans-serif;
+}
+.chat-empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #bbb;
+}
+.chat-empty-sub {
+  margin: 0;
+  font-size: 13px;
+}
 .msg-content-col {
   flex: 1;
   min-width: 0;
@@ -493,6 +521,16 @@ body {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.2s ease;
+}
+/* Reserve space before the (lazily loaded) image decodes. Without this the
+   element occupies 0px and then jumps to as much as 400px, shoving the message
+   list around — which knocks the view off the newest message and lands
+   scroll-into-view jumps in the wrong place. The placeholder box is dropped
+   once the real intrinsic size is known. */
+.chat-image:not(.loaded) {
+  width: 240px;
+  height: 180px;
+  background: #262626;
 }
 .chat-image.loaded {
   opacity: 1;
