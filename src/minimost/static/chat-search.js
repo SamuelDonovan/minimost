@@ -321,6 +321,13 @@ function formatText(text) {
   // trim below, which surfaces as a blank first line inside code blocks.
   text = text.replace(/\r\n?/g, "\n");
 
+  // Strip the private-use sentinels that step 1 uses to stand in for extracted
+  // code blocks. They are not typeable by accident, but nothing stopped a
+  // message from *containing* them — and step 6 would then try to resolve a
+  // placeholder that was never created, throw, and take down the render of
+  // every message after it in the batch.
+  text = text.replace(/[\uE002\uE003]/g, "");
+
   // 1. Extract fenced code blocks before any escaping.
   // Strip the newline immediately before/after each fence so the block
   // element doesn't double up with the pre-wrap newline character.
@@ -330,7 +337,7 @@ function formatText(text) {
     (_, lang, code) => {
       const idx = blocks.length;
       blocks.push({ lang: lang.trim(), code });
-      return `${idx}`;
+      return `\uE002${idx}\uE003`;
     },
   );
 
@@ -366,8 +373,12 @@ function formatText(text) {
   }
 
   // 6. Restore code blocks with syntax highlighting
-  safe = safe.replace(/(\d+)/g, (_, i) => {
-    const { lang, code } = blocks[Number(i)];
+  safe = safe.replace(/\uE002(\d+)\uE003/g, (_, i) => {
+    const block = blocks[Number(i)];
+    // Belt and braces: the strip above means user text can't forge a
+    // placeholder, but an unresolvable one must never throw out of a render.
+    if (!block) return "";
+    const { lang, code } = block;
     const trimmed = code.replace(/^\n/, "").replace(/\n$/, "");
     const highlighted = _syntaxHighlight(trimmed, lang);
     const langLabel = lang

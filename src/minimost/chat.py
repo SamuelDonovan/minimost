@@ -1513,6 +1513,29 @@ def get_message(msg_id):
     return jsonify(result)
 
 
+def _can_access_file(filename: str, user: str) -> bool:
+    """Return ``True`` if *user* can see any message carrying *filename*.
+
+    Uploads live in one flat directory and are addressed by name alone, so
+    without this the only thing standing between an attachment and any logged-in
+    account is the 32-char UUID in its name — an attachment posted to a private
+    channel or DM stayed readable by anyone who came across the URL (browser
+    history, a pasted link, a proxy log).  Attachments inherit the visibility of
+    the messages that carry them, exactly as ``/message/<id>`` does.
+
+    :param filename: The stored upload name, as it appears in ``messages``.
+    :param user: The requesting username.
+    :rtype: bool
+    """
+    db = get_db()
+    rows = db.execute(
+        "SELECT DISTINCT channel FROM messages WHERE filename = ?",
+        (filename,),
+    ).fetchall()
+    db.close()
+    return any(is_valid_channel(r["channel"], user) for r in rows)
+
+
 @chat_bp.route("/files/<path:filename>", methods=["GET"])
 @auth.login_required
 def files(filename):
@@ -1522,7 +1545,13 @@ def files(filename):
 
     Images are served inline; all other file types are served as attachments
     so the browser downloads rather than attempts to render them.
+
+    Only served if the caller can see a message carrying the file.  Returns 404
+    (not 403) so the endpoint doesn't confirm that an unreadable file exists.
     """
+    if not _can_access_file(filename, session["user"]):
+        return _NOT_FOUND, 404
+
     ext = Path(filename).suffix.lower()
     as_attachment = ext not in IMAGE_EXTENSIONS
     if as_attachment:
@@ -1554,6 +1583,9 @@ def file_preview(filename):
     """
     safe_name = _secure_filename(filename)
     if not safe_name:
+        abort(404)
+    # Same visibility rule as /files — the preview returns the file's contents.
+    if not _can_access_file(safe_name, session["user"]):
         abort(404)
     path = UPLOAD_DIR / safe_name
 

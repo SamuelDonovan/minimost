@@ -435,12 +435,86 @@ def test_files_unauthenticated(client):
     assert resp.status_code == 302
 
 
+def _attach(filename, channel="general", sender="alice", data=b"\xff\xd8\xff"):
+    """Write an upload and the message row that carries it."""
+    (chat_mod.UPLOAD_DIR / filename).write_bytes(data)
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, filename, ts) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (channel, sender, "", filename, time.time()),
+    )
+    db.commit()
+    db.close()
+
+
 def test_files_serves_file(alice):
     fname = "test_img.jpg"
-    (chat_mod.UPLOAD_DIR / fname).write_bytes(b"\xff\xd8\xff")
+    _attach(fname)
     resp = alice.get(f"/files/{fname}")
     assert resp.status_code == 200
     resp.close()  # release the send_file handle so it isn't GC'd as a ResourceWarning
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+# Uploads sit in one flat directory addressed by name, so without a visibility
+# check the 32-char UUID in the name is the only thing protecting an attachment
+# posted to a private channel or DM.
+
+
+def test_files_denies_attachment_from_dm_user_is_not_in(app, isolated_dbs):
+    _add_user("alice")
+    fname = "deadbeef_secret.txt"
+    _attach(fname, channel="dm:alice:bob", sender="bob", data=b"private")
+    outsider = _client_for(app, "mallory")
+
+    resp = outsider.get(f"/files/{fname}")
+    assert resp.status_code == 404
+    resp.close()
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+def test_file_preview_denies_attachment_from_dm_user_is_not_in(app, isolated_dbs):
+    _add_user("alice")
+    fname = "deadbeef_secret.py"
+    _attach(fname, channel="dm:alice:bob", sender="bob", data=b"print('secret')")
+    outsider = _client_for(app, "mallory")
+
+    assert outsider.get(f"/file_preview/{fname}").status_code == 404
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+def test_files_allows_attachment_from_dm_user_is_in(app, isolated_dbs):
+    fname = "deadbeef_shared.txt"
+    _attach(fname, channel="dm:alice:bob", sender="bob", data=b"ours")
+    member = _client_for(app, "alice")
+
+    resp = member.get(f"/files/{fname}")
+    assert resp.status_code == 200
+    resp.close()
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+def test_files_allows_attachment_from_public_channel(app, isolated_dbs):
+    _add_user("alice")
+    fname = "deadbeef_public.txt"
+    _attach(fname, channel="general", data=b"public")
+    other = _client_for(app, "mallory")
+
+    resp = other.get(f"/files/{fname}")
+    assert resp.status_code == 200
+    resp.close()
+    (chat_mod.UPLOAD_DIR / fname).unlink()
+
+
+def test_files_denies_orphan_upload(alice):
+    """A file on disk with no message referencing it is not served."""
+    fname = "orphan.txt"
+    (chat_mod.UPLOAD_DIR / fname).write_bytes(b"orphan")
+
+    resp = alice.get(f"/files/{fname}")
+    assert resp.status_code == 404
+    resp.close()
     (chat_mod.UPLOAD_DIR / fname).unlink()
 
 
@@ -949,7 +1023,7 @@ def test_files_attachment_content_disposition(alice):
     """UUID-prefixed filenames expose the original name as the download name."""
     # 32 hex chars + underscore + original name
     fname = "a" * 32 + "_report.pdf"
-    (chat_mod.UPLOAD_DIR / fname).write_bytes(b"%PDF")
+    _attach(fname, data=b"%PDF")
     resp = alice.get(f"/files/{fname}?download=1")
     assert resp.status_code == 200
     resp.close()  # release the send_file handle so it isn't GC'd as a ResourceWarning
@@ -966,7 +1040,7 @@ def test_file_preview_unauthenticated(client):
 
 def test_file_preview_unknown_extension(alice):
     fname = "image.jpg"
-    (chat_mod.UPLOAD_DIR / fname).write_bytes(b"\xff\xd8")
+    _attach(fname, data=b"\xff\xd8")
     resp = alice.get(f"/file_preview/{fname}")
     assert resp.status_code == 200
     assert resp.get_json() == {}
@@ -975,7 +1049,7 @@ def test_file_preview_unknown_extension(alice):
 
 def test_file_preview_text_file(alice):
     fname = "script.py"
-    (chat_mod.UPLOAD_DIR / fname).write_text("print('hello')", encoding="utf-8")
+    _attach(fname, data=b"print('hello')")
     resp = alice.get(f"/file_preview/{fname}")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -989,9 +1063,15 @@ def test_file_preview_bad_filename(alice):
 
 
 def test_file_preview_missing_file(alice):
+    """404, not an empty preview.
+
+    Previews are gated on the caller being able to see a message carrying the
+    file, so a name with no such message is indistinguishable from one they are
+    not allowed to see — both 404. The client already treats a non-JSON
+    response as "no preview".
+    """
     resp = alice.get("/file_preview/nonexistent.py")
-    assert resp.status_code == 200
-    assert resp.get_json() == {}
+    assert resp.status_code == 404
 
 
 # ── @-mentions ────────────────────────────────────────────────────────────────

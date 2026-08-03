@@ -1993,6 +1993,11 @@ function applyMessages(data, requestedChannel = channel) {
             let mentionMsg = null;
 
             data.forEach(m => {
+              // One malformed message must not abort the batch. Without this,
+              // anything that threw while building a row (see the code-block
+              // placeholder handling in formatText) silently swallowed every
+              // message after it — and kept doing so on every reload.
+              try {
                 if (requestedChannel !== channel) return;
                 const msgId = `msg-${m.id}`;
                 const existing = document.getElementById(msgId);
@@ -2095,6 +2100,12 @@ function applyMessages(data, requestedChannel = channel) {
 
                 if (m.reply_to_id) loadQuotedMsg(m.id, m.reply_to_id);
                 lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0, m.reactions_ts || 0);
+              } catch (err) {
+                console.error(`Failed to render message ${m?.id}:`, err);
+                // Advance past it so the cursor doesn't stall and re-deliver
+                // the same unrenderable message forever.
+                lastTs = Math.max(lastTs, m?.ts || 0);
+              }
             });
 
             regroupMessages();
