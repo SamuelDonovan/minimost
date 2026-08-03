@@ -25,7 +25,7 @@
 </script>
 
 <button id="sidebar-backdrop" aria-label="Close sidebar" onclick="closeSidebar()"></button>
-<div id="sidebar" role="navigation" aria-label="Channels and direct messages">
+<nav id="sidebar" aria-label="Channels and direct messages">
     <div id="sidebar-static">
         <button id="new-dm-btn" class="icon-btn" title="Start new direct message">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
@@ -38,9 +38,9 @@
     </div>
 
     <div id="sidebar-dynamic"></div>
-</div>
+</nav>
 
-<div id="main" role="main">
+<main id="main">
     <div id="topbar">
         <div id="topbar-user">
             <button id="account-btn" class="icon-btn" title="Account" aria-label="Account" onclick="openAccount()">
@@ -136,9 +136,6 @@
         <button id="screenshare-banner-view-btn" class="ss-banner-btn" onclick="openShareViewer()">View</button>
     </div>
 
-    <!-- role="log" + aria-live announce incoming messages to screen readers.
-         switchChannel() flips aria-live off around the backlog render so a
-         channel switch doesn't read out the entire history. -->
     <div id="chat" role="log" aria-live="off" aria-relevant="additions" aria-label="Messages"></div>
 
     <div id="typing-indicator"></div>
@@ -208,7 +205,7 @@
 
     </div>
 
-</div>
+</main>
 
 <!-- DM Modal -->
 <!-- Account Modal -->
@@ -1665,11 +1662,14 @@ function isNearBottom(el, threshold = 120) {
 // Set to a message id while a search/mention jump is waiting for that message
 // to render. switchChannel() always requests a scroll to the bottom, which
 // would otherwise immediately undo the jump's scroll — so the render pass skips
-// its auto-scroll while a jump is outstanding.
-let pendingJumpMsgId = null;
+// its auto-scroll while a jump is outstanding. Written from chat-search.js, so
+// it lives on globalThis explicitly rather than as an implicit global, matching
+// allUsers/pendingDms/fetchController.
+globalThis.pendingJumpMsgId = null;
 
-// The #chat log is an aria-live region so screen readers hear incoming
-// messages. It must stay silent while a channel's existing history paints —
+// The #chat log is marked up as an aria-live log region so screen readers
+// announce incoming messages. It starts silent in the markup and is armed from
+// here, because it must stay silent while a channel's existing history paints —
 // both on first load and on every switch — or it would read out the entire
 // backlog. Rendering is driven from several places (one-shot fetch, SSE
 // stream, post-send refresh), so rather than tracking each, the log is
@@ -2144,7 +2144,7 @@ function applyMessages(data, requestedChannel = channel) {
             armChatLog();
 
             if ((forceScrollToBottom || appended) && shouldAutoScroll
-                && !pendingJumpMsgId && !suppressBottomScroll) {
+                && !globalThis.pendingJumpMsgId && !suppressBottomScroll) {
                 requestAnimationFrame(() => {
                     chat.scrollTop = chat.scrollHeight;
                 });

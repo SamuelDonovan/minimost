@@ -28,7 +28,9 @@ def test_log_event_writes_all_required_fields():
     record = lines[0]
     # ISO-8601 UTC timestamp prefix (YYYY-MM-DDTHH:MM:SSZ).
     ts = record.split(" ", 1)[0]
-    assert ts.endswith("Z") and ts[4] == "-" and ts[13] == ":"
+    assert ts.endswith("Z")
+    assert ts[4] == "-"
+    assert ts[13] == ":"
     assert "event=login" in record
     assert "outcome=success" in record
     assert "user=alice" in record
@@ -100,7 +102,8 @@ def test_convenience_wrappers_set_event_and_outcome():
     lines = _read_log()
     assert len(lines) == len(cases)
     for (_, event, outcome), line in zip(cases, lines):
-        assert event in line and outcome in line
+        assert event in line
+        assert outcome in line
 
 
 def test_password_change_failure_outcome():
@@ -118,9 +121,9 @@ def test_client_ip_none_outside_request_context():
     assert audit._client_ip() is None
 
 
-def test_repointing_audit_log_reconfigures_handler(tmp_path):
+def test_repointing_audit_log_reconfigures_handler(tmp_path, monkeypatch):
     other = str(tmp_path / "other-audit.log")
-    audit.AUDIT_LOG = other  # conftest restores the original via monkeypatch
+    monkeypatch.setattr(audit, "AUDIT_LOG", other)
     audit.log_event("login", "success", user="u", source="x")
     with open(other, encoding="utf-8") as fh:
         assert "event=login" in fh.read()

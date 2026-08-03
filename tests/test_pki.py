@@ -120,7 +120,8 @@ def test_certificate_signed_by_rejects_garbage():
 
 def test_ensure_certs_output_loads_in_ssl(tmp_path):
     cert, key = certs.ensure_certs(tmp_path)
-    assert cert is not None and key is not None
+    assert cert is not None
+    assert key is not None
     assert (tmp_path / "ca.pem").exists()
     # The definitive check: the stdlib TLS loader (OpenSSL) accepts the pair.
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -260,5 +261,6 @@ def test_served_cert_negotiates_tls_1_3(tmp_path):
     # listener with the same ssl configuration the WSGI server uses, and confirm
     # a fresh client handshake settles on TLS 1.3 (never an older protocol).
     cert, key = certs.ensure_certs(tmp_path)
-    assert cert is not None and key is not None
+    assert cert is not None
+    assert key is not None
     assert _negotiated_protocol(cert, key) == "TLSv1.3"

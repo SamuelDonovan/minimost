@@ -690,7 +690,7 @@ function _goToSearchResult(msgChannel, msgId) {
 
   // Claim the jump before switching: switchChannel() requests a scroll to the
   // bottom for the incoming channel, which would otherwise land on top of ours.
-  pendingJumpMsgId = msgId;
+  globalThis.pendingJumpMsgId = msgId;
   switchChannel(msgChannel);
 
   // Poll for the target instead of guessing a fixed delay: the message list is
@@ -703,12 +703,13 @@ function _goToSearchResult(msgChannel, msgId) {
     if (document.getElementById(`msg-${msgId}`)) {
       scrollToMsg(msgId);
       setTimeout(() => {
-        if (pendingJumpMsgId === msgId) pendingJumpMsgId = null;
+        if (globalThis.pendingJumpMsgId === msgId)
+          globalThis.pendingJumpMsgId = null;
       }, JUMP_SETTLE_MS);
     } else if (Date.now() < deadline) {
       requestAnimationFrame(tryReveal);
     } else {
-      pendingJumpMsgId = null;
+      globalThis.pendingJumpMsgId = null;
       showToast("Couldn't jump to that message — it may have been deleted.");
     }
   };

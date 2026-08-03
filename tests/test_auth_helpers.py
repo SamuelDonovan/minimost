@@ -17,7 +17,10 @@ def test_hash_password_returns_string():
 
 
 def test_hash_password_different_each_call():
-    assert hash_password("Password1!") != hash_password("Password1!")
+    """Each call salts independently, so the same password hashes differently."""
+    first = hash_password("Password1!")
+    second = hash_password("Password1!")
+    assert first != second
 
 
 # ── _validate_signup ──────────────────────────────────────────────────────────
@@ -50,32 +53,38 @@ def test_validate_signup_username_too_long():
 def test_validate_signup_password_too_short():
     # 14 chars: satisfies every complexity rule but is one short of the minimum.
     err = _validate_signup("alice", "Password1!abcd", "Password1!abcd")
-    assert err and "15 characters" in err
+    assert err is not None
+    assert "15 characters" in err
 
 
 def test_validate_signup_no_digit():
     err = _validate_signup("alice", "Passwordlongenough!", "Passwordlongenough!")
-    assert err and "number" in err
+    assert err is not None
+    assert "number" in err
 
 
 def test_validate_signup_no_uppercase():
     err = _validate_signup("alice", "password1!longer", "password1!longer")
-    assert err and "uppercase" in err
+    assert err is not None
+    assert "uppercase" in err
 
 
 def test_validate_signup_no_lowercase():
     err = _validate_signup("alice", "PASSWORD1!LONGER", "PASSWORD1!LONGER")
-    assert err and "lowercase" in err
+    assert err is not None
+    assert "lowercase" in err
 
 
 def test_validate_signup_no_special():
     err = _validate_signup("alice", "Password1longenough", "Password1longenough")
-    assert err and "special" in err
+    assert err is not None
+    assert "special" in err
 
 
 def test_validate_signup_passwords_mismatch():
     err = _validate_signup("alice", VALID_PW, VALID_PW + "X")
-    assert err and "match" in err
+    assert err is not None
+    assert "match" in err
 
 
 def test_validate_signup_valid_hyphens_underscores():

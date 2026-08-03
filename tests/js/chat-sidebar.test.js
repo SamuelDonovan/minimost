@@ -185,25 +185,15 @@ describe("sidebarEntry()", () => {
 
 // ── setPresence ────────────────────────────────────────────────────────────────
 describe("setPresence()", () => {
-  test("active state sets blue color", () => {
+  test.each([
+    ["active", "blue", "rgb(102, 204, 255)"],
+    ["idle", "yellow", "rgb(255, 204, 102)"],
+    ["hidden", "yellow", "rgb(255, 204, 102)"],
+    ["offline", "grey", "rgb(85, 85, 85)"],
+  ])("%s state sets %s color", (state, _name, expected) => {
     const el = document.createElement("span");
-    setPresence(el, "active");
-    expect(el.style.color).toBe("rgb(102, 204, 255)");
-  });
-  test("idle state sets yellow color", () => {
-    const el = document.createElement("span");
-    setPresence(el, "idle");
-    expect(el.style.color).toBe("rgb(255, 204, 102)");
-  });
-  test("hidden state sets yellow color", () => {
-    const el = document.createElement("span");
-    setPresence(el, "hidden");
-    expect(el.style.color).toBe("rgb(255, 204, 102)");
-  });
-  test("offline state sets grey color", () => {
-    const el = document.createElement("span");
-    setPresence(el, "offline");
-    expect(el.style.color).toBe("rgb(85, 85, 85)");
+    setPresence(el, state);
+    expect(el.style.color).toBe(expected);
   });
 });
 
@@ -464,19 +454,9 @@ describe("setPresence()", () => {
     return document.createElement("span");
   }
   // jsdom converts shorthand hex to rgb() on readback — check dot presence instead
-  test("active → shows dot", () => {
+  test.each(["active", "idle", "offline"])("%s → shows dot", (state) => {
     const el = dot();
-    setPresence(el, "active");
-    expect(el.textContent).toContain("●");
-  });
-  test("idle → shows dot", () => {
-    const el = dot();
-    setPresence(el, "idle");
-    expect(el.textContent).toContain("●");
-  });
-  test("offline → shows dot", () => {
-    const el = dot();
-    setPresence(el, "offline");
+    setPresence(el, state);
     expect(el.textContent).toContain("●");
   });
   test("active has lighter color than offline", () => {
