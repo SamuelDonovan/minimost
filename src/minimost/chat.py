@@ -1239,23 +1239,88 @@ def messages_since(channel, user, after):
     ).fetchall()
 
     result = [dict(r) for r in rows]
+    _attach_reactions(db, result)
+    db.close()
+    return result
 
-    if result:
-        ids = [r["id"] for r in result]
-        placeholders = ",".join("?" * len(ids))
-        rx_rows = db.execute(
-            f"SELECT message_id, emoji, reactor FROM reactions WHERE message_id IN ({placeholders})",  # nosec B608
-            ids,
-        ).fetchall()
 
-        rx_map: dict = {}
-        for message_id, emoji, reactor in rx_rows:
-            rx_map.setdefault(message_id, {}).setdefault(emoji, []).append(reactor)
+# Columns every message-returning query selects, kept in one place so the
+# cursor query and the paged history query can't drift apart.
+_MESSAGE_COLUMNS = """
+    id, channel, sender, content, filename, ts, edited, edited_ts,
+    deleted, deleted_ts, reply_to_id, reactions_ts, mentions
+"""
 
-        for msg in result:
-            reactions_dict = rx_map.get(msg["id"])
-            msg["reactions"] = json.dumps(reactions_dict) if reactions_dict else None
+# How many messages a single history request returns. Channels are loaded a
+# page at a time rather than whole: a long-lived channel would otherwise ship
+# its entire backlog on every open, and put every message of it in the DOM.
+HISTORY_PAGE_SIZE = 50
 
+
+def _attach_reactions(db, result):
+    """Merge current reactions into *result* rows in place, as JSON strings."""
+    if not result:
+        return
+    ids = [r["id"] for r in result]
+    placeholders = ",".join("?" * len(ids))
+    rx_rows = db.execute(
+        f"SELECT message_id, emoji, reactor FROM reactions WHERE message_id IN ({placeholders})",  # nosec B608
+        ids,
+    ).fetchall()
+
+    rx_map: dict = {}
+    for message_id, emoji, reactor in rx_rows:
+        rx_map.setdefault(message_id, {}).setdefault(emoji, []).append(reactor)
+
+    for msg in result:
+        reactions_dict = rx_map.get(msg["id"])
+        msg["reactions"] = json.dumps(reactions_dict) if reactions_dict else None
+
+
+def messages_page(channel, user, before=None, limit=HISTORY_PAGE_SIZE):
+    """Return one page of a channel's history, newest page first.
+
+    Where :func:`messages_since` answers "what changed after this cursor", this
+    answers "give me the *n* messages ending here" — the query a client needs to
+    open a channel without downloading its entire past, and to walk backwards as
+    the user scrolls up.
+
+    Deleted rows are omitted rather than returned as tombstones: a client
+    paging through history has never seen them, so there is nothing to remove,
+    and letting them consume slots would return short pages.
+
+    :param channel: The channel name or DM identifier (already access-checked).
+    :param user: The requesting username (for the late-joiner history clamp).
+    :param before: Return only messages strictly older than this timestamp.
+        ``None`` starts from the newest message.
+    :param limit: Maximum rows to return.
+    :returns: List of message dicts, **oldest first**, each with a ``reactions``
+        key. Fewer than *limit* rows means the start of the channel was reached.
+    :rtype: list[dict]
+    """
+    hist_start = _history_start(channel, user)
+
+    clauses = ["channel = ?", "deleted = 0"]
+    params: list = [channel]
+    if before is not None:
+        clauses.append("ts < ?")
+        params.append(before)
+    if hist_start is not None:
+        clauses.append("ts >= ?")
+        params.append(hist_start)
+    params.append(limit)
+
+    db = get_db()
+    # Newest-first with a LIMIT to select the window, then flipped so callers
+    # always receive rows in the chronological order the renderer expects.
+    rows = db.execute(
+        f"SELECT {_MESSAGE_COLUMNS} FROM messages "  # nosec B608
+        f"WHERE {' AND '.join(clauses)} ORDER BY ts DESC LIMIT ?",
+        params,
+    ).fetchall()
+
+    result = [dict(r) for r in reversed(rows)]
+    _attach_reactions(db, result)
     db.close()
     return result
 
@@ -1330,7 +1395,56 @@ def messages(channel):
         except (ValueError, TypeError):
             after = 0.0
 
+    # A first load (after=0) asks for a page, not the whole channel. Deltas
+    # (after>0) stay uncapped — they are bounded by how much changed since the
+    # cursor, and dropping any of them would desynchronise the client.
+    if after == 0 and request.args.get("limit"):
+        try:
+            limit = max(1, min(int(request.args["limit"]), 200))
+        except (ValueError, TypeError):
+            limit = HISTORY_PAGE_SIZE
+        return jsonify(messages_page(channel, user, limit=limit))
+
     return jsonify(messages_since(channel, user, after))
+
+
+@chat_bp.route("/messages_before/<channel>", methods=["GET"])
+@auth.login_required
+def messages_before(channel):
+    """Return the page of history immediately older than a timestamp.
+
+    Route: ``GET /messages_before/<channel>?before=<ts>&limit=<n>``
+
+    Backfill for scrolling up. ``/messages`` walks *forward* from a cursor, so
+    it can't express "the messages before this one"; this walks backward.
+
+    :param channel: The channel name or DM identifier.
+
+    Query parameters:
+        **before** (float, required): Return messages strictly older than this.
+        **limit** (int, optional): Page size, capped at 200.
+
+    :returns: JSON array of message objects, oldest first. Fewer than *limit*
+        rows means the start of the channel was reached.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    if not is_valid_channel(channel, user):
+        return "forbidden", 403
+
+    try:
+        before = float(request.args.get("before", ""))
+    except (ValueError, TypeError):
+        return "invalid before", 400
+    if before != before:  # NaN compares unequal to itself
+        return "invalid before", 400
+
+    try:
+        limit = max(1, min(int(request.args.get("limit", HISTORY_PAGE_SIZE)), 200))
+    except (ValueError, TypeError):
+        limit = HISTORY_PAGE_SIZE
+
+    return jsonify(messages_page(channel, user, before=before, limit=limit))
 
 
 def _insert_message(

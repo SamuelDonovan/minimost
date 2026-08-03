@@ -1519,6 +1519,14 @@ document.getElementById("chat").addEventListener("mouseout", e => {
     if (span) _hideDmHoverCard();
 });
 
+// Infinite scroll upward: pull the previous page as the user approaches the
+// top of what's loaded. loadOlderMessages() guards against overlapping runs.
+document.getElementById("chat").addEventListener("scroll", () => {
+    if (document.getElementById("chat").scrollTop < HISTORY_PREFETCH_PX) {
+        loadOlderMessages();
+    }
+}, { passive: true });
+
 function _refreshUserAvatar(username) {
     document.querySelectorAll(`.avatar-wrap[data-username="${username}"]`).forEach(wrap => {
         const inner = wrap.querySelector(".avatar");
@@ -1586,6 +1594,9 @@ function switchChannel(c) {
     lastTs = 0;
     mentionNotifyArmed = false;
     lastRenderedDate = null;
+    oldestLoadedTs = null;
+    hasMoreHistory = true;
+    loadingOlderHistory = false;
 
     // Silence the live region until this channel's backlog has painted, or a
     // screen reader would announce every message in the history. armChatLog()
@@ -1657,6 +1668,140 @@ function switchChannel(c) {
 // Fetch Messages
 function isNearBottom(el, threshold = 120) {
     return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+}
+
+// Channels load a page at a time instead of whole. Keep in sync with
+// HISTORY_PAGE_SIZE in chat.py (the server caps the request either way).
+const HISTORY_PAGE_SIZE = 50;
+
+// Oldest message currently rendered, and whether anything precedes it. Together
+// they bound the loaded window: what to ask for when scrolling up, and which
+// incoming deltas refer to messages that sit outside it.
+let oldestLoadedTs = null;
+let hasMoreHistory = true;
+let loadingOlderHistory = false;
+
+// Start of the loaded window is this close to the top of the scroller before
+// the next page is requested — far enough ahead that it usually lands before
+// the user reaches the end of what's rendered.
+const HISTORY_PREFETCH_PX = 300;
+
+// Fetch the page preceding the loaded window and splice it in above, holding
+// the viewport still: prepending grows the scroll content upward, which would
+// otherwise yank whatever the user is reading down the screen.
+async function loadOlderMessages() {
+    if (loadingOlderHistory || !hasMoreHistory || oldestLoadedTs === null) return;
+    if (channel === MENTIONS_CHANNEL) return;
+
+    loadingOlderHistory = true;
+    const requestedChannel = channel;
+    const chat = document.getElementById("chat");
+    const heightBefore = chat.scrollHeight;
+    const scrollBefore = chat.scrollTop;
+
+    try {
+        const resp = await fetch(
+            `/messages_before/${requestedChannel}`
+            + `?before=${oldestLoadedTs}&limit=${HISTORY_PAGE_SIZE}`
+        );
+        if (!resp.ok) return;
+        const rows = await resp.json();
+        if (requestedChannel !== channel) return;
+
+        // A short page means there is nothing older left to ask for.
+        if (rows.length < HISTORY_PAGE_SIZE) hasMoreHistory = false;
+        if (!rows.length) return;
+
+        prependMessages(rows);
+
+        // Restore the reading position by the exact amount the content grew.
+        chat.scrollTop = scrollBefore + (chat.scrollHeight - heightBefore);
+    } catch (err) {
+        console.error("loadOlderMessages error:", err);
+    } finally {
+        loadingOlderHistory = false;
+    }
+}
+
+// Render a batch of older messages above everything already on screen.
+// Deliberately not applyMessages(): that appends, which is right for new
+// messages and exactly wrong here.
+function prependMessages(rows) {
+    const chat = document.getElementById("chat");
+    const frag = document.createDocumentFragment();
+
+    rows.forEach(m => {
+        if (document.getElementById(`msg-${m.id}`)) return;
+        if (!m.content?.trim() && !m.filename?.trim()) return;
+
+        const msgDate = new Date(m.ts * 1000);
+        const time = msgDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        const fullTime = msgDate.toLocaleString(undefined, {
+            weekday: "long", year: "numeric", month: "long", day: "numeric",
+            hour: "numeric", minute: "2-digit", second: "2-digit"
+        });
+
+        const d = document.createElement("div");
+        // Matches the append path. (Both branches there key off m.content_type,
+        // which no message query actually selects — so every message, system
+        // included, lands here as a plain .msg today.)
+        d.className = "msg";
+        d.id = `msg-${m.id}`;
+        d.dataset.sender = m.sender;
+        d.dataset.ts = m.ts;
+        if (isMentioned(m)) d.classList.add("mentioned");
+        try {
+            d.innerHTML = _buildMsgHtml(m, time, fullTime, userColor(m.sender));
+        } catch (err) {
+            console.error(`Failed to render message ${m.id}:`, err);
+            return;
+        }
+        _injectMsgAvatar(d, m.sender);
+        frag.appendChild(d);
+        if (m.reply_to_id) loadQuotedMsg(m.id, m.reply_to_id);
+    });
+
+    chat.insertBefore(frag, chat.firstChild);
+
+    oldestLoadedTs = Math.min(oldestLoadedTs, ...rows.map(m => m.ts));
+
+    // Date dividers are position-dependent, so rebuild them wholesale rather
+    // than trying to patch the seam between the new page and the old top.
+    rebuildDateDividers();
+    regroupMessages();
+    chat.querySelectorAll(".msg").forEach(el => {
+        schedulePreview(el);
+        _checkDeletedFiles(el);
+    });
+    updateReadReceiptUI();
+}
+
+// Re-derive every date divider from the messages currently rendered. Cheap
+// because the window is bounded, and always correct regardless of whether the
+// batch arrived at the top or the bottom.
+function rebuildDateDividers() {
+    const chat = document.getElementById("chat");
+    chat.querySelectorAll(".date-divider").forEach(el => el.remove());
+
+    let lastKey = null;
+    [...chat.querySelectorAll(".msg")].forEach(el => {
+        const ts = parseFloat(el.dataset.ts);
+        if (!ts) return;
+        const d = new Date(ts * 1000);
+        const key = d.toDateString();
+        if (key === lastKey) return;
+        lastKey = key;
+
+        const divider = document.createElement("div");
+        divider.className = "date-divider";
+        divider.id = `date-${key}`;
+        const label = document.createElement("span");
+        label.textContent = d.toLocaleDateString(undefined, {
+            weekday: "long", year: "numeric", month: "long", day: "numeric"
+        });
+        divider.appendChild(label);
+        chat.insertBefore(divider, el);
+    });
 }
 
 // Set to a message id while a search/mention jump is waiting for that message
@@ -1948,10 +2093,16 @@ function fetchMessages() {
     // 🔒 Capture channel at request time
     const requestedChannel = channel;
 
+    // A first load asks for one page; deltas (lastTs > 0) stay uncapped so the
+    // client can't miss a change that happened since its cursor.
+    const url = lastTs
+        ? `/messages/${requestedChannel}?after=${lastTs}`
+        : `/messages/${requestedChannel}?after=0&limit=${HISTORY_PAGE_SIZE}`;
+
     // Returns the fetch promise so callers (switchChannel) can open the SSE
     // stream only after lastTs has advanced past the freshly-loaded backlog —
     // that way the stream starts at the right cursor and never re-sends history.
-    return fetch(`/messages/${requestedChannel}?after=${lastTs}`, { signal })
+    return fetch(url, { signal })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
             // ❌ Ignore if aborted (channel-change is handled in applyMessages)
@@ -1975,7 +2126,11 @@ function applyMessages(data, requestedChannel = channel) {
             // mentions seen in it are history, not fresh alerts.
             const notifyArmed = mentionNotifyArmed;
             mentionNotifyArmed = true;
+            // Captured before the loop advances lastTs past this batch.
+            const isFirstPage = lastTs === 0;
             if (!data || data.length === 0) {
+                // Nothing at all in the channel — there is no history to page.
+                if (isFirstPage) hasMoreHistory = false;
                 // An empty batch still completes the channel's load: a brand-new
                 // conversation needs its empty state, and the live region has to
                 // be armed or a channel with no backlog would never announce.
@@ -2081,6 +2236,14 @@ function applyMessages(data, requestedChannel = channel) {
                     _injectMsgAvatar(existing, m.sender);
                     schedulePreview(existing);
                     _checkDeletedFiles(existing);
+                } else if (oldestLoadedTs !== null && m.ts < oldestLoadedTs) {
+                    // A change to a message older than the loaded window — an
+                    // edit or reaction on history the user hasn't scrolled back
+                    // to. There is no element to update, and creating one would
+                    // append it to the bottom, out of order. Skip it; the
+                    // current state arrives with the page when they scroll up.
+                    lastTs = Math.max(lastTs, m.ts, m.edited_ts || 0, m.reactions_ts || 0);
+                    return;
                 } else {
                     const d = document.createElement("div");
                     d.className = "msg";
@@ -2133,6 +2296,16 @@ function applyMessages(data, requestedChannel = channel) {
             if (appended && pageActive()) {
                 fetch(`/mark_read/${channel}`, { method: "POST" });
             }
+
+            // Track the bottom edge of the loaded window. A first page that
+            // came back short means the whole channel fits — nothing to page.
+            const rendered = data.filter(m => !m.deleted).map(m => m.ts);
+            if (rendered.length) {
+                oldestLoadedTs = oldestLoadedTs === null
+                    ? Math.min(...rendered)
+                    : Math.min(oldestLoadedTs, ...rendered);
+            }
+            if (isFirstPage && data.length < HISTORY_PAGE_SIZE) hasMoreHistory = false;
 
             updateReadReceiptUI();
             refreshDMs();

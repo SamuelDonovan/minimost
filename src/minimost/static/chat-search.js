@@ -859,9 +859,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // All of the above per-interval polling (messages, presence, typing, DMs,
   // channel/private-channel badges, read receipts, mentions, unread totals,
   // incoming calls, screen shares) is now delivered over a single Server-Sent
-  // Events stream — see chat-events.js. startup channel is "general", for which
-  // switchChannel() early-returns, so connect the stream here directly.
-  connectEvents();
+  // Events stream — see chat-events.js. The startup channel is "general", for
+  // which switchChannel() early-returns, so prime it here the same way that
+  // function does: load the first page, then open the stream at the cursor that
+  // load reached. Connecting straight away would open the stream at after=0 and
+  // have it deliver the channel's entire history, defeating the paging.
+  fetchMessages().then(() => connectEvents());
 
   setInterval(() => {
     if (

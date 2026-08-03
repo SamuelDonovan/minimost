@@ -258,6 +258,133 @@ def test_messages_after_filter(alice):
     assert "old" not in contents
 
 
+def _seed_history(count, channel="general", base=None):
+    """Insert *count* messages one second apart, oldest first."""
+    base = base or (time.time() - count - 10)
+    for i in range(count):
+        _insert_message("alice", channel, f"msg-{i}", ts=base + i, sender="alice")
+    return base
+
+
+# ── History paging ────────────────────────────────────────────────────────────
+# A first load takes a page instead of the whole channel; /messages_before walks
+# backwards from there.
+
+
+def test_messages_first_page_is_capped(alice):
+    _seed_history(30)
+    data = alice.get("/messages/general?after=0&limit=10").get_json()
+    assert len(data) == 10
+
+
+def test_messages_first_page_returns_the_newest_messages(alice):
+    _seed_history(30)
+    page = alice.get("/messages/general?after=0&limit=10").get_json()
+    everything = alice.get("/messages/general?after=0").get_json()
+    assert [m["id"] for m in page] == [m["id"] for m in everything[-10:]]
+
+
+def test_messages_first_page_is_chronological(alice):
+    _seed_history(30)
+    page = alice.get("/messages/general?after=0&limit=10").get_json()
+    assert [m["ts"] for m in page] == sorted(m["ts"] for m in page)
+
+
+def test_messages_delta_is_not_capped(alice):
+    """Only first loads page; a cursor fetch must return everything it owes."""
+    base = _seed_history(30)
+    data = alice.get(f"/messages/general?after={base - 1}&limit=10").get_json()
+    assert len(data) == 30
+
+
+def test_messages_before_returns_preceding_page(alice):
+    _seed_history(30)
+    page = alice.get("/messages/general?after=0&limit=10").get_json()
+    older = alice.get(
+        f"/messages_before/general?before={page[0]['ts']}&limit=10"
+    ).get_json()
+
+    assert len(older) == 10
+    assert all(m["ts"] < page[0]["ts"] for m in older)
+    assert not ({m["id"] for m in older} & {m["id"] for m in page})
+    assert [m["ts"] for m in older] == sorted(m["ts"] for m in older)
+
+
+def test_messages_before_walks_back_to_the_whole_channel(alice):
+    _seed_history(30)
+    page = alice.get("/messages/general?after=0&limit=10").get_json()
+
+    collected = list(page)
+    cursor = page[0]["ts"]
+    while True:
+        batch = alice.get(
+            f"/messages_before/general?before={cursor}&limit=10"
+        ).get_json()
+        if not batch:
+            break
+        collected = batch + collected
+        cursor = batch[0]["ts"]
+        if len(batch) < 10:
+            break
+
+    everything = alice.get("/messages/general?after=0").get_json()
+    assert [m["id"] for m in collected] == [m["id"] for m in everything]
+
+
+def test_messages_before_short_page_signals_start_of_channel(alice):
+    _seed_history(12)
+    page = alice.get("/messages/general?after=0&limit=10").get_json()
+    older = alice.get(
+        f"/messages_before/general?before={page[0]['ts']}&limit=10"
+    ).get_json()
+    assert len(older) == 2
+
+
+def test_messages_before_omits_deleted(alice):
+    base = _seed_history(5)
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "UPDATE messages SET deleted = 1, deleted_ts = ? WHERE content = 'msg-2'",
+        (time.time(),),
+    )
+    db.commit()
+    db.close()
+
+    older = alice.get(f"/messages_before/general?before={base + 100}").get_json()
+    assert "msg-2" not in [m["content"] for m in older]
+
+
+def test_messages_before_caps_limit(alice):
+    _seed_history(30)
+    data = alice.get(
+        f"/messages_before/general?before={time.time()}&limit=99999"
+    ).get_json()
+    assert len(data) <= 200
+
+
+def test_messages_before_unauthenticated(client):
+    resp = client.get("/messages_before/general?before=1")
+    assert resp.status_code == 302
+
+
+def test_messages_before_rejects_channel_user_cannot_see(alice):
+    resp = alice.get("/messages_before/dm:bob:charlie?before=1")
+    assert resp.status_code == 403
+
+
+def test_messages_before_rejects_missing_cursor(alice):
+    assert alice.get("/messages_before/general").status_code == 400
+
+
+def test_messages_before_rejects_non_numeric_cursor(alice):
+    assert alice.get("/messages_before/general?before=abc").status_code == 400
+
+
+def test_messages_before_rejects_nan_cursor(alice):
+    """NaN compares false against every timestamp, so it must not reach SQL."""
+    assert alice.get("/messages_before/general?before=NaN").status_code == 400
+
+
 def test_messages_nan_after(alice):
     _insert_message("alice", "general", "msg")
     data = alice.get("/messages/general?after=NaN").get_json()
