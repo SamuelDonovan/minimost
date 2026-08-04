@@ -1696,8 +1696,6 @@ async function loadOlderMessages() {
     loadingOlderHistory = true;
     const requestedChannel = channel;
     const chat = document.getElementById("chat");
-    const heightBefore = chat.scrollHeight;
-    const scrollBefore = chat.scrollTop;
 
     try {
         const resp = await fetch(
@@ -1712,10 +1710,19 @@ async function loadOlderMessages() {
         if (rows.length < HISTORY_PAGE_SIZE) hasMoreHistory = false;
         if (!rows.length) return;
 
+        // Anchor on an element, and only now that the response is in hand: the
+        // user has been scrolling throughout the request, so any position
+        // measured before the await is stale by however far they travelled —
+        // restoring it yanks them backwards, which is the snap you see when
+        // scrolling fast. Anchoring to the old top message and correcting by
+        // how far *it* moved is also immune to height-measurement error.
+        const anchor = chat.querySelector(".msg");
+        const anchorTop = anchor ? anchor.offsetTop : 0;
+        const scrollBefore = chat.scrollTop;
+
         prependMessages(rows);
 
-        // Restore the reading position by the exact amount the content grew.
-        chat.scrollTop = scrollBefore + (chat.scrollHeight - heightBefore);
+        if (anchor) chat.scrollTop = scrollBefore + (anchor.offsetTop - anchorTop);
     } catch (err) {
         console.error("loadOlderMessages error:", err);
     } finally {
@@ -1729,6 +1736,7 @@ async function loadOlderMessages() {
 function prependMessages(rows) {
     const chat = document.getElementById("chat");
     const frag = document.createDocumentFragment();
+    const added = [];
 
     rows.forEach(m => {
         if (document.getElementById(`msg-${m.id}`)) return;
@@ -1758,6 +1766,7 @@ function prependMessages(rows) {
         }
         _injectMsgAvatar(d, m.sender);
         frag.appendChild(d);
+        added.push(d);
         if (m.reply_to_id) loadQuotedMsg(m.id, m.reply_to_id);
     });
 
@@ -1769,7 +1778,10 @@ function prependMessages(rows) {
     // than trying to patch the seam between the new page and the old top.
     rebuildDateDividers();
     regroupMessages();
-    chat.querySelectorAll(".msg").forEach(el => {
+    // Only the new nodes: this runs mid-scroll, and re-scheduling previews for
+    // every message already on screen turns each page into a chunk of
+    // main-thread work that grows with how far the user has scrolled back.
+    added.forEach(el => {
         schedulePreview(el);
         _checkDeletedFiles(el);
     });
