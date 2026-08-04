@@ -1522,7 +1522,8 @@ document.getElementById("chat").addEventListener("mouseout", e => {
 // Infinite scroll upward: pull the previous page as the user approaches the
 // top of what's loaded. loadOlderMessages() guards against overlapping runs.
 document.getElementById("chat").addEventListener("scroll", () => {
-    if (document.getElementById("chat").scrollTop < HISTORY_PREFETCH_PX) {
+    const chat = document.getElementById("chat");
+    if (chat.scrollTop < historyPrefetchPx(chat)) {
         loadOlderMessages();
     }
 }, { passive: true });
@@ -1672,7 +1673,7 @@ function isNearBottom(el, threshold = 120) {
 
 // Channels load a page at a time instead of whole. Keep in sync with
 // HISTORY_PAGE_SIZE in chat.py (the server caps the request either way).
-const HISTORY_PAGE_SIZE = 50;
+const HISTORY_PAGE_SIZE = 100;
 
 // Oldest message currently rendered, and whether anything precedes it. Together
 // they bound the loaded window: what to ask for when scrolling up, and which
@@ -1681,10 +1682,19 @@ let oldestLoadedTs = null;
 let hasMoreHistory = true;
 let loadingOlderHistory = false;
 
-// Start of the loaded window is this close to the top of the scroller before
-// the next page is requested — far enough ahead that it usually lands before
-// the user reaches the end of what's rendered.
-const HISTORY_PREFETCH_PX = 300;
+// How close to the top of the loaded window the user must get before the next
+// page is requested. Sized against the viewport rather than fixed: a phone
+// fling covers many screen-heights, and a fixed 300px meant the request only
+// started once the user had already arrived. Loading several screens ahead
+// gives the round trip time to land before they get there.
+//
+// This matters more than it looks. Every completed page ends with a scrollTop
+// write to hold the reading position, and on mobile writing scrollTop during a
+// fling cancels the fling — so each page fetched mid-scroll is a visible stop.
+// Fetching early (and in bigger pages) is what keeps those rare.
+function historyPrefetchPx(chat) {
+    return Math.max(800, chat.clientHeight * 3);
+}
 
 // Fetch the page preceding the loaded window and splice it in above, holding
 // the viewport still: prepending grows the scroll content upward, which would
@@ -1714,15 +1724,22 @@ async function loadOlderMessages() {
         // user has been scrolling throughout the request, so any position
         // measured before the await is stale by however far they travelled —
         // restoring it yanks them backwards, which is the snap you see when
-        // scrolling fast. Anchoring to the old top message and correcting by
-        // how far *it* moved is also immune to height-measurement error.
+        // scrolling fast.
         const anchor = chat.querySelector(".msg");
-        const anchorTop = anchor ? anchor.offsetTop : 0;
-        const scrollBefore = chat.scrollTop;
+        // Where the anchor sits relative to the viewport top. Holding *this*
+        // constant is the whole job.
+        const anchorOffset = anchor ? anchor.offsetTop - chat.scrollTop : 0;
 
         prependMessages(rows);
 
-        if (anchor) chat.scrollTop = scrollBefore + (anchor.offsetTop - anchorTop);
+        if (anchor) {
+            const target = anchor.offsetTop - anchorOffset;
+            // Browsers with scroll anchoring (not Safari) may have already
+            // absorbed the shift. Writing scrollTop when it is already correct
+            // is not a no-op on mobile — it cancels an in-flight fling — so
+            // only correct when the position actually drifted.
+            if (Math.abs(chat.scrollTop - target) > 1) chat.scrollTop = target;
+        }
     } catch (err) {
         console.error("loadOlderMessages error:", err);
     } finally {

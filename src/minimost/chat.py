@@ -1254,7 +1254,7 @@ _MESSAGE_COLUMNS = """
 # How many messages a single history request returns. Channels are loaded a
 # page at a time rather than whole: a long-lived channel would otherwise ship
 # its entire backlog on every open, and put every message of it in the DOM.
-HISTORY_PAGE_SIZE = 50
+HISTORY_PAGE_SIZE = 100
 
 
 def _attach_reactions(db, result):
