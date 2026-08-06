@@ -17,6 +17,9 @@ let callingAudio = null;
 let ringTimeoutId = null;
 let incomingRingTimeout = null;
 const RING_TIMEOUT_MS = 30000;
+// How long a peer connection may stay down before we conclude the peer is gone
+// rather than briefly unreachable. Generous enough to ride out a wifi roam.
+const PEER_GONE_GRACE_MS = 15000;
 let _notifiedShareId = null;
 
 // LAN-only.  Point ICE at the STUN server bundled with the app (served from the
@@ -406,12 +409,36 @@ function _createPeerConnection(username, pState) {
   pc.ontrack = (e) => _handleRemoteTrack(username, e);
 
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "failed") {
+    // Already torn down — never arm a timer for a participant who has gone.
+    if (remoteParticipants.get(username) !== pState) return;
+    const state = pc.connectionState;
+
+    if (state === "connected") {
+      clearTimeout(pState.goneTimer);
+      pState.goneTimer = null;
+      return;
+    }
+    // "closed" means we tore the connection down ourselves; only a peer that
+    // dropped out from under us is interesting here.
+    if (state !== "failed" && state !== "disconnected") return;
+
+    if (state === "failed") {
       try {
         pc.restartIce();
       } catch {
         /* not supported */
       }
+    }
+    // A blip recovers; a browser that closed, crashed or left the network
+    // never will, and no /calls/<id>/end is coming for it. Give the ICE
+    // restart a grace period, then treat the peer as departed — otherwise
+    // this side sits in a call with a corpse, holding the channel with it.
+    if (!pState.goneTimer) {
+      pState.goneTimer = setTimeout(() => {
+        pState.goneTimer = null;
+        if (["connected", "completed"].includes(pc.connectionState)) return;
+        _handlePeerGone(username);
+      }, PEER_GONE_GRACE_MS);
     }
   };
   _logPeerState(pc, `call:${username}`);
@@ -542,6 +569,8 @@ function _addRemoteParticipant(username) {
     vadAnalyser: null,
     vadPollId: null,
     screenSender: null,
+    // Armed while this peer's connection is down; see onconnectionstatechange.
+    goneTimer: null,
   };
   remoteParticipants.set(username, pState);
   pState.pc = _createPeerConnection(username, pState);
@@ -553,6 +582,7 @@ function _removeRemoteParticipant(username) {
   const pState = remoteParticipants.get(username);
   if (!pState) return;
   clearInterval(pState.vadPollId);
+  clearTimeout(pState.goneTimer);
   if (pState.pc) {
     try {
       pState.pc.close();
@@ -575,6 +605,14 @@ function _removeRemoteParticipant(username) {
   }
   if (username === currentScreenSender) _clearRemoteScreen(username);
   _updateCallGrid();
+}
+
+function _handlePeerGone(username) {
+  if (!remoteParticipants.has(username)) return;
+  _removeRemoteParticipant(username);
+  // Last peer standing: the call is over whatever the server still believes,
+  // and endCall() tells it so, which frees the channel for the next call.
+  if (activeCallId && remoteParticipants.size === 0) endCall();
 }
 
 function _removeAllParticipants() {
@@ -1296,6 +1334,16 @@ async function _pollCallState() {
         .map((p) => p.username),
     );
     _diffParticipants(accepted);
+
+    // Everyone else is gone but the call is still marked active — the other
+    // side's browser died without ending it, so no /end will ever arrive.
+    // Don't sit in an empty call with the timer running; hang up locally,
+    // which also releases the channel for the next call.
+    if (data.state === "active" && accepted.size === 0) {
+      await endCall();
+      return;
+    }
+
     _handleScreenshareState(data.screenshare_user || null);
   } catch {
     /* ignore transient errors */
@@ -1411,6 +1459,17 @@ function applyIncomingCalls(calls) {
   }
   if (calls.length > 0) openIncomingCallUI(calls[0]);
 }
+
+// Leaving the page mid-call would otherwise leave the call row live until the
+// server's own staleness sweep catches it, and a channel holds only one call at
+// a time — so the other party could not call straight back.  `pagehide` is the
+// event that still fires on mobile (where tabs are frozen rather than unloaded),
+// and sendBeacon survives the teardown that would abort a normal fetch.
+globalThis.addEventListener("pagehide", () => {
+  if (activeCallId) navigator.sendBeacon(`/calls/${activeCallId}/end`);
+  if (standaloneShareId)
+    navigator.sendBeacon(`/screenshare/${standaloneShareId}/stop`);
+});
 
 // Close invite panel when clicking outside it
 document.getElementById("call-panel").addEventListener("click", (e) => {

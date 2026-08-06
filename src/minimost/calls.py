@@ -45,6 +45,12 @@ _WAL = "PRAGMA journal_mode=WAL"
 _INCREMENTAL_VACUUM = "PRAGMA incremental_vacuum"
 _RINGING_TIMEOUT = 30
 
+# How long a participant's presence heartbeat may go quiet before we stop
+# believing they are still on a call.  The client heartbeats every 30s, but
+# browsers throttle timers hard in backgrounded tabs, so this is deliberately
+# several missed beats rather than one.
+_PRESENCE_STALE = 120
+
 _SQL_CALL_STATE = "SELECT state FROM calls WHERE call_id = ?"
 _SQL_PARTICIPANT = (
     "SELECT state FROM call_participants WHERE call_id = ? AND username = ?"
@@ -66,6 +72,66 @@ def _db():
     db.row_factory = sqlite3.Row
     db.execute(_WAL)
     return db
+
+
+def _sweep_stale_calls(db) -> None:
+    """End calls that no client is going to end for us.
+
+    A call only ends when a participant POSTs ``/calls/<id>/end``.  If the
+    browser that would have sent it is gone — tab closed mid-call, laptop
+    lid shut, wifi dropped — the row stays ``'ringing'`` or ``'active'``
+    indefinitely, and because a channel may hold only one live call at a
+    time, that wedges calling in the channel until the server restarts.
+
+    Two cases are reconciled here, both keyed off state the server already
+    has, so no extra client bookkeeping is required:
+
+    * **Unanswered** — a ``'ringing'`` call older than
+      :data:`_RINGING_TIMEOUT`.  ``/calls/incoming`` already hides these
+      from the callee, so this just makes the stored state agree.
+    * **Abandoned** — an ``'active'`` call in which *every* accepted
+      participant's presence heartbeat has been quiet for longer than
+      :data:`_PRESENCE_STALE`.  One live participant is enough to keep the
+      call, so a call someone is genuinely still sitting in is never swept.
+
+    Does not commit — the caller owns the transaction.
+
+    :param db: An open connection to ``presence.db``.
+    """
+    now = time.time()
+
+    stale = [
+        row["call_id"]
+        for row in db.execute(
+            "SELECT call_id FROM calls WHERE state = 'ringing' AND started_ts < ?",
+            (now - _RINGING_TIMEOUT,),
+        )
+    ]
+
+    # An active call survives while any accepted participant still has a fresh
+    # heartbeat; NULL last_seen (a user with no presence row yet) counts as
+    # stale.  Calls with no accepted participants at all are swept too.
+    stale += [
+        row["call_id"]
+        for row in db.execute(
+            "SELECT c.call_id FROM calls c"
+            " WHERE c.state = 'active'"
+            " AND NOT EXISTS ("
+            "   SELECT 1 FROM call_participants p"
+            "   LEFT JOIN presence pr ON pr.user = p.username"
+            "   WHERE p.call_id = c.call_id AND p.state = 'accepted'"
+            "   AND COALESCE(pr.last_seen, 0) >= ?"
+            " )",
+            (now - _PRESENCE_STALE,),
+        )
+    ]
+
+    for call_id in stale:
+        db.execute(
+            "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
+            (now, call_id),
+        )
+        db.execute("DELETE FROM call_signals WHERE call_id = ?", (call_id,))
 
 
 def reset_all_screenshares_ended() -> None:
@@ -174,6 +240,11 @@ def initiate_call():
 
     db = _db()
     try:
+        # Retire calls nobody is left to end before deciding this channel is
+        # busy, so a crashed or closed browser cannot lock the channel out of
+        # calling until the next server restart.
+        _sweep_stale_calls(db)
+
         existing = db.execute(
             "SELECT call_id FROM calls WHERE channel = ? AND state IN ('ringing', 'active')",
             (channel,),
@@ -376,9 +447,11 @@ def end_call(call_id):
 
     Route: ``POST /calls/<call_id>/end``
 
-    Marks the current user's participant record as ``'left'`` and sets the
-    overall call state to ``'ended'``.  Any other participants will see the
-    call end on their next state poll.
+    Marks the current user's participant record as ``'left'``.  The call
+    itself ends only once fewer than two participants remain who are on it or
+    could still join it — so leaving a two-person call ends it, while leaving
+    a larger one lets the rest carry on.  Any other participants see the
+    result on their next state poll.
 
     :param call_id: UUID of the call.
     :type call_id: str
@@ -407,14 +480,19 @@ def end_call(call_id):
             (call_id, user),
         )
 
-        # End the call only when no other accepted participants remain.
+        # A call needs two people.  Count everyone who is still on it or could
+        # still join (an invitee who has not answered yet), excluding the
+        # leaver; once fewer than two remain the call cannot continue, so end
+        # it rather than stranding the last participant in an empty call that
+        # also blocks the channel against a fresh one.
         remaining = db.execute(
             "SELECT COUNT(*) FROM call_participants"
-            " WHERE call_id = ? AND state = 'accepted' AND username != ?",
+            " WHERE call_id = ? AND state IN ('accepted', 'pending')"
+            " AND username != ?",
             (call_id, user),
         ).fetchone()[0]
 
-        if remaining == 0:
+        if remaining < 2:
             db.execute(
                 "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
                 (now, call_id),

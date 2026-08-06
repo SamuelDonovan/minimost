@@ -400,11 +400,12 @@ def test_end_last_participant_ends_call(alice_and_bob):
 
 
 def test_end_with_remaining_participants_keeps_call_active(alice_and_bob, app):
-    """When a participant leaves but others remain, the call stays active."""
+    """When a participant leaves and two others remain, the call stays active."""
     call_id = str(uuid.uuid4())
-    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_call(call_id, "dm:alice:bob:carol", "alice", state="active")
     _insert_participant(call_id, "alice", role="initiator", state="accepted")
     _insert_participant(call_id, "bob", role="participant", state="accepted")
+    _insert_participant(call_id, "carol", role="participant", state="accepted")
 
     resp = alice_and_bob.post(f"/calls/{call_id}/end")
     assert resp.status_code == 200
@@ -414,6 +415,111 @@ def test_end_with_remaining_participants_keeps_call_active(alice_and_bob, app):
 
     alice_p = _get_participant(call_id, "alice")
     assert alice_p["state"] == "left"
+
+
+def test_end_two_person_call_ends_it_for_both(alice_and_bob, app):
+    """Leaving a two-person call ends it rather than stranding the other side.
+
+    One participant alone is not a call, and leaving the row 'active' would
+    also block the channel against a fresh call.
+    """
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/end")
+    assert resp.status_code == 200
+
+    call = _get_call(call_id)
+    assert call["state"] == "ended"
+    assert call["ended_ts"] is not None
+
+    # The channel is free again, so either party can call straight back.
+    resp = alice_and_bob.post("/calls/initiate", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 200
+
+
+def test_end_keeps_call_for_a_participant_still_ringing(alice_and_bob, app):
+    """An invitee who has not answered yet still counts toward the call.
+
+    Otherwise inviting a third person and then leaving would end the call
+    under them before they ever picked up.
+    """
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob:carol", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+    _insert_participant(call_id, "carol", role="participant", state="pending")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/end")
+    assert resp.status_code == 200
+
+    assert _get_call(call_id)["state"] == "active"
+
+
+def _set_last_seen(user, last_seen):
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    db.execute(
+        "INSERT INTO presence (user, last_seen, state) VALUES (?, ?, 'active')"
+        " ON CONFLICT(user) DO UPDATE SET last_seen = excluded.last_seen",
+        (user, int(last_seen)),
+    )
+    db.commit()
+    db.close()
+
+
+def test_initiate_sweeps_abandoned_call(alice_and_bob, app):
+    """A call whose participants all vanished must not wedge the channel.
+
+    Nothing will ever POST /end for a browser that crashed or closed, so the
+    row would otherwise sit 'active' until the next server restart and block
+    every later call in that channel.
+    """
+    stale_id = str(uuid.uuid4())
+    _insert_call(stale_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(stale_id, "alice", role="initiator", state="accepted")
+    _insert_participant(stale_id, "bob", role="participant", state="accepted")
+    gone = time.time() - 600
+    _set_last_seen("alice", gone)
+    _set_last_seen("bob", gone)
+
+    resp = alice_and_bob.post("/calls/initiate", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 200
+    assert resp.get_json()["call_id"] != stale_id
+    assert _get_call(stale_id)["state"] == "ended"
+
+
+def test_initiate_spares_call_with_a_live_participant(alice_and_bob, app):
+    """One participant still heartbeating is enough to keep the call."""
+    live_id = str(uuid.uuid4())
+    _insert_call(live_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(live_id, "alice", role="initiator", state="accepted")
+    _insert_participant(live_id, "bob", role="participant", state="accepted")
+    _set_last_seen("alice", time.time() - 600)  # gone
+    _set_last_seen("bob", time.time())  # still there
+
+    resp = alice_and_bob.post("/calls/initiate", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 409
+    assert _get_call(live_id)["state"] == "active"
+
+
+def test_initiate_sweeps_unanswered_ringing_call(alice_and_bob, app):
+    """A ringing call nobody answered is already hidden; end it for real too."""
+    stale_id = str(uuid.uuid4())
+    _insert_call(
+        stale_id,
+        "dm:alice:bob",
+        "alice",
+        state="ringing",
+        started_ts=time.time() - 600,
+    )
+    _insert_participant(stale_id, "alice", role="initiator", state="accepted")
+    _insert_participant(stale_id, "bob", role="participant", state="pending")
+
+    resp = alice_and_bob.post("/calls/initiate", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 200
+    assert _get_call(stale_id)["state"] == "ended"
 
 
 def test_end_ringing_call_cancels_it(alice_and_bob):
@@ -795,15 +901,16 @@ def test_full_call_lifecycle(alice_and_bob, app):
     assert len(signals_to_alice) == 1
     assert signals_to_alice[0]["payload"] == bob_answer
 
-    # Alice leaves — call stays active (Bob is still in it)
+    # Alice leaves — with only Bob left this is no longer a call, so it ends
+    # for both rather than leaving Bob alone in it.
     resp = alice_and_bob.post(f"/calls/{call_id}/end")
     assert resp.status_code == 200
 
     state = alice_and_bob.get(f"/calls/{call_id}/state").get_json()
-    assert state["state"] == "active"
+    assert state["state"] == "ended"
 
-    # Bob leaves — now call ends (last participant)
-    bob_client.post(f"/calls/{call_id}/end")
+    # Bob's own hang-up is then a no-op on an already-ended call.
+    assert bob_client.post(f"/calls/{call_id}/end").status_code == 200
     state = bob_client.get(f"/calls/{call_id}/state").get_json()
     assert state["state"] == "ended"
 
