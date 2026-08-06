@@ -56,6 +56,7 @@ import os
 import re
 import uuid
 import json
+import math
 from pathlib import Path
 from typing import List, Optional
 
@@ -1436,7 +1437,7 @@ def messages_before(channel):
         before = float(request.args.get("before", ""))
     except (ValueError, TypeError):
         return "invalid before", 400
-    if before != before:  # NaN compares unequal to itself
+    if math.isnan(before):  # "nan" parses fine but can never match a timestamp
         return "invalid before", 400
 
     try:
