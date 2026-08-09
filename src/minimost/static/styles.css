@@ -2484,12 +2484,17 @@ a {
   align-items: center;
   gap: 10px;
   padding: 7px 16px;
-  background: linear-gradient(
-    90deg,
-    rgba(21, 101, 192, 0.22),
-    rgba(21, 101, 192, 0.08) 60%,
-    transparent
-  );
+  /* The tint is translucent, so the banner names the opaque colour it paints
+     over (body's background) as its final layer rather than leaving the text
+     contrast dependent on whatever happens to be behind it. */
+  background:
+    linear-gradient(
+      90deg,
+      rgba(21, 101, 192, 0.22),
+      rgba(21, 101, 192, 0.08) 60%,
+      transparent
+    ),
+    #1e1e1e;
   border-bottom: 1px solid rgba(74, 158, 255, 0.28);
   font-size: 13px;
   color: #cfe4ff;
@@ -2557,8 +2562,11 @@ a {
 .ss-banner-btn + .ss-banner-btn {
   margin-left: 8px;
 }
+/* Hover fills are the accent/danger tint already composited over the banner, so
+   the white label's contrast is a property of the rule rather than a guess
+   about the backdrop. */
 .ss-banner-btn:hover {
-  background: rgba(74, 158, 255, 0.16);
+  background: #253242;
   color: #fff;
 }
 .ss-banner-btn:active {
@@ -2578,7 +2586,7 @@ a {
   color: #ff9aa2;
 }
 .ss-banner-btn.danger:hover {
-  background: rgba(240, 68, 82, 0.16);
+  background: #402426;
   color: #fff;
 }
 
@@ -2612,7 +2620,7 @@ a {
   gap: 6px;
   padding: 3px 10px 3px 8px;
   border-radius: 999px;
-  background: rgba(255, 90, 82, 0.15);
+  background: #30191d; /* rgba(255, 90, 82, 0.15) over --c-bg */
   border: 1px solid rgba(255, 90, 82, 0.4);
   color: #ff9a94;
   font-size: 11px;
@@ -2650,11 +2658,11 @@ a {
     color 0.15s;
 }
 .ss-viewer-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #23262c; /* rgba(255, 255, 255, 0.1) over --c-bg */
   color: #fff;
 }
 .ss-viewer-btn.close:hover {
-  background: rgba(240, 68, 82, 0.2);
+  background: #391920; /* rgba(240, 68, 82, 0.2) over --c-bg */
   border-color: rgba(240, 68, 82, 0.5);
   color: #fff;
 }
@@ -3002,7 +3010,7 @@ a {
     color 0.15s;
 }
 .call-header-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #23262c; /* rgba(255, 255, 255, 0.1) over --c-bg */
   color: #fff;
 }
 .call-header-btn.on {
@@ -3213,8 +3221,11 @@ a {
   backdrop-filter: blur(8px);
   color: var(--c-text);
 }
+/* Badges and the pin sit on top of live video, so their fills are opaque and
+   dark enough for the white glyph to stay legible over a bright shared screen —
+   a translucent tint borrows the frame's brightness and disappears on one. */
 .call-badge.danger {
-  background: rgba(240, 68, 82, 0.85);
+  background: #c0303c;
   color: #fff;
 }
 .call-badge.weak {
@@ -3247,11 +3258,11 @@ a {
   opacity: 1;
 }
 .call-tile-pin:hover {
-  background: rgba(74, 158, 255, 0.35);
+  background: #1976d2;
   color: #fff;
 }
 .call-tile.pinned .call-tile-pin {
-  background: var(--c-accent);
+  background: #1565c0;
   color: #fff;
 }
 

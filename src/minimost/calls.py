@@ -52,6 +52,7 @@ _RINGING_TIMEOUT = 30
 _PRESENCE_STALE = 120
 
 _SQL_CALL_STATE = "SELECT state FROM calls WHERE call_id = ?"
+_SQL_DELETE_SIGNALS = "DELETE FROM call_signals WHERE call_id = ?"
 _SQL_PARTICIPANT = (
     "SELECT state FROM call_participants WHERE call_id = ? AND username = ?"
 )
@@ -131,7 +132,7 @@ def _sweep_stale_calls(db) -> None:
             "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
             (now, call_id),
         )
-        db.execute("DELETE FROM call_signals WHERE call_id = ?", (call_id,))
+        db.execute(_SQL_DELETE_SIGNALS, (call_id,))
 
 
 def reset_all_screenshares_ended() -> None:
@@ -497,7 +498,7 @@ def end_call(call_id):
                 "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
                 (now, call_id),
             )
-            db.execute("DELETE FROM call_signals WHERE call_id = ?", (call_id,))
+            db.execute(_SQL_DELETE_SIGNALS, (call_id,))
 
         db.commit()
         db.execute(_INCREMENTAL_VACUUM)
@@ -919,7 +920,7 @@ def stop_screenshare(share_id):
         )
         # call_signals is shared with calls; standalone-share rows are keyed by
         # the share_id in the call_id column.
-        db.execute("DELETE FROM call_signals WHERE call_id = ?", (share_id,))
+        db.execute(_SQL_DELETE_SIGNALS, (share_id,))
         db.commit()
         db.execute(_INCREMENTAL_VACUUM)
     finally:

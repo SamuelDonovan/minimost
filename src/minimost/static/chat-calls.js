@@ -101,6 +101,13 @@ let speakingPollId = null; // one interval drives every tile's speaking ring
 const callTiles = new Map();
 let pinnedTileKey = null; // user's explicit spotlight choice
 let callLayout = "auto"; // "auto" (spotlight shares) | "grid" | "stage"
+// The layout button cycles through these in order, and labels itself from them.
+const _LAYOUT_NEXT = { auto: "grid", grid: "stage", stage: "auto" };
+const _LAYOUT_TITLE = {
+  auto: "Layout: automatic (V)",
+  grid: "Layout: grid (V)",
+  stage: "Layout: spotlight (V)",
+};
 let callMinimized = false;
 let focusScreenKey = null; // newest share, spotlighted while layout is auto
 let _facesKey = ""; // avoids rebuilding the header face pile every render
@@ -217,10 +224,9 @@ function openIncomingCallUI(callData) {
     // A group call is a different decision from a one-to-one call, so say where
     // it is coming from rather than only who started it.
     const label = _channelLabel(callData.channel);
-    ctx.textContent =
-      callData.channel && callData.channel.startsWith("private:")
-        ? `in ${label}`
-        : "";
+    ctx.textContent = callData.channel?.startsWith("private:")
+      ? `in ${label}`
+      : "";
   }
 
   document.getElementById("call-incoming").style.display = "flex";
@@ -440,41 +446,73 @@ function _tileStateText(spec, pState) {
   return "";
 }
 
+function _updateScreenTile(el, spec, pState) {
+  el.querySelector(".call-tile-name").textContent = spec.self
+    ? "Your screen"
+    : `${spec.user}’s screen`;
+  const video = el.querySelector("video");
+  const stream = spec.self ? screenStream : pState?.screenStream;
+  if (stream && video.srcObject !== stream) {
+    video.srcObject = stream;
+    video.play().catch(() => {});
+  }
+}
+
+function _updatePersonTile(el, spec, pState) {
+  el.querySelector(".call-tile-name").textContent = spec.self
+    ? "You"
+    : spec.user;
+  el.querySelector(".call-tile-state").textContent = _tileStateText(
+    spec,
+    pState,
+  );
+
+  const badges = el.querySelector(".call-tile-badges");
+  badges.replaceChildren();
+  if (spec.self ? audioMuted : pState?.muted) {
+    const who = spec.self ? "You are" : `${spec.user} is`;
+    badges.appendChild(_badge("danger", _PATH_MIC_OFF, `${who} muted`));
+  }
+  if (spec.self ? screenEnabled : pState?.remoteSharing) {
+    badges.appendChild(_badge("", _PATH_SCREEN, "Sharing a screen"));
+  }
+}
+
 function _updateTile(el, spec) {
   const pState = remoteParticipants.get(spec.user);
-  const nameEl = el.querySelector(".call-tile-name");
-  const badges = el.querySelector(".call-tile-badges");
-
   if (spec.kind === "screen") {
-    nameEl.textContent = spec.self ? "Your screen" : `${spec.user}’s screen`;
-    const video = el.querySelector("video");
-    const stream = spec.self ? screenStream : pState?.screenStream;
-    if (stream && video.srcObject !== stream) {
-      video.srcObject = stream;
-      video.play().catch(() => {});
-    }
+    _updateScreenTile(el, spec, pState);
   } else {
-    nameEl.textContent = spec.self ? "You" : spec.user;
-    el.querySelector(".call-tile-state").textContent = _tileStateText(
-      spec,
-      pState,
-    );
-    badges.replaceChildren();
-    if (spec.self ? audioMuted : pState?.muted) {
-      badges.appendChild(
-        _badge(
-          "danger",
-          _PATH_MIC_OFF,
-          `${spec.self ? "You are" : spec.user + " is"} muted`,
-        ),
-      );
-    }
-    if (spec.self ? screenEnabled : pState?.remoteSharing) {
-      badges.appendChild(_badge("", _PATH_SCREEN, "Sharing a screen"));
-    }
+    _updatePersonTile(el, spec, pState);
   }
   el.classList.toggle("pending", !!spec.pending);
   el.classList.toggle("pinned", pinnedTileKey === spec.key);
+}
+
+// Nobody else on the line yet and the call is still ringing out.
+function _isRingingOut() {
+  return remoteParticipants.size === 0 && callState === "ringing";
+}
+
+function _callStatusText(specs) {
+  if (_isRingingOut()) return "Ringing…";
+  const sharing = specs.filter((s) => s.kind === "screen").length;
+  if (sharing > 1) return `${sharing} screens shared`;
+  if (sharing === 1) return "Screen shared";
+  return "Connected";
+}
+
+// The face pile is images; only rebuild it when the membership changes.
+function _renderHeaderFaces() {
+  const faces = document.getElementById("call-header-faces");
+  if (!faces) return;
+  const members = [CURRENT_USER, ...remoteParticipants.keys()];
+  const key = members.join(",");
+  if (key === _facesKey) return;
+  _facesKey = key;
+  faces.replaceChildren(
+    ...members.slice(0, 5).map((u) => makeAvatarWrap(u, 24, null, false)),
+  );
 }
 
 function _renderCallHeader(specs) {
@@ -492,35 +530,59 @@ function _renderCallHeader(specs) {
   }
 
   const status = document.getElementById("call-status-text");
-  if (status) {
-    const sharing = specs.filter((s) => s.kind === "screen").length;
-    if (remoteParticipants.size === 0 && callState === "ringing") {
-      status.textContent = "Ringing…";
-    } else if (sharing > 1) {
-      status.textContent = `${sharing} screens shared`;
-    } else if (sharing === 1) {
-      status.textContent = "Screen shared";
-    } else {
-      status.textContent = "Connected";
-    }
-  }
+  if (status) status.textContent = _callStatusText(specs);
   document
     .getElementById("call-panel")
-    .classList.toggle(
-      "is-ringing",
-      remoteParticipants.size === 0 && callState === "ringing",
-    );
+    .classList.toggle("is-ringing", _isRingingOut());
 
-  // The face pile is images; only rebuild it when the membership changes.
-  const faces = document.getElementById("call-header-faces");
-  if (!faces) return;
-  const members = [CURRENT_USER, ...remoteParticipants.keys()];
-  const key = members.join(",");
-  if (key === _facesKey) return;
-  _facesKey = key;
-  faces.replaceChildren(
-    ...members.slice(0, 5).map((u) => makeAvatarWrap(u, 24, null, false)),
-  );
+  _renderHeaderFaces();
+}
+
+// Drop tiles whose participant (or share) is gone, and forget any pin/focus
+// that pointed at them.
+function _pruneTiles(wanted) {
+  for (const [key, el] of callTiles) {
+    if (wanted.has(key)) continue;
+    el.remove();
+    callTiles.delete(key);
+  }
+  if (pinnedTileKey && !wanted.has(pinnedTileKey)) pinnedTileKey = null;
+  if (focusScreenKey && !wanted.has(focusScreenKey)) focusScreenKey = null;
+}
+
+// Create-or-update every tile, park the staged one on the stage, and return the
+// rest in the order the grid should show them.
+function _syncTiles(specs, stage, stageKey) {
+  const gridOrder = [];
+  for (const spec of specs) {
+    let el = callTiles.get(spec.key);
+    if (!el) {
+      el = _createTile(spec);
+      callTiles.set(spec.key, el);
+    }
+    _updateTile(el, spec);
+    // appendChild *moves* the node, so the <video> keeps playing its stream.
+    if (spec.key !== stageKey) gridOrder.push(el);
+    else if (el.parentElement !== stage) stage.appendChild(el);
+  }
+  return gridOrder;
+}
+
+// Re-append only when the order actually differs — every move is a reflow, and
+// re-rendering runs on every mute/join/share event.
+function _reorderChildren(container, order) {
+  const current = [...container.children];
+  const same =
+    current.length === order.length &&
+    current.every((el, i) => el === order[i]);
+  if (!same) container.append(...order);
+}
+
+function _renderLayoutButton() {
+  const layoutBtn = document.getElementById("call-layout-btn");
+  if (!layoutBtn) return;
+  layoutBtn.classList.toggle("on", callLayout !== "auto");
+  layoutBtn.title = _LAYOUT_TITLE[callLayout] ?? _LAYOUT_TITLE.auto;
 }
 
 function _renderCall() {
@@ -530,53 +592,16 @@ function _renderCall() {
   if (!grid || !stage || !panel) return;
 
   const specs = _tileSpecs();
-  const wanted = new Set(specs.map((s) => s.key));
-
-  for (const [key, el] of callTiles) {
-    if (wanted.has(key)) continue;
-    el.remove();
-    callTiles.delete(key);
-  }
-  if (pinnedTileKey && !wanted.has(pinnedTileKey)) pinnedTileKey = null;
-  if (focusScreenKey && !wanted.has(focusScreenKey)) focusScreenKey = null;
+  _pruneTiles(new Set(specs.map((s) => s.key)));
 
   const stageKey = _stageKey(specs);
   panel.classList.toggle("has-stage", !!stageKey);
 
-  const gridOrder = [];
-  for (const spec of specs) {
-    let el = callTiles.get(spec.key);
-    if (!el) {
-      el = _createTile(spec);
-      callTiles.set(spec.key, el);
-    }
-    _updateTile(el, spec);
-    if (spec.key === stageKey) {
-      // appendChild *moves* the node, so the <video> keeps playing its stream.
-      if (el.parentElement !== stage) stage.appendChild(el);
-    } else {
-      gridOrder.push(el);
-    }
-  }
-  // Re-append only when the order actually differs — every move is a reflow,
-  // and re-rendering runs on every mute/join/share event.
-  const current = [...grid.children];
-  const sameOrder =
-    current.length === gridOrder.length &&
-    current.every((el, i) => el === gridOrder[i]);
-  if (!sameOrder) grid.append(...gridOrder);
+  const gridOrder = _syncTiles(specs, stage, stageKey);
+  _reorderChildren(grid, gridOrder);
   grid.classList.toggle("multi", gridOrder.length > 1);
 
-  const layoutBtn = document.getElementById("call-layout-btn");
-  if (layoutBtn) {
-    layoutBtn.classList.toggle("on", callLayout !== "auto");
-    layoutBtn.title =
-      callLayout === "grid"
-        ? "Layout: grid (V)"
-        : callLayout === "stage"
-          ? "Layout: spotlight (V)"
-          : "Layout: automatic (V)";
-  }
+  _renderLayoutButton();
   _renderCallHeader(specs);
 }
 
@@ -588,8 +613,7 @@ function togglePinTile(key) {
 }
 
 function cycleCallLayout() {
-  callLayout =
-    callLayout === "auto" ? "grid" : callLayout === "grid" ? "stage" : "auto";
+  callLayout = _LAYOUT_NEXT[callLayout] ?? "auto";
   pinnedTileKey = null;
   _renderCall();
 }
@@ -1505,55 +1529,75 @@ function applyScreenShares(shares) {
   }
 }
 
+// Only our own share is live — the banner becomes a "you are sharing" bar.
+function _renderOwnShareBanner(banner) {
+  document.getElementById("screenshare-banner-text").textContent =
+    "You are sharing your screen";
+  _bannerKey = "";
+  const faces = document.getElementById("screenshare-banner-avatars");
+  if (faces) faces.replaceChildren();
+  const viewBtn = document.getElementById("screenshare-banner-view-btn");
+  if (viewBtn) viewBtn.style.display = "none";
+  const stopBtn = document.getElementById("screenshare-banner-stop-btn");
+  if (stopBtn) stopBtn.style.display = "inline-flex";
+  banner.style.display = "flex";
+}
+
+function _shareBannerText(names) {
+  if (names.length === 1) return `${names[0]} is sharing their screen`;
+  const hidden = names.length - 2;
+  const more = hidden > 0 ? ` and ${hidden} more` : "";
+  return `${names.slice(0, 2).join(", ")}${more} are sharing their screens`;
+}
+
+// The face pile is <img> elements; rebuilding it on every poll would refetch
+// them, so only touch it when the set of sharers actually changes.
+function _renderShareBannerFaces(names) {
+  const faces = document.getElementById("screenshare-banner-avatars");
+  const facesKey = names.join(",");
+  if (!faces || facesKey === _bannerKey) return;
+  _bannerKey = facesKey;
+  faces.replaceChildren(
+    ...names.slice(0, 3).map((u) => makeAvatarWrap(u, 20, null, false)),
+  );
+}
+
+function _renderShareBannerViewBtn(names) {
+  const viewBtn = document.getElementById("screenshare-banner-view-btn");
+  if (!viewBtn) return;
+  viewBtn.style.display = "inline-flex";
+  viewBtn.textContent = "";
+  viewBtn.append(
+    _icon(13, [
+      "M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z",
+      "M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z",
+    ]),
+    names.length === 1 ? " Watch" : ` Watch (${names.length})`,
+  );
+}
+
 function _renderShareBanner() {
   const banner = document.getElementById("screenshare-banner");
   if (!banner) return;
-  const text = document.getElementById("screenshare-banner-text");
-  const viewBtn = document.getElementById("screenshare-banner-view-btn");
-  const stopBtn = document.getElementById("screenshare-banner-stop-btn");
-  const faces = document.getElementById("screenshare-banner-avatars");
   const others = _currentRemoteShares;
 
   // While watching, the banner would just repeat the overlay's own header.
   if (others.length === 0 || viewShareId) {
     if (standaloneShareId && others.length === 0) {
-      text.textContent = "You are sharing your screen";
-      _bannerKey = "";
-      if (faces) faces.replaceChildren();
-      if (viewBtn) viewBtn.style.display = "none";
-      if (stopBtn) stopBtn.style.display = "inline-flex";
-      banner.style.display = "flex";
-      return;
+      _renderOwnShareBanner(banner);
+    } else {
+      banner.style.display = "none";
     }
-    banner.style.display = "none";
     return;
   }
 
   const names = others.map((s) => s.sharer);
-  text.textContent =
-    names.length === 1
-      ? `${names[0]} is sharing their screen`
-      : `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` and ${names.length - 2} more` : ""} are sharing their screens`;
-  // The face pile is <img> elements; rebuilding it on every poll would refetch
-  // them, so only touch it when the set of sharers actually changes.
-  const facesKey = names.join(",");
-  if (faces && facesKey !== _bannerKey) {
-    _bannerKey = facesKey;
-    faces.replaceChildren(
-      ...names.slice(0, 3).map((u) => makeAvatarWrap(u, 20, null, false)),
-    );
-  }
-  if (viewBtn) {
-    viewBtn.style.display = "inline-flex";
-    viewBtn.textContent = "";
-    viewBtn.append(
-      _icon(13, [
-        "M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z",
-        "M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z",
-      ]),
-      names.length === 1 ? " Watch" : ` Watch (${names.length})`,
-    );
-  }
+  document.getElementById("screenshare-banner-text").textContent =
+    _shareBannerText(names);
+  _renderShareBannerFaces(names);
+  _renderShareBannerViewBtn(names);
+
+  const stopBtn = document.getElementById("screenshare-banner-stop-btn");
   if (stopBtn)
     stopBtn.style.display = standaloneShareId ? "inline-flex" : "none";
   banner.style.display = "flex";
@@ -1594,7 +1638,9 @@ function openShareViewer() {
 
 function _syncShareViewers() {
   const wanted = new Map(_currentRemoteShares.map((s) => [s.share_id, s]));
-  for (const id of [...shareViewers.keys()]) {
+  // Safe to tear down mid-iteration: a Map iterator tolerates deletion of the
+  // entry it is sitting on.
+  for (const id of shareViewers.keys()) {
     if (!wanted.has(id)) _teardownShareViewer(id);
   }
   for (const [id, share] of wanted) {
@@ -1640,37 +1686,37 @@ function _createShareTile(share) {
   return tile;
 }
 
+// Park the focused share on the stage and return the rest, in strip order.
+function _syncShareViewerTiles(stage) {
+  const stripOrder = [];
+  for (const [id, viewer] of shareViewers) {
+    if (id !== viewerFocusShareId) {
+      stripOrder.push(viewer.tileEl);
+    } else if (viewer.tileEl.parentElement !== stage) {
+      stage.appendChild(viewer.tileEl);
+    }
+  }
+  return stripOrder;
+}
+
+function _shareViewerLabel() {
+  const focused = shareViewers.get(viewerFocusShareId);
+  if (!focused) return "";
+  const headline = `${focused.sharer} is sharing their screen`;
+  const extra = shareViewers.size - 1;
+  if (extra <= 0) return headline;
+  const plural = extra > 1 ? "s" : "";
+  return `${headline} · ${extra} other share${plural} below`;
+}
+
 function _renderShareViewer() {
   const stage = document.getElementById("screenshare-viewer-stage");
   const strip = document.getElementById("screenshare-viewer-strip");
   const label = document.getElementById("screenshare-viewer-label");
   if (!stage || !strip) return;
 
-  const stripOrder = [];
-  for (const [id, viewer] of shareViewers) {
-    if (id === viewerFocusShareId) {
-      if (viewer.tileEl.parentElement !== stage)
-        stage.appendChild(viewer.tileEl);
-    } else {
-      stripOrder.push(viewer.tileEl);
-    }
-  }
-  const current = [...strip.children];
-  const sameOrder =
-    current.length === stripOrder.length &&
-    current.every((el, i) => el === stripOrder[i]);
-  if (!sameOrder) strip.append(...stripOrder);
-
-  if (label) {
-    const focused = shareViewers.get(viewerFocusShareId);
-    const extra = shareViewers.size - 1;
-    label.textContent = focused
-      ? `${focused.sharer} is sharing their screen` +
-        (extra > 0
-          ? ` · ${extra} other share${extra > 1 ? "s" : ""} below`
-          : "")
-      : "";
-  }
+  _reorderChildren(strip, _syncShareViewerTiles(stage));
+  if (label) label.textContent = _shareViewerLabel();
 }
 
 function _startShareViewerConnection(share) {
@@ -1786,7 +1832,7 @@ function closeShareViewer() {
     clearInterval(shareViewerPollId);
     shareViewerPollId = null;
   }
-  for (const id of [...shareViewers.keys()]) _teardownShareViewer(id);
+  for (const id of shareViewers.keys()) _teardownShareViewer(id);
   viewShareId = null;
   viewerFocusShareId = null;
   const overlay = document.getElementById("screenshare-viewer");
@@ -1995,9 +2041,11 @@ function _diffParticipants(accepted) {
 // actually receiving.  Tracks are the fast path; this catches the share that
 // stopped without an 'ended'/'mute' event ever reaching us.
 function _handleScreenshareState(sharers) {
-  const sharing = new Set(
-    Array.isArray(sharers) ? sharers : sharers ? [sharers] : [],
-  );
+  // Accepts the list of sharers, a single bare username, or nothing at all.
+  let list = [];
+  if (Array.isArray(sharers)) list = sharers;
+  else if (sharers) list = [sharers];
+  const sharing = new Set(list);
   for (const [user, pState] of remoteParticipants) {
     if (pState.screenStream && !sharing.has(user)) _clearRemoteScreen(user);
   }

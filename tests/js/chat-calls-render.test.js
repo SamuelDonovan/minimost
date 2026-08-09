@@ -2659,33 +2659,17 @@ describe("call invite panel", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  test("closes when clicking outside it", () => {
+  test.each([
+    ["closes when clicking outside it", "call-participants-grid", "none"],
+    ["stays open when clicking inside it", "call-invite-list", "flex"],
+    ["stays open when clicking its own button", "call-invite-btn", "flex"],
+  ])("%s", (_name, clickedId, expected) => {
     document.getElementById("call-invite-panel").style.display = "flex";
     document
-      .getElementById("call-participants-grid")
+      .getElementById(clickedId)
       .dispatchEvent(new Event("click", { bubbles: true }));
     expect(document.getElementById("call-invite-panel").style.display).toBe(
-      "none",
-    );
-  });
-
-  test("stays open when clicking inside it", () => {
-    document.getElementById("call-invite-panel").style.display = "flex";
-    document
-      .getElementById("call-invite-list")
-      .dispatchEvent(new Event("click", { bubbles: true }));
-    expect(document.getElementById("call-invite-panel").style.display).toBe(
-      "flex",
-    );
-  });
-
-  test("stays open when clicking its own button", () => {
-    document.getElementById("call-invite-panel").style.display = "flex";
-    document
-      .getElementById("call-invite-btn")
-      .dispatchEvent(new Event("click", { bubbles: true }));
-    expect(document.getElementById("call-invite-panel").style.display).toBe(
-      "flex",
+      expected,
     );
   });
 });
