@@ -698,17 +698,22 @@ def get_signals(call_id):
 @calls_bp.route("/calls/<call_id>/screenshare", methods=["POST"])
 @auth.login_required
 def set_screenshare(call_id):
-    """Mark the current user as the call's active screen sharer, or clear it.
+    """Record whether the current user is sharing their screen in this call.
 
     Route: ``POST /calls/<call_id>/screenshare``
 
     Under the WebRTC transport the screen video travels peer-to-peer, so this
-    endpoint exists only to record *who* is sharing in the ``screenshare_user``
-    column.  Clients poll ``GET /calls/<call_id>/state`` to read it, which
-    drives the single-sharer policy and the viewer UI label.
+    endpoint exists only to record *who* is sharing.  Sharing is per
+    participant — any number of people may share at the same time — and is
+    stored in ``call_participants.sharing``.  Clients read the resulting
+    ``screensharers`` list from ``GET /calls/<call_id>/state`` to label the
+    stage tiles and to notice a share that ended without a WebRTC track event.
+
+    ``calls.screenshare_user`` is still maintained as the most recent sharer so
+    older clients keep working; it is never the source of truth.
 
     Request body (JSON):
-        **on** (bool): ``true`` to claim the screen, ``false`` to release it.
+        **on** (bool): ``true`` when starting to share, ``false`` when stopping.
 
     :param call_id: UUID of the call.
     :type call_id: str
@@ -728,6 +733,11 @@ def set_screenshare(call_id):
         if call["state"] != "active":
             return jsonify({"error": _ERR_CALL_NOT_ACTIVE}), 409
 
+        db.execute(
+            "UPDATE call_participants SET sharing = ?"
+            " WHERE call_id = ? AND username = ?",
+            (1 if on else 0, call_id, user),
+        )
         if on:
             db.execute(
                 "UPDATE calls SET screenshare_user = ? WHERE call_id = ?",
@@ -749,12 +759,15 @@ def call_state(call_id):
 
     Route: ``GET /calls/<call_id>/state``
 
-    Polled every few seconds by active participants to detect remote hang-ups
-    or other state transitions (``'ended'``, ``'rejected'``).
+    Polled every few seconds by active participants to detect remote hang-ups,
+    people joining or leaving, screen shares starting or stopping, and other
+    state transitions (``'ended'``, ``'rejected'``).
 
     :param call_id: UUID of the call.
     :type call_id: str
-    :returns: JSON object with call metadata and a ``participants`` list.
+    :returns: JSON object with call metadata, a ``participants`` list (each
+        with a ``sharing`` flag) and ``screensharers``, the usernames of every
+        participant currently sharing a screen.
     :rtype: flask.Response (application/json)
     """
     db = _db()
@@ -786,11 +799,16 @@ def call_state(call_id):
         call = db.execute(_CALL_COLS, (call_id,)).fetchone()
 
     participants = db.execute(
-        "SELECT username, role, state, joined_ts, left_ts"
+        "SELECT username, role, state, joined_ts, left_ts, sharing"
         " FROM call_participants WHERE call_id = ?",
         (call_id,),
     ).fetchall()
     db.close()
+
+    # Someone who has left is not sharing any more, whatever their row says.
+    screensharers = [
+        p["username"] for p in participants if p["sharing"] and p["state"] == "accepted"
+    ]
 
     return jsonify(
         {
@@ -802,6 +820,7 @@ def call_state(call_id):
             "answered_ts": call["answered_ts"],
             "ended_ts": call["ended_ts"],
             "screenshare_user": call["screenshare_user"],
+            "screensharers": screensharers,
             "participants": [
                 {
                     "username": p["username"],
@@ -809,6 +828,7 @@ def call_state(call_id):
                     "state": p["state"],
                     "joined_ts": p["joined_ts"],
                     "left_ts": p["left_ts"],
+                    "sharing": bool(p["sharing"]),
                 }
                 for p in participants
             ],

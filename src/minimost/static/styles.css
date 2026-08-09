@@ -2438,6 +2438,37 @@ a {
   transform: scale(1.2);
 }
 
+/* ══ Calls & screen sharing ═════════════════════════════════════════════════
+   Every call surface (panel, incoming card, banner, share viewer) draws from
+   the same small token set so they read as one product rather than four
+   separately-styled overlays.  Tokens are scoped to those surfaces instead of
+   :root so the rest of the app keeps its existing palette untouched. */
+#call-panel,
+#call-incoming,
+#screenshare-banner,
+#screenshare-viewer {
+  --c-bg: #0b0e14;
+  --c-surface: rgba(22, 27, 37, 0.92);
+  --c-tile: linear-gradient(158deg, #1d2533 0%, #131922 100%);
+  --c-border: rgba(255, 255, 255, 0.09);
+  --c-border-strong: rgba(255, 255, 255, 0.17);
+  --c-text: #e9edf4;
+  --c-dim: #99a3b4;
+  --c-accent: #4a9eff;
+  --c-accent-soft: rgba(74, 158, 255, 0.16);
+  --c-danger: #f04452;
+  --c-live: #ff5a52;
+  --c-radius: 14px;
+  --c-shadow: 0 20px 56px rgba(0, 0, 0, 0.6);
+  --c-blur: blur(18px) saturate(150%);
+}
+
+/* Hang-up buttons reuse the phone glyph, rotated — the universal "end call"
+   mark, and one less path to keep in sync. */
+.hangup-glyph {
+  transform: rotate(134deg);
+}
+
 /* ── Topbar share button ─────────────────────────────────────────────────── */
 #topbar-share-btn.active {
   background: #1565c0;
@@ -2447,160 +2478,417 @@ a {
   background: #1976d2;
 }
 
-/* ── Standalone screen share banner ─────────────────────────────────────── */
+/* ── Channel screen-share banner ─────────────────────────────────────────── */
 #screenshare-banner {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 16px;
-  background: #1a2a3a;
-  border-bottom: 1px solid #1565c0;
+  padding: 7px 16px;
+  background: linear-gradient(
+    90deg,
+    rgba(21, 101, 192, 0.22),
+    rgba(21, 101, 192, 0.08) 60%,
+    transparent
+  );
+  border-bottom: 1px solid rgba(74, 158, 255, 0.28);
   font-size: 13px;
-  color: #9cdcfe;
+  color: #cfe4ff;
   flex-shrink: 0;
+}
+.ss-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-live, #ff5a52);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0 rgba(255, 90, 82, 0.6);
+  animation: ss-live-pulse 1.8s ease-out infinite;
+}
+@keyframes ss-live-pulse {
+  70% {
+    box-shadow: 0 0 0 7px rgba(255, 90, 82, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 90, 82, 0);
+  }
+}
+.ss-banner-avatars {
+  display: flex;
+  flex-shrink: 0;
+}
+/* Overlapping face pile — reads as "several people" at a glance. */
+.ss-banner-avatars .avatar-wrap {
+  margin-left: -7px;
+  border: 2px solid #1e2836;
+  border-radius: 50%;
+  box-sizing: content-box;
+}
+.ss-banner-avatars .avatar-wrap:first-child {
+  margin-left: 0;
+}
+.ss-banner-avatars .avatar-presence {
+  display: none;
+}
+#screenshare-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ss-banner-btn {
   margin-left: auto;
-  padding: 4px 12px;
-  border-radius: 4px;
-  border: 1px solid #1565c0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 158, 255, 0.5);
   background: transparent;
-  color: #9cdcfe;
+  color: #cfe4ff;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    transform 0.1s;
+}
+.ss-banner-btn + .ss-banner-btn {
+  margin-left: 8px;
 }
 .ss-banner-btn:hover {
+  background: rgba(74, 158, 255, 0.16);
+  color: #fff;
+}
+.ss-banner-btn:active {
+  transform: scale(0.97);
+}
+.ss-banner-btn.primary {
   background: #1565c0;
+  border-color: #1565c0;
+  color: #fff;
+}
+.ss-banner-btn.primary:hover {
+  background: #1976d2;
+  border-color: #1976d2;
+}
+.ss-banner-btn.danger {
+  border-color: rgba(240, 68, 82, 0.55);
+  color: #ff9aa2;
+}
+.ss-banner-btn.danger:hover {
+  background: rgba(240, 68, 82, 0.16);
   color: #fff;
 }
 
-/* ── Standalone screen share viewer overlay ──────────────────────────────── */
+/* ── Screen-share viewer overlay ─────────────────────────────────────────── */
 #screenshare-viewer {
   position: fixed;
   inset: 0;
   z-index: 1040;
-  background: #0d0d17;
+  background:
+    radial-gradient(
+      1200px 600px at 50% -10%,
+      rgba(74, 158, 255, 0.08),
+      transparent 70%
+    ),
+    var(--c-bg);
   display: flex;
   flex-direction: column;
+  color: var(--c-text);
 }
 #screenshare-viewer-header {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #ccc;
   font-size: 14px;
   flex-shrink: 0;
-  border-bottom: 1px solid #333;
+}
+.ss-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 90, 82, 0.15);
+  border: 1px solid rgba(255, 90, 82, 0.4);
+  color: #ff9a94;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex-shrink: 0;
 }
 #screenshare-viewer-label {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-dim);
 }
-.ss-viewer-close-btn {
-  background: none;
-  border: none;
-  color: #aaa;
-  font-size: 18px;
+.ss-viewer-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ss-viewer-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid var(--c-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--c-dim);
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
-.ss-viewer-close-btn:hover {
-  background: #333;
+.ss-viewer-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
-#screenshare-viewer-video {
+.ss-viewer-btn.close:hover {
+  background: rgba(240, 68, 82, 0.2);
+  border-color: rgba(240, 68, 82, 0.5);
+  color: #fff;
+}
+#screenshare-viewer-stage {
   flex: 1;
-  width: 100%;
   /* A zero min-height lets this flex item shrink below the video's intrinsic
-       resolution; without it a tall shared screen overflows the column and the
-       bottom is clipped off-screen (contain object-fit then can't letterbox). */
+     resolution; without it a tall shared screen overflows the column and the
+     bottom is clipped off-screen (contain object-fit then can't letterbox). */
   min-height: 0;
+  display: flex;
+  padding: 0 16px;
+}
+#screenshare-viewer-strip {
+  display: flex;
+  /* flex-start, not the default stretch: stretching overrides the thumbnails'
+     aspect-ratio and squashes them into letterbox slivers. */
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+/* Empty strip must not reserve its padding — a single share should fill the
+   overlay rather than float above a blank gutter. */
+#screenshare-viewer-strip:empty {
+  display: none;
+}
+.ss-tile {
+  position: relative;
+  border-radius: var(--c-radius);
+  overflow: hidden;
+  background: #05070a;
+  border: 1px solid var(--c-border);
+  min-width: 0;
+}
+#screenshare-viewer-stage .ss-tile {
+  flex: 1;
+  min-width: 0;
+}
+#screenshare-viewer-strip .ss-tile {
+  width: 190px;
+  aspect-ratio: 16 / 9;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    transform 0.15s;
+}
+#screenshare-viewer-strip .ss-tile:hover {
+  border-color: var(--c-accent);
+  transform: translateY(-2px);
+}
+.ss-tile video {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  background: #111;
+  display: block;
+  background: #05070a;
+}
+.ss-tile-name {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  max-width: calc(100% - 20px);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(8, 10, 14, 0.66);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Connecting placeholder, replaced by the first decoded frame. */
+.ss-tile-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--c-dim);
+  font-size: 13px;
+  pointer-events: none;
+}
+.ss-tile.live .ss-tile-status {
+  display: none;
+}
+.c-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--c-accent);
+  animation: c-spin 0.8s linear infinite;
+}
+@keyframes c-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-/* ── Call UI ─────────────────────────────────────────────────────────────── */
-
+/* ── Incoming call card ──────────────────────────────────────────────────── */
 #call-incoming {
   position: fixed;
   top: 20px;
   right: 20px;
   z-index: 1100;
-  background: #2d2d2d;
-  border: 1px solid #555;
-  border-radius: 12px;
-  padding: 14px 16px;
+  background: var(--c-surface);
+  backdrop-filter: var(--c-blur);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 18px;
+  padding: 16px 18px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-width: 280px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7);
-  animation: call-ring-pulse 1.2s ease-in-out infinite;
+  gap: 16px;
+  min-width: 330px;
+  color: var(--c-text);
+  box-shadow: var(--c-shadow);
+  animation: call-card-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
-@keyframes call-ring-pulse {
-  0%,
-  100% {
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7);
-  }
-  50% {
-    box-shadow: 0 6px 32px rgba(76, 175, 80, 0.35);
+@keyframes call-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
   }
 }
-.call-ring-icon {
-  color: #4caf50;
+.call-incoming-avatar {
+  position: relative;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.call-incoming-avatar .avatar-presence {
+  display: none;
+}
+/* Two offset halos read as a ringing phone without needing an icon. */
+.call-incoming-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(56, 211, 159, 0.55);
+  animation: call-halo 2s ease-out infinite;
+  pointer-events: none;
+}
+.call-incoming-halo.delay {
+  animation-delay: 1s;
+}
+@keyframes call-halo {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
 }
 .call-incoming-info {
   flex: 1;
   min-width: 0;
 }
 .call-incoming-label {
-  font-size: 11px;
-  color: #aaa;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #4ad6a4;
   margin-bottom: 3px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.07em;
+  font-weight: 700;
   text-transform: uppercase;
 }
 .call-incoming-caller {
-  font-size: 15px;
-  font-weight: 600;
-  color: #eee;
+  font-size: 16px;
+  font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.call-incoming-context {
+  font-size: 12px;
+  color: var(--c-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.call-incoming-context:empty {
+  display: none;
+}
 .call-incoming-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
 }
 .call-btn-accept,
 .call-btn-reject {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  transition: opacity 0.15s;
+  color: #fff;
+  transition:
+    transform 0.12s,
+    filter 0.15s;
+}
+.call-btn-accept:hover,
+.call-btn-reject:hover {
+  filter: brightness(1.15);
+  transform: scale(1.06);
+}
+.call-btn-accept:active,
+.call-btn-reject:active {
+  transform: scale(0.95);
 }
 .call-btn-accept {
-  background: #2e7d32;
+  background: linear-gradient(160deg, #34c88a, #1f9c68);
+  box-shadow: 0 6px 18px rgba(31, 156, 104, 0.42);
+  animation: call-accept-throb 1.6s ease-in-out infinite;
 }
-.call-btn-accept:hover {
-  background: #388e3c;
+@keyframes call-accept-throb {
+  50% {
+    box-shadow: 0 6px 26px rgba(52, 200, 138, 0.75);
+  }
 }
 .call-btn-reject {
-  background: #c62828;
-}
-.call-btn-reject:hover {
-  background: #d32f2f;
+  background: linear-gradient(160deg, #f0525f, #c0293a);
+  box-shadow: 0 6px 18px rgba(192, 41, 58, 0.4);
 }
 
 /* ── Call panel ──────────────────────────────────────────────────────────── */
@@ -2608,242 +2896,729 @@ a {
   position: fixed;
   inset: 0;
   z-index: 1050;
-  background: #0d0d17;
   display: flex;
   flex-direction: column;
-  padding-bottom: 80px;
+  color: var(--c-text);
+  background:
+    radial-gradient(
+      900px 520px at 20% -8%,
+      rgba(74, 158, 255, 0.1),
+      transparent 65%
+    ),
+    radial-gradient(
+      800px 480px at 92% 108%,
+      rgba(126, 87, 255, 0.09),
+      transparent 65%
+    ),
+    var(--c-bg);
 }
-/* Participant tile grid — fills available space */
-#call-participants-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr;
+
+/* Header */
+#call-header {
+  display: flex;
   align-items: center;
-  justify-items: center;
-  gap: 20px;
-  padding: 24px;
-  overflow: auto;
-  min-height: 0;
+  gap: 12px;
+  padding: 12px 16px;
+  flex-shrink: 0;
 }
-.call-participant-tile {
-  position: relative;
+#call-header-id {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 16px;
+  /* Must be allowed to shrink: on a phone the title and subtitle would
+     otherwise push the header buttons off the right edge. */
+  flex: 1;
+  min-width: 0;
 }
-/* Speaking ring — lives inside .call-participant-avatar so inset always
-   positions it relative to the avatar, never to the tile padding. */
-.call-participant-tile .call-participant-avatar {
-  position: relative;
-}
-.call-participant-tile .call-speaking-ring {
-  position: absolute;
-  inset: -6px;
+#call-live-dot {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  border: 4px solid transparent;
-  pointer-events: none;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-  z-index: 1;
+  background: var(--c-live);
+  flex-shrink: 0;
+  animation: ss-live-pulse 1.8s ease-out infinite;
 }
-.call-participant-tile .call-speaking-ring.speaking {
-  border-color: #4a9eff;
-  box-shadow: 0 0 20px rgba(74, 158, 255, 0.55);
-  animation: speaking-pulse 1s ease-in-out infinite;
+#call-panel.is-ringing #call-live-dot {
+  background: #f5b942;
+}
+#call-header-text {
+  min-width: 0;
+}
+#call-header-title {
+  font-size: 15px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#call-header-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--c-dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+#call-timer {
+  font-variant-numeric: tabular-nums;
+}
+/* Header face pile — who is here, visible even in the minimized dock. */
+#call-header-faces {
+  display: flex;
+  margin-left: auto;
+}
+#call-header-faces .avatar-wrap {
+  margin-left: -8px;
+  border: 2px solid #12161e;
+  border-radius: 50%;
+  box-sizing: content-box;
+}
+#call-header-faces .avatar-wrap:first-child {
+  margin-left: 0;
+}
+#call-header-faces .avatar-presence {
+  display: none;
+}
+#call-header-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.call-header-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid var(--c-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--c-dim);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.call-header-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.call-header-btn.on {
+  background: var(--c-accent-soft);
+  border-color: rgba(74, 158, 255, 0.45);
+  color: #9cc9ff;
+}
+#call-minimize-btn .mini-up {
+  display: none;
+}
+#call-panel.minimized #call-minimize-btn .mini-up {
+  display: block;
+}
+#call-panel.minimized #call-minimize-btn .mini-down {
+  display: none;
+}
+
+/* Body: stage (spotlight) + tile grid */
+#call-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  padding: 0 16px 108px;
+}
+#call-stage {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+#call-panel.has-stage #call-stage {
+  display: flex;
+}
+#call-participants-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  align-content: center;
+  /* `safe` keeps the first row reachable once the tiles outgrow the viewport —
+     plain centring pushes the overflow above the scroll origin. */
+  align-content: safe center;
+  justify-content: center;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 2px;
+}
+/* With a spotlight up, the grid becomes a filmstrip alongside it.  Flex, not
+   grid: grid rows collapse below the tiles' aspect-ratio height here, which
+   overlaps them. */
+#call-panel.has-stage #call-participants-grid {
+  flex: none;
+  width: 216px;
+  display: flex;
+  flex-direction: column;
+  /* Not the inherited `center`: on a scroll container that centres the
+     overflow, putting the first tile above the scroll origin where it can
+     never be reached. */
+  justify-content: flex-start;
+  gap: 10px;
+}
+#call-panel.has-stage #call-participants-grid .call-tile {
+  flex-shrink: 0;
+}
+/* One tile alone shouldn't stretch across a 4K display. */
+#call-participants-grid:not(.multi) {
+  grid-template-columns: minmax(0, min(560px, 100%));
+}
+
+/* Tiles */
+.call-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  min-height: 0;
+  border-radius: var(--c-radius);
+  border: 1px solid var(--c-border);
+  background: var(--c-tile);
+  overflow: hidden;
+  transition:
+    border-color 0.18s,
+    box-shadow 0.18s,
+    transform 0.15s;
+}
+#call-participants-grid .call-tile {
+  cursor: pointer;
+}
+#call-participants-grid .call-tile:hover {
+  border-color: var(--c-border-strong);
+}
+.call-tile.speaking {
+  border-color: var(--c-accent);
+  box-shadow:
+    0 0 0 1px var(--c-accent),
+    0 0 30px rgba(74, 158, 255, 0.32);
+}
+.call-tile.pending {
+  opacity: 0.75;
+}
+.call-tile.is-screen {
+  background: #05070a;
+  aspect-ratio: 16 / 9;
+}
+#call-stage .call-tile {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  cursor: default;
+}
+.call-tile-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #05070a;
+}
+.call-tile-avatar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.call-tile .avatar-wrap {
+  width: 88px !important;
+  height: 88px !important;
+}
+.call-tile .avatar-initials {
+  font-size: 30px !important;
+}
+.call-tile .avatar-presence {
+  display: none;
+}
+/* Speaking ring hugs the avatar, so it never lands on the tile padding. */
+.call-tile-avatar::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  transition: border-color 0.15s;
+  pointer-events: none;
+}
+.call-tile.speaking .call-tile-avatar::after {
+  border-color: var(--c-accent);
+  animation: speaking-pulse 1.2s ease-in-out infinite;
 }
 @keyframes speaking-pulse {
   0%,
   100% {
-    box-shadow: 0 0 12px rgba(74, 158, 255, 0.4);
+    box-shadow: 0 0 10px rgba(74, 158, 255, 0.4);
   }
   50% {
-    box-shadow: 0 0 28px rgba(74, 158, 255, 0.75);
+    box-shadow: 0 0 26px rgba(74, 158, 255, 0.8);
   }
 }
-.call-participant-tile .avatar-wrap {
-  width: 100px !important;
-  height: 100px !important;
+#call-stage .call-tile .avatar-wrap {
+  width: 132px !important;
+  height: 132px !important;
 }
-.call-participant-tile .avatar-initials {
-  font-size: 34px !important;
+#call-stage .call-tile .avatar-initials {
+  font-size: 46px !important;
 }
-.call-participant-tile .avatar-presence {
-  display: none;
-}
-.call-participant-name {
-  color: #eee;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-/* Screen share layout: switch panel to row, grid becomes right sidebar */
-#call-screen-video {
-  display: none;
-  object-fit: contain;
-  background: #111;
-  min-height: 0;
-}
-#call-panel.screen-share-active {
-  flex-direction: row;
-}
-#call-panel.screen-share-active #call-screen-video {
-  display: block;
-  flex: 1;
-}
-#call-panel.screen-share-active #call-participants-grid {
-  flex: none;
-  width: 176px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  overflow-y: auto;
-  padding: 8px 4px;
-  gap: 8px;
-  border-left: 1px solid #2a2a3e;
-}
-#call-panel.screen-share-active .call-participant-tile {
-  padding: 6px;
-  gap: 4px;
-}
-#call-panel.screen-share-active .call-participant-tile .avatar-wrap {
-  width: 56px !important;
-  height: 56px !important;
-}
-#call-panel.screen-share-active .call-participant-tile .avatar-initials {
-  font-size: 18px !important;
-}
-#call-panel.screen-share-active .call-participant-name {
-  font-size: 11px;
-}
-/* Controls bar */
-#call-controls {
+.call-tile-footer {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 80px;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 20px);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(8, 10, 14, 0.62);
+  backdrop-filter: blur(8px);
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+.call-tile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.call-tile-state {
+  color: var(--c-dim);
+  font-size: 11.5px;
+}
+.call-tile-state:empty {
+  display: none;
+}
+.call-tile-badges {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+}
+.call-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(6px);
+  background: rgba(8, 10, 14, 0.66);
+  backdrop-filter: blur(8px);
+  color: var(--c-text);
+}
+.call-badge.danger {
+  background: rgba(240, 68, 82, 0.85);
+  color: #fff;
+}
+.call-badge.weak {
+  color: #f5b942;
+}
+/* Pin: hover-revealed on the grid, always visible on the stage tile. */
+.call-tile-pin {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 10, 14, 0.6);
+  backdrop-filter: blur(8px);
+  color: var(--c-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+.call-tile:hover .call-tile-pin,
+.call-tile.pinned .call-tile-pin {
+  opacity: 1;
+}
+.call-tile-pin:hover {
+  background: rgba(74, 158, 255, 0.35);
+  color: #fff;
+}
+.call-tile.pinned .call-tile-pin {
+  background: var(--c-accent);
+  color: #fff;
+}
+
+/* Controls — a floating glass pill over the stage */
+#call-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(16, 20, 28, 0.74);
+  backdrop-filter: var(--c-blur);
+  border: 1px solid var(--c-border);
+  box-shadow: var(--c-shadow);
   z-index: 10;
 }
-#call-timer {
-  color: #ccc;
-  font-family: monospace;
-  font-size: 14px;
-  min-width: 48px;
-  text-align: center;
+.call-ctrl-divider {
+  width: 1px;
+  height: 26px;
+  background: var(--c-border);
+  margin: 0 2px;
 }
 .call-ctrl-btn {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  position: relative;
+  min-width: 52px;
+  height: 52px;
+  padding: 0 6px;
+  border-radius: 999px;
   border: none;
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #444;
-  color: white;
-  transition: background 0.15s;
+  gap: 1px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--c-text);
+  transition:
+    background 0.15s,
+    color 0.15s,
+    transform 0.12s;
   flex-shrink: 0;
 }
 .call-ctrl-btn:hover {
-  background: #555;
+  background: rgba(255, 255, 255, 0.14);
 }
+.call-ctrl-btn:active {
+  transform: scale(0.95);
+}
+.call-ctrl-label {
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  color: var(--c-dim);
+  line-height: 1;
+}
+.call-ctrl-btn svg,
+.call-ctrl-label {
+  position: relative;
+  z-index: 1;
+}
+/* Toggle glyphs: each button carries both states and shows one.  Both engaged
+   states swap to the second glyph — a struck-through mic, a stop square. */
+.call-ctrl-btn .glyph-off {
+  display: none;
+}
+.call-ctrl-btn.muted .glyph-on,
+.call-ctrl-btn.active .glyph-on {
+  display: none;
+}
+.call-ctrl-btn.muted .glyph-off,
+.call-ctrl-btn.active .glyph-off {
+  display: block;
+}
+/* "muted" = capability disabled: red, unmistakable at a glance. */
 .call-ctrl-btn.muted {
-  background: #222;
-  color: #aaa;
+  background: var(--c-danger);
+  color: #fff;
+}
+.call-ctrl-btn.muted .call-ctrl-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+.call-ctrl-btn.muted:hover {
+  background: #ff5b68;
+}
+/* "active" = capability actively engaged (sharing): accent. */
+.call-ctrl-btn.active {
+  background: var(--c-accent);
+  color: #fff;
+}
+.call-ctrl-btn.active .call-ctrl-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+.call-ctrl-btn.active:hover {
+  background: #63adff;
 }
 #call-end-btn {
-  background: #c62828;
+  background: var(--c-danger);
+  color: #fff;
+  min-width: 76px;
+}
+#call-end-btn .call-ctrl-label {
+  color: rgba(255, 255, 255, 0.85);
 }
 #call-end-btn:hover {
-  background: #d32f2f;
+  background: #ff5b68;
 }
-#call-screen-btn.active {
-  background: #1565c0;
-}
-#call-screen-btn.active:hover {
-  background: #1976d2;
-}
-#call-mute-audio-btn {
-  position: relative;
-  overflow: hidden;
-}
+/* Live mic level fills the button from the bottom — proof the mic works
+   before anyone has to ask "can you hear me?". */
 #call-mic-level {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   height: 0%;
-  background: rgba(21, 101, 192, 0.55);
+  background: rgba(74, 158, 255, 0.5);
   pointer-events: none;
   transition: height 0.06s ease-out;
   z-index: 0;
 }
-#call-mute-audio-btn svg {
-  position: relative;
-  z-index: 1;
+#call-mute-audio-btn.muted #call-mic-level {
+  display: none;
 }
-/* Invite panel */
+
+/* Invite dropdown */
 #call-invite-panel {
   position: absolute;
-  bottom: 88px;
+  bottom: 92px;
   left: 50%;
   transform: translateX(-50%);
-  background: #1a1a2e;
-  border: 1px solid #3a3a5e;
-  border-radius: 10px;
-  width: 240px;
-  max-height: 300px;
-  overflow-y: auto;
+  background: var(--c-surface);
+  backdrop-filter: var(--c-blur);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 14px;
+  width: 268px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   z-index: 20;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--c-shadow);
+}
+.call-invite-head {
+  padding: 11px 14px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c-dim);
 }
 #call-invite-search {
-  width: 100%;
-  box-sizing: border-box;
-  background: #111122;
-  border: none;
-  border-bottom: 1px solid #3a3a5e;
-  border-radius: 10px 10px 0 0;
-  color: #eee;
+  margin: 0 10px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--c-border);
+  border-radius: 9px;
+  color: var(--c-text);
   font-size: 13px;
-  padding: 10px 12px;
+  padding: 8px 11px;
   outline: none;
+}
+#call-invite-search:focus {
+  border-color: var(--c-accent);
+}
+#call-invite-list {
+  overflow-y: auto;
+  padding: 0 6px 8px;
 }
 .call-invite-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 7px 8px;
+  border-radius: 9px;
   cursor: pointer;
   font-size: 13px;
-  color: #ddd;
+  color: var(--c-text);
   transition: background 0.1s;
 }
 .call-invite-item:hover {
-  background: #2a2a4e;
+  background: rgba(255, 255, 255, 0.08);
 }
 .call-invite-item .avatar-presence {
   display: none;
 }
 .call-invite-item span {
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .call-invite-item .invite-status {
   font-size: 11px;
-  color: #888;
+  color: var(--c-dim);
   flex: none;
 }
+.call-invite-empty {
+  padding: 14px 10px;
+  color: var(--c-dim);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* ── Minimized dock ──────────────────────────────────────────────────────────
+   The call collapses into a corner card so the channel stays usable while it
+   runs.  Everything is the same DOM — only the box it lives in changes. */
+#call-panel.minimized {
+  inset: auto 18px 18px auto;
+  width: 322px;
+  height: auto;
+  border-radius: 16px;
+  border: 1px solid var(--c-border-strong);
+  box-shadow: var(--c-shadow);
+  overflow: hidden;
+  background: var(--c-surface);
+  backdrop-filter: var(--c-blur);
+}
+#call-panel.minimized #call-header {
+  padding: 10px 12px;
+}
+#call-panel.minimized #call-fullscreen-btn,
+#call-panel.minimized #call-layout-btn,
+#call-panel.minimized #call-stage,
+#call-panel.minimized .call-tile-pin,
+#call-panel.minimized .call-tile-footer,
+#call-panel.minimized .call-ctrl-label,
+#call-panel.minimized .call-ctrl-divider,
+#call-panel.minimized #call-invite-panel {
+  display: none;
+}
+#call-panel.minimized #call-body {
+  padding: 0 12px 10px;
+}
+#call-panel.minimized #call-participants-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 8px;
+  width: auto;
+  overflow-x: auto;
+  padding: 2px;
+}
+#call-panel.minimized .call-tile {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  aspect-ratio: auto;
+  border-radius: 12px;
+}
+#call-panel.minimized .call-tile .avatar-wrap {
+  width: 38px !important;
+  height: 38px !important;
+}
+#call-panel.minimized .call-tile .avatar-initials {
+  font-size: 14px !important;
+}
+#call-panel.minimized .call-tile-badges {
+  top: 2px;
+  right: 2px;
+}
+#call-panel.minimized .call-badge {
+  width: 16px;
+  height: 16px;
+}
+#call-panel.minimized .call-badge svg {
+  width: 9px;
+  height: 9px;
+}
+/* Screen tiles are unreadable at dock size; the count in the header covers it. */
+#call-panel.minimized .call-tile.is-screen {
+  display: none;
+}
+#call-panel.minimized #call-controls {
+  position: static;
+  transform: none;
+  border: none;
+  border-top: 1px solid var(--c-border);
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  padding: 8px;
+  justify-content: center;
+}
+#call-panel.minimized .call-ctrl-btn {
+  min-width: 40px;
+  height: 40px;
+}
+#call-panel.minimized #call-end-btn {
+  min-width: 56px;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 780px) {
+  #call-body {
+    flex-direction: column;
+    padding: 0 10px 96px;
+  }
+  #call-participants-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  /* No room for a side rail: the filmstrip goes under the stage. */
+  #call-panel.has-stage #call-participants-grid {
+    width: auto;
+    flex: none;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+  }
+  #call-panel.has-stage .call-tile {
+    width: 116px;
+    flex-shrink: 0;
+  }
+  #call-panel.has-stage #call-stage {
+    flex: 1;
+  }
+  .call-tile .avatar-wrap {
+    width: 60px !important;
+    height: 60px !important;
+  }
+  .call-tile .avatar-initials {
+    font-size: 22px !important;
+  }
+  #call-header-faces {
+    display: none;
+  }
+  #call-controls {
+    gap: 6px;
+    padding: 6px;
+    bottom: 14px;
+  }
+  .call-ctrl-btn {
+    min-width: 46px;
+    height: 46px;
+  }
+  #call-end-btn {
+    min-width: 60px;
+  }
+  #call-panel.minimized {
+    inset: auto 10px 10px 10px;
+    width: auto;
+  }
+  #screenshare-viewer-strip .ss-tile {
+    width: 128px;
+  }
+}
+
+/* Users who prefer less motion still get every state cue — the pulses are
+   decoration on top of colour and border changes that stay. */
+@media (prefers-reduced-motion: reduce) {
+  #call-live-dot,
+  .ss-live-dot,
+  .call-incoming-halo,
+  .call-btn-accept,
+  .call-tile.speaking .call-tile-avatar::after,
+  #call-incoming {
+    animation: none;
+  }
+}
+
 .color-swatch.selected {
   border-color: #fff;
 }

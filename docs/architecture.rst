@@ -395,10 +395,17 @@ peers connect without avahi/Bonjour and the whole thing works air-gapped.
 
 Calls form a **full mesh** — one ``RTCPeerConnection`` per pair of accepted
 participants, negotiated with the "perfect negotiation" pattern to avoid offer
-glare.  In-call screen share adds the display video track to each existing peer
-connection (renegotiating).  Standalone screen share is **viewer-initiated**:
-each viewer creates the offer and the sharer answers with its screen track,
-giving a one-sharer-to-many-viewers fan-out.
+glare.  Each pair also opens a **negotiated data channel** (``"meta"``, id 0)
+carrying mute and screen-share state, so a participant tile can show that
+someone is muted without a server round trip.
+
+In-call screen share adds the display video track to each existing peer
+connection (renegotiating).  It is **per participant**: any number of people
+may share at the same time, and each share arrives as an extra video track on
+its sharer's connection, so N simultaneous shares need no extra signalling
+path.  Standalone screen share is **viewer-initiated**: each viewer creates the
+offer and the sharer answers with its screen (and, where the browser captured
+it, audio) track, giving a many-sharers-to-many-viewers fan-out.
 
 **Call lifecycle:**
 
@@ -430,17 +437,30 @@ giving a one-sharer-to-many-viewers fan-out.
       │ ─────────────────────────► │  UPDATE calls (ended)         │
       │                                 │  DELETE call_signals          │
 
-**Screen sharing layout:**
+**Call layout:**
 
-When screen sharing is active, the browser adds the ``screen-share-active``
-CSS class to the call panel.  The shared screen occupies the main area of the
-call overlay and the camera feed shrinks to a picture-in-picture corner.
-Removing the class restores the camera to full size.  Stopping the
-browser's native screen-capture (via its built-in stop button) fires the
-``"ended"`` event on the video track, which calls ``toggleScreenShare()``
-automatically to keep the UI in sync.  The current in-call sharer is recorded
-via ``POST /calls/<id>/screenshare`` in the ``screenshare_user`` column so the
-single-sharer policy and viewer UI stay in sync.
+The call panel is rendered from state by ``_renderCall()``: participants,
+pending invitees and every active screen share become *tiles*, which are then
+placed either on the **spotlight** (one large tile) or in the **grid** beside
+it.  Tiles are cached in ``callTiles`` and *moved* between the two containers
+with ``appendChild`` rather than rebuilt, so a ``<video>`` never loses its
+stream to a re-render.  The panel carries ``has-stage`` while a spotlight is
+up, and ``minimized`` when the user docks the call to a corner to keep using
+the channel.
+
+Layout is automatic — the newest screen share takes the spotlight — until the
+user pins a tile or cycles the layout, at which point their choice wins and a
+new share no longer yanks the view away.
+
+Stopping the browser's native screen capture (via its built-in stop button)
+fires the ``"ended"`` event on the video track, which stops the share
+automatically to keep the UI in sync.  Each participant's sharing state is
+recorded via ``POST /calls/<id>/screenshare`` in
+``call_participants.sharing`` and read back from the ``screensharers`` list on
+``GET /calls/<id>/state``; that is only a backstop for a share that stops
+without its WebRTC track events reaching the other peers.  The older
+``calls.screenshare_user`` column is still maintained as the most recent
+sharer, but it is no longer the source of truth.
 
 **Ring timeout:**
 

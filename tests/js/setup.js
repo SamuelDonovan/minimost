@@ -130,9 +130,18 @@ global.RTCPeerConnection = jest.fn().mockImplementation(() => ({
   addEventListener: jest.fn(),
   removeEventListener: jest.fn(),
   getTransceivers: jest.fn(() => []),
+  getSenders: jest.fn(() => []),
   addTrack: jest.fn(() => ({ track: null })),
   removeTrack: jest.fn(),
   addTransceiver: jest.fn(),
+  // Calls open a negotiated "meta" channel per peer for mute/share state.
+  createDataChannel: jest.fn(() => ({
+    readyState: "connecting",
+    onopen: null,
+    onmessage: null,
+    send: jest.fn(),
+    close: jest.fn(),
+  })),
   createOffer: jest.fn(() => Promise.resolve({ type: "offer", sdp: "" })),
   createAnswer: jest.fn(() => Promise.resolve({ type: "answer", sdp: "" })),
   setLocalDescription: jest.fn(function () {

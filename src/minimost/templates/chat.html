@@ -127,13 +127,20 @@
         </button>
     </div>
 
-    <!-- Shown when a channel member is sharing their screen -->
+    <!-- Shown when channel members are sharing their screens (one row per state:
+         other people sharing, and/or you sharing) -->
     <div id="screenshare-banner" style="display:none;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="flex-shrink:0;">
-            <path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4c0 .667.083 1.167.25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75c.167-.333.25-.833.25-1.5H2s-2 0-2-2zm1.398-.855A1.002 1.002 0 0 0 1 4v6c0 .255.098.292.412.637C1.574 10.89 1.851 11 2 11h12c.149 0 .426-.11.588-.363C14.902 10.292 15 10.255 15 10V4c0-.255-.098-.292-.412-.637C14.426 3.11 14.149 3 14 3H2c-.149 0-.426.11-.588.363z"/>
-        </svg>
+        <span class="ss-live-dot" aria-hidden="true"></span>
+        <div id="screenshare-banner-avatars" class="ss-banner-avatars"></div>
         <span id="screenshare-banner-text"></span>
-        <button id="screenshare-banner-view-btn" class="ss-banner-btn" onclick="openShareViewer()">View</button>
+        <button id="screenshare-banner-view-btn" class="ss-banner-btn primary" onclick="openShareViewer()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/>
+                <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/>
+            </svg>
+            Watch
+        </button>
+        <button id="screenshare-banner-stop-btn" class="ss-banner-btn danger" style="display:none" onclick="toggleStandaloneScreenShare()">Stop sharing</button>
     </div>
 
     <div id="chat" role="log" aria-live="off" aria-relevant="additions" aria-label="Messages"></div>
@@ -557,13 +564,20 @@
             <li><kbd>Ctrl S</kbd> – Strikethrough</li>
         </ul>
 
-        <h3 class="help-section">Calls</h3>
+        <h3 class="help-section">Calls &amp; screen sharing</h3>
         <ul>
             <li>Click the phone icon in a DM or private channel header to start a call</li>
-            <li>Accept or reject incoming calls from the notification banner</li>
-            <li>During a call: toggle microphone mute, camera on/off, and screen sharing</li>
-            <li>Screen share takes over the main view; camera shrinks to a corner</li>
+            <li>Accept or decline incoming calls from the notification card</li>
+            <li><b>Invite</b> pulls more people into a call — everyone hears everyone</li>
+            <li>Any number of people can share a screen at once; each share gets its own tile</li>
+            <li>Click a tile to spotlight it, or pin it so the layout stops moving</li>
+            <li><b>Minimize</b> tucks the call into a corner so you can keep chatting</li>
+            <li>Share a screen without calling with the display icon in the header — everyone in the channel gets a <b>Watch</b> banner</li>
             <li>Stopping your browser's screen capture automatically ends the share</li>
+        </ul>
+        <ul class="help-shortcuts">
+            <li><kbd>M</kbd> – Mute / unmute · <kbd>S</kbd> – Share screen · <kbd>A</kbd> – Invite</li>
+            <li><kbd>V</kbd> – Switch layout · <kbd>F</kbd> – Fullscreen · <kbd>Esc</kbd> – Minimize</li>
         </ul>
 
         <h3 class="help-section">Channels &amp; DMs</h3>
@@ -615,22 +629,30 @@
 
 <!-- Incoming Call Notification -->
 <div id="call-incoming" style="display:none;">
-    <svg class="call-ring-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-        <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
-    </svg>
+    <div class="call-incoming-avatar">
+        <span class="call-incoming-halo" aria-hidden="true"></span>
+        <span class="call-incoming-halo delay" aria-hidden="true"></span>
+        <div id="call-incoming-avatar-slot"></div>
+    </div>
     <div class="call-incoming-info">
-        <div class="call-incoming-label">Incoming call</div>
+        <div class="call-incoming-label">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
+            </svg>
+            Incoming call
+        </div>
         <div class="call-incoming-caller" id="call-caller-name"></div>
+        <div class="call-incoming-context" id="call-incoming-context"></div>
     </div>
     <div class="call-incoming-actions">
-        <button class="call-btn-accept" onclick="acceptCall()" title="Accept">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+        <button class="call-btn-reject" onclick="rejectCall()" title="Decline" aria-label="Decline call">
+            <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" fill="currentColor" viewBox="0 0 16 16" class="hangup-glyph">
                 <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
             </svg>
         </button>
-        <button class="call-btn-reject" onclick="rejectCall()" title="Reject">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854z"/>
+        <button class="call-btn-accept" onclick="acceptCall()" title="Accept" aria-label="Accept call">
+            <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
             </svg>
         </button>
     </div>
@@ -646,53 +668,117 @@
     <p id="dm-hover-bio"></p>
 </div>
 
-<!-- Standalone Screen Share Viewer Overlay -->
+<!-- Standalone Screen Share Viewer Overlay — one tile per active sharer, the
+     selected one on the stage and the rest live in the filmstrip below. -->
 <div id="screenshare-viewer" style="display:none;">
     <div id="screenshare-viewer-header">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4c0 .667.083 1.167.25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75c.167-.333.25-.833.25-1.5H2s-2 0-2-2zm1.398-.855A1.002 1.002 0 0 0 1 4v6c0 .255.098.292.412.637C1.574 10.89 1.851 11 2 11h12c.149 0 .426-.11.588-.363C14.902 10.292 15 10.255 15 10V4c0-.255-.098-.292-.412-.637C14.426 3.11 14.149 3 14 3H2c-.149 0-.426.11-.588.363z"/>
-        </svg>
+        <span class="ss-live-badge"><span class="ss-live-dot"></span>Live</span>
         <span id="screenshare-viewer-label"></span>
-        <button class="ss-viewer-close-btn" onclick="closeShareViewer()" title="Stop viewing">&#x2715;</button>
+        <div class="ss-viewer-actions">
+            <button id="ss-viewer-fullscreen-btn" class="ss-viewer-btn" onclick="toggleShareViewerFullscreen()" title="Fullscreen (F)" aria-label="Fullscreen">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344 0a.5.5 0 0 1 .707 0l4.096 4.096V11.5a.5.5 0 1 1 1 0v3.975a.5.5 0 0 1-.5.5H11.5a.5.5 0 0 1 0-1h2.768l-4.096-4.096a.5.5 0 0 1 0-.707zm0-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707zm-4.344 0a.5.5 0 0 1-.707 0L1.025 1.732V4.5a.5.5 0 0 1-1 0V.525a.5.5 0 0 1 .5-.5H4.5a.5.5 0 0 1 0 1H1.732l4.096 4.096a.5.5 0 0 1 0 .707z"/>
+                </svg>
+            </button>
+            <button class="ss-viewer-btn close" onclick="closeShareViewer()" title="Stop watching (Esc)" aria-label="Stop watching">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854z"/>
+                </svg>
+            </button>
+        </div>
     </div>
-    <video id="screenshare-viewer-video" autoplay playsinline></video>
+    <div id="screenshare-viewer-stage"></div>
+    <div id="screenshare-viewer-strip"></div>
 </div>
 
 <!-- Active Call Panel -->
 <div id="call-panel" style="display:none;">
-    <!-- Dynamic participant tiles (1→centered, 2→50/50, 3-4→2×2 grid) -->
-    <div id="call-participants-grid"></div>
-    <!-- Screen share video — shown via .screen-share-active on #call-panel -->
-    <video id="call-screen-video" autoplay playsinline></video>
+    <div id="call-header">
+        <div id="call-header-id">
+            <span id="call-live-dot" aria-hidden="true"></span>
+            <div id="call-header-text">
+                <div id="call-header-title"></div>
+                <div id="call-header-sub">
+                    <span id="call-status-text">Connecting…</span>
+                    <span class="call-sub-sep">·</span>
+                    <span id="call-timer">0:00</span>
+                    <span class="call-sub-sep">·</span>
+                    <span id="call-people-count">1 person</span>
+                </div>
+            </div>
+        </div>
+        <div id="call-header-faces"></div>
+        <div id="call-header-actions">
+            <button id="call-layout-btn" class="call-header-btn" onclick="cycleCallLayout()" title="Switch layout (V)" aria-label="Switch layout">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M0 1a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V1zm9 0a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V1zm0 9a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5z"/>
+                </svg>
+            </button>
+            <button id="call-fullscreen-btn" class="call-header-btn" onclick="toggleCallFullscreen()" title="Fullscreen (F)" aria-label="Fullscreen">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344 0a.5.5 0 0 1 .707 0l4.096 4.096V11.5a.5.5 0 1 1 1 0v3.975a.5.5 0 0 1-.5.5H11.5a.5.5 0 0 1 0-1h2.768l-4.096-4.096a.5.5 0 0 1 0-.707zm0-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707zm-4.344 0a.5.5 0 0 1-.707 0L1.025 1.732V4.5a.5.5 0 0 1-1 0V.525a.5.5 0 0 1 .5-.5H4.5a.5.5 0 0 1 0 1H1.732l4.096 4.096a.5.5 0 0 1 0 .707z"/>
+                </svg>
+            </button>
+            <button id="call-minimize-btn" class="call-header-btn" onclick="toggleCallMinimized()" title="Minimize — keep chatting (Esc)" aria-label="Minimize call">
+                <svg class="mini-down" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+                </svg>
+                <svg class="mini-up" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="call-body">
+        <!-- Focused screen share / spotlighted person -->
+        <div id="call-stage"></div>
+        <!-- Participant + screen tiles.  Becomes a filmstrip beside the stage. -->
+        <div id="call-participants-grid"></div>
+    </div>
+
     <div id="call-controls">
-        <span id="call-timer">0:00</span>
-        <button id="call-mute-audio-btn" class="call-ctrl-btn" onclick="toggleAudioMute()" title="Mute">
+        <button id="call-mute-audio-btn" class="call-ctrl-btn" onclick="toggleAudioMute()" title="Mute (M)" aria-label="Mute microphone">
             <div id="call-mic-level"></div>
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+            <svg class="glyph-on" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
                 <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5 5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 .5-.5z"/>
             </svg>
-        </button>
-        <button id="call-screen-btn" class="call-ctrl-btn muted" onclick="toggleScreenShare()" title="Share screen">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M0 4s0-2 2-2h12s2 0 2 2v6s0 2-2 2h-4c0 .667.083 1.167.25 1.5H11a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1h.75c.167-.333.25-.833.25-1.5H2s-2 0-2-2V4zm1.398 0a1 1 0 0 1 .202 0h12.8a1 1 0 0 1 .6.4V10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4.5l.398-.5z"/>
+            <svg class="glyph-off" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M13 8c0 .564-.094 1.107-.266 1.613l-.814-.814A4.02 4.02 0 0 0 12 8V7a.5.5 0 0 1 1 0v1zm-5 4c.818 0 1.578-.245 2.212-.667l.718.719a4.973 4.973 0 0 1-2.43.923V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5 5 0 0 1 3 8V7a.5.5 0 0 1 1 0v1a4 4 0 0 0 4 4zm3-9v4.879L5.158 2.037A3.001 3.001 0 0 1 11 3z"/>
+                <path d="M9.486 10.607 5 6.12V8a3 3 0 0 0 4.486 2.607zM1.146 1.146a.5.5 0 0 1 .708 0l14 14a.5.5 0 0 1-.708.708l-14-14a.5.5 0 0 1 0-.708z"/>
             </svg>
+            <span class="call-ctrl-label">Mic</span>
         </button>
-        <button id="call-invite-btn" class="call-ctrl-btn" onclick="toggleCallInvitePanel()" title="Add person">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+        <button id="call-screen-btn" class="call-ctrl-btn" onclick="toggleScreenShare()" title="Share your screen (S)" aria-label="Share screen">
+            <svg class="glyph-on" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M6 12c0 .667-.083 1.167-.25 1.5H5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1h-.75c-.167-.333-.25-.833-.25-1.5h4c.667 0 2-.4 2-2V4c0-1.6-1.333-2-2-2H2C1.333 2 0 2.4 0 4v6c0 1.6 1.333 2 2 2h4z"/>
+            </svg>
+            <svg class="glyph-off" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11V5A1.5 1.5 0 0 1 5 3.5z"/>
+            </svg>
+            <span class="call-ctrl-label">Share</span>
+        </button>
+        <button id="call-invite-btn" class="call-ctrl-btn" onclick="toggleCallInvitePanel()" title="Invite people (A)" aria-label="Invite people">
+            <svg class="glyph-on" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M6 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm4 8c0 1-1 1-1 1H1s-1 0-1-1 1-4 6-4 6 3 6 4zm-1-.004c-.001-.246-.154-.986-.832-1.664C9.516 10.68 8.289 10 6 10c-2.29 0-3.516.68-4.168 1.332-.678.678-.83 1.418-.832 1.664h10z"/>
                 <path fill-rule="evenodd" d="M13.5 5a.5.5 0 0 1 .5.5V7h1.5a.5.5 0 0 1 0 1H14v1.5a.5.5 0 0 1-1 0V8h-1.5a.5.5 0 0 1 0-1H13V5.5a.5.5 0 0 1 .5-.5z"/>
             </svg>
+            <span class="call-ctrl-label">Invite</span>
         </button>
-        <button id="call-end-btn" class="call-ctrl-btn" onclick="endCall()" title="Leave call">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854z"/>
+        <div class="call-ctrl-divider" aria-hidden="true"></div>
+        <button id="call-end-btn" class="call-ctrl-btn" onclick="endCall()" title="Leave call" aria-label="Leave call">
+            <svg class="glyph-on hangup-glyph" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M1.885.511a1.745 1.745 0 0 1 2.61.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z"/>
             </svg>
+            <span class="call-ctrl-label">Leave</span>
         </button>
     </div>
+
     <!-- Invite dropdown -->
     <div id="call-invite-panel" style="display:none;">
-        <input id="call-invite-search" type="text" placeholder="Search users…" aria-label="Search users" oninput="filterCallInviteList(this.value)">
+        <div class="call-invite-head">Invite to this call</div>
+        <input id="call-invite-search" type="text" placeholder="Search people…" aria-label="Search users" oninput="filterCallInviteList(this.value)">
         <div id="call-invite-list"></div>
     </div>
 </div>

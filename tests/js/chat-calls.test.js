@@ -211,11 +211,12 @@ describe("_diffParticipants()", () => {
 
 // ── _handleScreenshareState ───────────────────────────────────────────────────
 describe("_handleScreenshareState()", () => {
-  test("changes currentScreenSender when sender changes", () => {
-    _handleScreenshareState("bob");
-    expect(
-      global.currentScreenSender || document.getElementById("call-screen-btn"),
-    ).toBeTruthy();
+  test("accepts a list of sharers (group screen sharing)", () => {
+    expect(() => _handleScreenshareState(["bob", "carol"])).not.toThrow();
+  });
+
+  test("still accepts a single sharer name", () => {
+    expect(() => _handleScreenshareState("bob")).not.toThrow();
   });
 
   test("does not crash with null sender", () => {
@@ -537,7 +538,8 @@ describe("toggleCallInvitePanel()", () => {
       json: () => Promise.resolve(["bob"]),
     });
     await toggleCallInvitePanel();
-    expect(panel.style.display).toBe("block");
+    // The panel is a flex column (header + search + scrolling list).
+    expect(panel.style.display).toBe("flex");
   });
 
   test("hides panel when already visible", async () => {
@@ -766,14 +768,14 @@ describe("openIncomingCallUI ring timeout", () => {
 // ── _handleScreenshareState more ─────────────────────────────────────────────
 describe("_handleScreenshareState() additional", () => {
   test("same sender is a no-op", () => {
-    _handleScreenshareState("bob");
-    // Call again with same sender — should not crash
-    expect(() => _handleScreenshareState("bob")).not.toThrow();
+    _handleScreenshareState(["bob"]);
+    // Call again with the same sharer — should not crash
+    expect(() => _handleScreenshareState(["bob"])).not.toThrow();
   });
 
-  test("null sender clears", () => {
-    _handleScreenshareState("bob");
-    expect(() => _handleScreenshareState(null)).not.toThrow();
+  test("an empty sharer list clears", () => {
+    _handleScreenshareState(["bob"]);
+    expect(() => _handleScreenshareState([])).not.toThrow();
   });
 });
 
@@ -1005,6 +1007,9 @@ describe("WebRTC signaling & media", () => {
 
   test("openShareViewer establishes a viewer peer connection", async () => {
     global.channel = "dm:alice:bob";
+    // Start from a closed viewer: an open one follows the channel by itself,
+    // so it would already hold the connection this test is about to assert on.
+    closeShareViewer();
     global.fetch = jest
       .fn()
       .mockResolvedValueOnce({

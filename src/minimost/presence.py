@@ -186,10 +186,21 @@ def _init_tables():
             state     TEXT NOT NULL DEFAULT 'pending',
             joined_ts REAL,
             left_ts   REAL,
+            sharing   INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (call_id, username),
             FOREIGN KEY (call_id) REFERENCES calls(call_id)
         )
     """)
+    # Migration: `sharing` records screen sharing per participant.  Several
+    # people may share at once, which the single calls.screenshare_user column
+    # cannot express; that column is kept as the "most recent sharer" hint.
+    try:
+        db.execute(
+            "ALTER TABLE call_participants"
+            " ADD COLUMN sharing INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass
     db.execute("""
         CREATE TABLE IF NOT EXISTS call_signals (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,

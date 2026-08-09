@@ -132,8 +132,9 @@ Loops that remain on ``setInterval`` (all unrelated to the SSE stream):
    * - ``_pollCallState()``
      - 3 s
      - During an active call only: diffs the participant list
-       (opening/closing ``RTCPeerConnection`` s), detects call end, and tracks
-       ``screenshare_user`` changes. Started by ``startCall()`` /
+       (opening/closing ``RTCPeerConnection`` s), tracks who is still ringing,
+       detects call end, and reconciles the ``screensharers`` list against the
+       video tracks actually being received. Started by ``startCall()`` /
        ``acceptCall()``; stopped by ``_cleanupCall()``.
    * - WebRTC signalling poll (``_pollCallSignals``)
      - 600 ms
@@ -569,17 +570,31 @@ the mute button every 50 ms, giving the user immediate "my mic works" feedback
 (and retries on the next gesture) and logs the chosen input device's
 ``label``/``muted``/``readyState`` to aid debugging silent-microphone issues.
 
-**Participant tile grid:**
+**Tiles, spotlight and grid:**
 
-``_createParticipantTile(username)`` builds a DOM tile containing a speaking
-ring (``div.call-speaking-ring`` inside ``div.call-participant-avatar``),
-an avatar (``makeAvatarWrap``), and a name label.  The ring uses
-``inset: -6px`` on the avatar container so it is always perfectly centred
-regardless of tile size.  ``_updateCallGrid()`` sets the CSS grid
-``grid-template-columns`` based on the number of remote participants:
+``_renderCall()`` is the single render pass for the call surface.  It derives
+the tiles that should exist right now — one per participant (including
+yourself), one per invitee still ringing, and one per active screen share —
+creates the missing ones with ``_createTile()``, refreshes the rest with
+``_updateTile()``, and drops the ones whose subject has gone.
 
-- 1 participant: ``1fr`` (centred, full width).
-- 2 or more participants: ``1fr 1fr`` (equal columns).
+Each tile is then placed either on the **spotlight** (``#call-stage``) or in
+the **grid** (``#call-participants-grid``), which becomes a filmstrip beside
+the spotlight when ``#call-panel`` carries ``has-stage``.  Tiles are cached in
+``callTiles`` and moved with ``appendChild`` rather than rebuilt, so a
+``<video>`` never loses its stream to a re-render.
+
+``_stageKey()`` picks the spotlight: an explicit pin wins, then the newest
+screen share, then nothing.  ``cycleCallLayout()`` steps ``callLayout``
+through ``auto`` → ``grid`` → ``stage``, and ``togglePinTile()`` pins the tile
+the user clicked, so a share starting later cannot yank the view away.
+
+The grid itself is ``repeat(auto-fit, minmax(230px, 1fr))``, so it reflows
+from one large tile to a dense grid as people join without any JS.
+
+``toggleCallMinimized()`` docks the whole panel into a corner card
+(``.minimized``) — same DOM, different box — so the channel stays usable
+during a call.
 
 **Inviting participants during a call:**
 
@@ -611,14 +626,17 @@ column of the ``calls`` table.
    user-gesture activation token is preserved.
 2. The display video track is added to every existing ``RTCPeerConnection``
    via ``addTrack()``, which triggers renegotiation (perfect negotiation).
-   ``POST /calls/<id>/screenshare`` records the sharer in ``screenshare_user``.
-3. On the receiver side the new video track arrives via ``ontrack`` and is
-   shown in ``#call-screen-video`` (the ``screen-share-active`` class expands
-   it to the main panel).  ``_pollCallState()`` reads ``screenshare_user`` to
-   enforce the single-sharer policy and as a backup for tearing the view down.
+   ``POST /calls/<id>/screenshare`` records the sharer in
+   ``call_participants.sharing``.  Sharing is per participant, so any number
+   of people can share at the same time.
+3. On the receiver side the new video track arrives via ``ontrack`` and
+   becomes that peer's screen tile, which takes the spotlight unless the user
+   has pinned something else.  ``_pollCallState()`` reconciles the server's
+   ``screensharers`` list against the tracks actually being received, as a
+   backup for a share that stops without its track events arriving.
 4. Stopping (button, native "stop sharing", or leaving) removes the track
-   (renegotiating) and clears ``screenshare_user``; the receiver hides the
-   screen on the track's ``ended``/``mute`` event.
+   (renegotiating) and clears the ``sharing`` flag; the receiver drops the
+   tile on the track's ``ended``/``mute`` event.
 
 **Standalone screen sharing (outside a call):**
 
@@ -680,9 +698,10 @@ All call audio respects the notification mute toggle.
    * - ``sharedAudioCtx`` / ``micMeterCtx``
      - ``AudioContext`` s for remote-participant VAD analysers and the local
        microphone level meter, respectively.
-   * - ``currentScreenSender``
-     - Username of the participant whose screen video is currently being
-       received; ``null`` when no screen share is active.
+   * - ``callTiles`` / ``pinnedTileKey`` / ``callLayout``
+     - The rendered tiles keyed ``user:<name>`` / ``screen:<name>``, the tile
+       the user pinned to the spotlight, and the layout mode
+       (``auto`` / ``grid`` / ``stage``).
    * - ``ringTimeoutId``
      - Handle for the caller-side 30-second ring timeout.
    * - ``incomingRingTimeout``
@@ -702,9 +721,10 @@ All call audio respects the notification mute toggle.
    * - ``standaloneShareId`` / ``standaloneViewerPeers``
      - The active standalone share id and the map of viewer username →
        ``RTCPeerConnection`` the sharer answers.
-   * - ``viewSharePc``
-     - The viewer-side ``RTCPeerConnection`` for the standalone share being
-       watched; ``null`` when not viewing.
+   * - ``shareViewers`` / ``viewerFocusShareId``
+     - One entry per standalone share being watched (peer connection, tile and
+       signalling cursor), and which of them is on the viewer's stage.  Empty
+       when not viewing.
 
 Mobile Support
 --------------
