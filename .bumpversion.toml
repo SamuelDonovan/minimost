@@ -9,7 +9,7 @@
 # has no [bumpversion] section, so it would otherwise shadow the config. A dedicated
 # .bumpversion.toml has the highest discovery precedence and avoids that.
 [tool.bumpversion]
-current_version = "0.0.3"
+current_version = "0.0.4"
 allow_dirty = false
 commit = true
 tag = true
