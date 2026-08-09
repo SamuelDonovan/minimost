@@ -361,14 +361,100 @@ Two notification channels are supported:
   sends a ``Notification`` when ``document.hidden`` is true and there are
   unread messages.
 
-- **Sound notifications** — a short beep is played using the Web Audio API
-  when a new message arrives and the user has not muted notifications.
-  The mute state is persisted in ``localStorage['notifMuted']``.
+- **Sound notifications** — ``notification.mp3`` is played through an
+  ``Audio`` element when a new message arrives and the user has not muted
+  notifications. The mute state is persisted in
+  ``localStorage['notifMuted']``. See :ref:`sound-design` for the full set.
 
 The browser tab title is updated by ``updateTitleBadge(count)`` to show
 unread count: ``(3) MiniMost``. ``startFaviconFlash()`` alternates the
 favicon between the normal icon and a red dot every second while there
 are unread messages and the tab is in the background.
+
+.. _sound-design:
+
+Sound Design
+------------
+
+MiniMost ships six sounds, all in ``src/minimost/static/``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 12 66
+
+   * - File
+     - Length
+     - Played when
+   * - ``notification.mp3``
+     - 1.10 s
+     - A new message arrives (``chat-sidebar.js``). A two-note marimba ding
+       rising a perfect fifth, E6 → B6.
+   * - ``receiving_call.mp3``
+     - 4.20 s
+     - Someone is calling you — **loops** until answered or timed out. A warm
+       bell arpeggio (A major) played twice per loop.
+   * - ``calling.mp3``
+     - 4.00 s
+     - Your outgoing call is ringing — **loops**. A soft double ringback pulse
+       on A4, then a long gap.
+   * - ``call_accepted.mp3``
+     - 1.20 s
+     - Someone answered. A rising perfect fifth, D5 → A5.
+   * - ``hang_up.mp3``
+     - 1.20 s
+     - The call ended. The answer tone inverted: A5 → D5, falling.
+   * - ``left_call.mp3``
+     - 0.75 s
+     - Another participant left a call still in progress. A quiet descending
+       blip.
+
+Provenance and licensing
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**The sounds are not sampled from anywhere.** They are synthesised from
+scratch by ``tools/gen_sounds.py``, which is committed alongside them. They
+are original work created for this project, carry no third-party licence, and
+require no attribution — MiniMost can be redistributed and used commercially
+without tracking terms for a handful of UI blips. Nothing was downloaded from
+a sound library, so there is no external source to credit.
+
+To change a sound, edit its recipe in ``tools/gen_sounds.py`` and re-run it;
+do not hand-edit the MP3s, or the script and the shipped audio will disagree::
+
+    pip install numpy      # not a runtime dependency — only needed to regenerate
+    python3 tools/gen_sounds.py
+
+``ffmpeg`` must be on ``PATH`` for the WAV → MP3 encode. The script overwrites
+the six files in place and prints each one's length and size.
+
+How they are built
+~~~~~~~~~~~~~~~~~~
+
+Each note is additive synthesis: a few sine partials, each with its own
+amplitude and its own decay rate. Partials that fade faster than the
+fundamental are what make the ear hear a struck object instead of a beep, and
+their frequency ratios are what separate "wooden" from "metallic" — the
+``MARIMBA`` timbre puts overtones near 4x and 10x the fundamental, the ``BELL``
+timbre uses a nearly-harmonic stack with an inharmonic 2.76x partial. A short
+synthetic reverb sits behind each sound.
+
+Two details matter for correctness rather than taste:
+
+- **Loop seams.** Every MP3 carries roughly 26 ms of encoder padding that
+  ``<audio loop>`` does not splice out. The two looping ring sounds therefore
+  start and end in silence, with the phrase faded to zero well before the
+  seam, so the gap falls in silence and cannot be heard.
+
+- **Clicks.** Notes are faded in over a few milliseconds and every file is
+  faded out at its tail. Switching a waveform on or cutting it off mid-decay
+  is a step change, and a step change is heard as a click.
+
+Loudness is set **only** in the generator — each recipe normalises to the peak
+it should actually play at, and the client never adjusts ``volume``. Splitting
+level between the audio files and the JavaScript is how a set of sounds drifts
+out of balance. The relative levels are deliberate: the incoming ring is the
+loudest (it has to carry across a room), a new message is noticeable, and the
+in-call cues are quiet enough not to startle someone mid-sentence.
 
 File Upload
 -----------

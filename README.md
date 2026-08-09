@@ -395,3 +395,7 @@ This prints a URL valid for 60 minutes (configurable with `--expires`) and sends
 **Does it have feature X from Slack/Discord/Mattermost?**
 
 Probably not. Those products have hundreds of engineers and years of development. MiniMost is intentionally minimal — the goal is something that runs anywhere with zero infrastructure overhead.
+
+**Where do the notification and call sounds come from?**
+
+Nowhere — they are synthesised from scratch by [`tools/gen_sounds.py`](tools/gen_sounds.py), which is committed alongside the audio it produces. Nothing was taken from a sample library, so the six MP3s are original work with no third-party licence and no attribution requirement: MiniMost can be redistributed and used commercially without tracking terms for a handful of UI blips. To retune one, edit its recipe in that script and re-run it (needs `numpy` and `ffmpeg`; neither is a runtime dependency). See the [Sound Design](https://minimost.readthedocs.io/en/latest/frontend.html#sound-design) docs for the full set and how they are built.

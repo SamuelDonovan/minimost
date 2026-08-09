@@ -170,6 +170,13 @@ const _PATH_PIN = [
   "M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z",
 ];
 
+// Play a one-shot call cue.  The files are mastered to their intended relative
+// loudness by tools/gen_sounds.py, so nothing here adjusts volume — doing it in
+// two places is how a set of sounds drifts out of balance.
+function _playCue(name) {
+  new Audio(`/static/${name}.mp3`).play().catch(() => {});
+}
+
 function updateCallButton() {
   const btn = document.getElementById("call-btn");
   if (!btn) return;
@@ -1096,9 +1103,7 @@ function _removeRemoteParticipant(username) {
   // Only play the departure sound when the call is still ongoing — activeCallId
   // is null during full teardown (_cleanupCall), so this won't fire then.
   if (activeCallId) {
-    const lc = new Audio("/static/left_call.mp3");
-    lc.volume = 0.4;
-    lc.play().catch(() => {});
+    _playCue("left_call");
   }
   _renderCall();
 }
@@ -1855,7 +1860,6 @@ async function startCall() {
     _startCallTimer();
     if (!notifMuted) {
       callingAudio = new Audio("/static/calling.mp3");
-      callingAudio.volume = 0.4;
       callingAudio.loop = true;
       callingAudio.play().catch(() => {});
     }
@@ -1882,9 +1886,7 @@ async function _handleRingTimeout() {
   document.getElementById("call-timer").textContent = "No answer";
   const status = document.getElementById("call-status-text");
   if (status) status.textContent = "No answer";
-  const hu2 = new Audio("/static/hang_up.mp3");
-  hu2.volume = 0.4;
-  hu2.play().catch(() => {});
+  _playCue("hang_up");
   setTimeout(_cleanupCall, 2000);
 }
 
@@ -1932,9 +1934,7 @@ async function endCall() {
   const callId = activeCallId;
   activeCallId = null;
   await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
-  const hu1 = new Audio("/static/hang_up.mp3");
-  hu1.volume = 0.4;
-  hu1.play().catch(() => {});
+  _playCue("hang_up");
   _cleanupCall();
 }
 
@@ -2018,16 +2018,12 @@ async function _pollCallState() {
         callingAudio.pause();
         callingAudio = null;
       }
-      const ca1 = new Audio("/static/call_accepted.mp3");
-      ca1.volume = 0.4;
-      ca1.play().catch(() => {});
+      _playCue("call_accepted");
     }
 
     if (data.state === "ended" || data.state === "rejected") {
       activeCallId = null;
-      const hu3 = new Audio("/static/hang_up.mp3");
-      hu3.volume = 0.4;
-      hu3.play().catch(() => {});
+      _playCue("hang_up");
       _cleanupCall();
       return;
     }
