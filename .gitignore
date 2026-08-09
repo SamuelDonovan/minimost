@@ -226,6 +226,14 @@ avatars/*
 # RPM build scratch dir (.copr/Makefile srpm)
 .srpm-build/
 
+# Runtime state
+#   audit.log itself is covered by the *.log rule above; this is the sidecar
+#   marker the rotator writes next to it.
+audit.log.rotated_at
+
+# Analysis output pulled down ad hoc from the SonarCloud API
+sonar-issues.json
+
 # Secrets
 secret.key
 cert.pem
