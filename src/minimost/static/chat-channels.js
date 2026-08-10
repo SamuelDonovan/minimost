@@ -38,9 +38,17 @@ function openCreatePrivateChannel() {
   privateChNameInput.focus();
 }
 
-document.getElementById("private-ch-create-cancel").onclick = () => {
+function closeCreatePrivateChannel() {
   createPrivateChModal.style.display = "none";
-};
+}
+
+document.getElementById("private-ch-create-cancel").onclick =
+  closeCreatePrivateChannel;
+
+// Clicking the backdrop dismisses, matching every other modal in the app.
+createPrivateChModal.addEventListener("click", (e) => {
+  if (e.target === createPrivateChModal) closeCreatePrivateChannel();
+});
 
 document.getElementById("private-ch-create-btn").onclick = async () => {
   const name = privateChNameInput.value.trim();
@@ -186,9 +194,15 @@ function openRenameChannel() {
   renameInput.select();
 }
 
-document.getElementById("rename-ch-cancel-btn").onclick = () => {
+function closeRenameChannel() {
   renamePrivateChModal.style.display = "none";
-};
+}
+
+document.getElementById("rename-ch-cancel-btn").onclick = closeRenameChannel;
+
+renamePrivateChModal.addEventListener("click", (e) => {
+  if (e.target === renamePrivateChModal) closeRenameChannel();
+});
 
 document.getElementById("rename-ch-submit-btn").onclick = async () => {
   if (!channel.startsWith("private:")) return;
@@ -225,13 +239,33 @@ document.getElementById("rename-ch-submit-btn").onclick = async () => {
 document.getElementById("rename-ch-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter")
     document.getElementById("rename-ch-submit-btn").click();
-  if (e.key === "Escape") renamePrivateChModal.style.display = "none";
+  if (e.key === "Escape") closeRenameChannel();
 });
+
+// Leaving is irreversible for an invite-only channel — without a member to
+// re-add you, there is no way back in. It gets a confirmation step, but an
+// in-place one: the native confirm() this replaced blocked the whole page and
+// looked nothing like the account-deletion confirm sitting a few lines above it
+// in the same dialog.
+function askLeaveChannel() {
+  if (!channel.startsWith("private:")) return;
+  const name = privateChannelMap[channel] || channel;
+  document.getElementById("leave-channel-prompt").textContent =
+    `Leave "${name}"? You'll need an invite from a member to rejoin.`;
+  document.getElementById("leave-channel-btn").style.display = "none";
+  document.getElementById("leave-channel-confirm").style.display = "block";
+  document.getElementById("leave-channel-cancel-btn").focus();
+}
+
+function cancelLeaveChannel() {
+  const confirmEl = document.getElementById("leave-channel-confirm");
+  if (confirmEl) confirmEl.style.display = "none";
+  const btn = document.getElementById("leave-channel-btn");
+  if (btn) btn.style.display = "";
+}
 
 async function leaveChannel() {
   if (!channel.startsWith("private:")) return;
-  const name = privateChannelMap[channel] || channel;
-  if (!confirm(`Leave "${name}"?`)) return;
   const channelId = channel.split(":")[1];
 
   const resp = await fetch(`/private_channels/${channelId}/leave`, {

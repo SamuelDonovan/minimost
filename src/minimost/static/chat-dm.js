@@ -182,9 +182,11 @@ function selectSuggestion(idx) {
   dmUsersInput.focus();
 }
 
-document.getElementById("dm-cancel").onclick = () => {
+function closeDmModal() {
   dmModal.style.display = "none";
-};
+}
+
+document.getElementById("dm-cancel").onclick = closeDmModal;
 
 // DM conversations the user has opened but not yet posted to. /dms derives its
 // list from the messages table, so an empty conversation has no row there and

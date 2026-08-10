@@ -12,6 +12,7 @@ beforeAll(() => {
   global.renderMentionsSidebar = jest.fn();
   global.nativeNotifEnabled = false;
   global.notifMuted = false;
+  global.notifyWhenActive = false;
 
   loadScript("chat-sidebar.js");
 });
@@ -339,6 +340,58 @@ describe("sendDesktopNotification()", () => {
   test("does not notify when notifMuted", () => {
     global.nativeNotifEnabled = false;
     expect(() => sendDesktopNotification(3)).not.toThrow();
+  });
+});
+
+// ── alertsSuppressed ──────────────────────────────────────────────────────────
+describe("alertsSuppressed()", () => {
+  let hasFocusSpy;
+
+  beforeEach(() => {
+    hasFocusSpy = jest.spyOn(document, "hasFocus").mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    hasFocusSpy.mockRestore();
+    global.notifyWhenActive = false;
+  });
+
+  test("suppresses alerts while the page is active by default", () => {
+    global.notifyWhenActive = false;
+    expect(alertsSuppressed()).toBe(true);
+  });
+
+  test("allows alerts while active when notifyWhenActive is on", () => {
+    global.notifyWhenActive = true;
+    expect(alertsSuppressed()).toBe(false);
+  });
+
+  test("never suppresses while the window is unfocused", () => {
+    hasFocusSpy.mockReturnValue(false);
+    global.notifyWhenActive = false;
+    expect(alertsSuppressed()).toBe(false);
+  });
+});
+
+// ── justRenderedInActiveChannel ───────────────────────────────────────────────
+describe("justRenderedInActiveChannel()", () => {
+  afterEach(() => {
+    globalThis.lastActiveChannelMsgAt = 0;
+  });
+
+  test("false when no message has rendered into the open channel", () => {
+    globalThis.lastActiveChannelMsgAt = 0;
+    expect(justRenderedInActiveChannel()).toBe(false);
+  });
+
+  test("true just after applyMessages stamps a render", () => {
+    globalThis.lastActiveChannelMsgAt = Date.now();
+    expect(justRenderedInActiveChannel()).toBe(true);
+  });
+
+  test("false again once the suppression window has passed", () => {
+    globalThis.lastActiveChannelMsgAt = Date.now() - 2500;
+    expect(justRenderedInActiveChannel()).toBe(false);
   });
 });
 

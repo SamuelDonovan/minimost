@@ -300,6 +300,7 @@ const IDS = [
   "settings-name-color",
   "settings-notif-sounds",
   "settings-native-notif",
+  "settings-notify-active",
   "settings-enter-key",
   "settings-save-btn",
   "settings-color-preview",
@@ -328,6 +329,7 @@ const IDS = [
   "settings-delete-confirm-btn",
   "notif-bell-slash",
   "native-bell-slash",
+  "notify-active-slash",
   // Members (users) modal + top-bar icon
   "users-modal",
   "users-list",
@@ -336,6 +338,10 @@ const IDS = [
   "users-modal-title",
   "users-modal-add",
   "users-modal-leave",
+  "leave-channel-btn",
+  "leave-channel-confirm",
+  "leave-channel-prompt",
+  "leave-channel-cancel-btn",
   "members-btn",
   "members-count",
   // Reactions
@@ -449,7 +455,8 @@ IDS.forEach((id) => {
       document.body.appendChild(btn);
     } else if (
       id === "settings-notif-sounds" ||
-      id === "settings-native-notif"
+      id === "settings-native-notif" ||
+      id === "settings-notify-active"
     ) {
       const cb = document.createElement("input");
       cb.type = "checkbox";
@@ -541,11 +548,16 @@ global.startEdit = jest.fn();
 global.startReply = jest.fn();
 global.applyChatFontSize = jest.fn();
 global.cancelDeleteConfirm = jest.fn();
+// Defined in chat-channels.js and the chat.html inline script respectively;
+// stubbed for the suites that load neither.
+global.cancelLeaveChannel = jest.fn();
+global.resetJumpLatest = jest.fn();
 global._refreshUserAvatar = jest.fn();
 global.toggleStandaloneScreenShare = jest.fn();
 global.startCall = jest.fn();
 global.nativeNotifEnabled = false;
 global.notifMuted = false;
+global.notifyWhenActive = false;
 global.fetchMessages = jest.fn();
 global.fetchTyping = jest.fn();
 global.fetchReadReceipts = jest.fn();

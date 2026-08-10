@@ -469,6 +469,40 @@ describe("settings-native-notif change", () => {
   });
 });
 
+// ── settings-notify-active change ─────────────────────────────────────────────
+describe("settings-notify-active change", () => {
+  test("shows the slash when the setting is off", () => {
+    const cb = document.getElementById("settings-notify-active");
+    cb.checked = false;
+    cb.dispatchEvent(new Event("change"));
+    expect(document.getElementById("notify-active-slash").style.display).toBe(
+      "",
+    );
+  });
+
+  test("hides the slash when the setting is on", () => {
+    const cb = document.getElementById("settings-notify-active");
+    cb.checked = true;
+    cb.dispatchEvent(new Event("change"));
+    expect(document.getElementById("notify-active-slash").style.display).toBe(
+      "none",
+    );
+  });
+
+  test("save persists the toggle to localStorage", () => {
+    const cb = document.getElementById("settings-notify-active");
+    cb.checked = true;
+    document.getElementById("settings-save-btn").click();
+    expect(localStorage.getItem("notifyWhenActive")).toBe("true");
+    expect(notifyWhenActive).toBe(true);
+
+    cb.checked = false;
+    document.getElementById("settings-save-btn").click();
+    expect(localStorage.getItem("notifyWhenActive")).toBe("false");
+    expect(notifyWhenActive).toBe(false);
+  });
+});
+
 // ── settings-bio input ────────────────────────────────────────────────────────
 describe("settings-bio input", () => {
   test("updates character count", () => {
@@ -523,6 +557,9 @@ describe("notification globals", () => {
   });
   test("nativeNotifEnabled is a boolean", () => {
     expect(typeof nativeNotifEnabled).toBe("boolean");
+  });
+  test("notifyWhenActive is a boolean", () => {
+    expect(typeof notifyWhenActive).toBe("boolean");
   });
 });
 

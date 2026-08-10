@@ -145,6 +145,17 @@
 
     <div id="chat" role="log" aria-live="off" aria-relevant="additions" aria-label="Messages"></div>
 
+    <!-- Zero-height anchor so the pill floats over the bottom of the message
+         list without taking part in the column layout. -->
+    <div id="jump-latest-anchor">
+        <button id="jump-latest" type="button" onclick="jumpToLatest()" hidden>
+            <span id="jump-latest-text">Jump to latest</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+            </svg>
+        </button>
+    </div>
+
     <div id="typing-indicator"></div>
 
     <div id="input" class="dropzone">
@@ -217,7 +228,7 @@
 <!-- DM Modal -->
 <!-- Account Modal -->
 <div id="account-modal" class="modal">
-    <div class="modal-content" style="max-width:420px">
+    <div class="modal-content" style="max-width:420px" role="dialog" aria-modal="true" aria-labelledby="account-modal-name">
 
         <!-- Main account view -->
         <div id="account-main-view">
@@ -227,6 +238,7 @@
                 <button id="account-signout-btn" onclick="window.location='/logout'" title="Sign out of your account">
                     <span class="account-signout-icon" aria-hidden="true">⏻</span>Sign out
                 </button>
+                <button class="modal-close-x" onclick="closeAccount()" title="Close" aria-label="Close">&#x2715;</button>
             </div>
 
             <div class="account-section-label">Set yourself as</div>
@@ -345,8 +357,11 @@
 </div>
 
 <div id="dm-modal" class="modal">
-    <div class="modal-content">
-        <h3>Start Direct Message</h3>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="dm-modal-title">
+        <div class="modal-header">
+            <h3 id="dm-modal-title">Start Direct Message</h3>
+            <button class="modal-close-x" onclick="closeDmModal()" title="Close" aria-label="Close">&#x2715;</button>
+        </div>
 
         <div class="input-suggest-wrap">
             <input
@@ -366,8 +381,11 @@
 
 <!-- Create Private Channel Modal -->
 <div id="create-private-ch-modal" class="modal">
-    <div class="modal-content">
-        <h3>New Private Channel</h3>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="create-private-ch-title">
+        <div class="modal-header">
+            <h3 id="create-private-ch-title">New Private Channel</h3>
+            <button class="modal-close-x" onclick="closeCreatePrivateChannel()" title="Close" aria-label="Close">&#x2715;</button>
+        </div>
         <label for="private-ch-name">Channel name</label><br>
         <input type="text" id="private-ch-name" placeholder="e.g. minimost-enjoyers" maxlength="80" style="width:90%; margin-bottom:4px">
         <div id="private-ch-name-error" style="color:var(--danger,#e53e3e); font-size:0.82em; min-height:1.2em; margin-bottom:6px"></div>
@@ -385,8 +403,11 @@
 
 <!-- Rename Private Channel Modal -->
 <div id="rename-private-ch-modal" class="modal">
-    <div class="modal-content">
-        <h3>Rename Channel</h3>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="rename-private-ch-title">
+        <div class="modal-header">
+            <h3 id="rename-private-ch-title">Rename Channel</h3>
+            <button class="modal-close-x" onclick="closeRenameChannel()" title="Close" aria-label="Close">&#x2715;</button>
+        </div>
         <input type="text" id="rename-ch-input" placeholder="New channel name" aria-label="New channel name" maxlength="80" style="width:90%; margin-bottom:4px">
         <div id="rename-ch-name-error" style="color:var(--danger,#e53e3e); font-size:0.82em; min-height:1.2em; margin-bottom:6px"></div>
         <div class="modal-actions">
@@ -398,10 +419,13 @@
 
 <!-- Settings Modal -->
 <div id="settings-modal" class="modal">
-    <div class="modal-content" style="max-width:420px">
+    <div class="modal-content" style="max-width:420px" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
 
         <div id="settings-main-view">
-            <h3 style="margin-top:0">Settings</h3>
+            <div class="modal-header">
+                <h3 id="settings-modal-title">Settings</h3>
+                <button class="modal-close-x" onclick="closeSettings()" title="Close" aria-label="Close">&#x2715;</button>
+            </div>
 
             <p class="settings-section-title">Appearance</p>
 
@@ -453,6 +477,24 @@
                 <div id="native-notif-hint" class="notif-perm-hint" style="display:none">Blocked by browser — update site permissions to enable</div>
             </div>
 
+            <div class="settings-row">
+                <div class="notif-sound-row">
+                    <div class="notif-sound-info">
+                        <svg id="notify-active-window" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M2.5 4a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1m2-.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m1.5.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/>
+                            <path d="M2 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V3a1 1 0 0 1 1-1zM1 13V5h14v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1"/>
+                            <line id="notify-active-slash" x1="1" y1="15" x2="15" y2="1" stroke="currentColor" stroke-width="2" style="display:none"/>
+                        </svg>
+                        <span>Notify while MiniMost is focused</span>
+                    </div>
+                    <label class="notif-toggle-label" aria-label="Notify while MiniMost is focused">
+                        <input type="checkbox" id="settings-notify-active">
+                        <span class="notif-toggle-track"><span class="notif-toggle-thumb"></span></span>
+                    </label>
+                </div>
+                <div class="notif-setting-hint">Off by default: alerts only fire when MiniMost is in the background</div>
+            </div>
+
             <div class="modal-actions">
                 <button id="settings-save-btn">Save</button>
                 <button id="settings-cancel-btn">Cancel</button>
@@ -464,9 +506,9 @@
 
 <!-- Members Modal (context-aware: public channel / private channel / DM) -->
 <div id="users-modal" class="modal">
-    <div class="modal-content" style="max-width:480px">
+    <div class="modal-content" style="max-width:480px" role="dialog" aria-modal="true" aria-labelledby="users-modal-title">
         <div class="modal-header">
-            <h3 id="users-modal-title" style="margin:0">Members</h3>
+            <h3 id="users-modal-title">Members</h3>
             <button class="modal-close-x" onclick="closeUsersModal()" title="Close">&#x2715;</button>
         </div>
         <input id="users-modal-search" type="text" placeholder="Search members…" aria-label="Search members"
@@ -490,7 +532,16 @@
         <!-- Shown only for private channels the user belongs to -->
         <div id="users-modal-leave" style="display:none">
             <hr>
-            <button id="leave-channel-btn" class="settings-danger-btn settings-danger-btn-confirm" style="width:100%" onclick="leaveChannel()">Leave channel</button>
+            <button id="leave-channel-btn" class="settings-danger-btn settings-danger-btn-confirm" style="width:100%" onclick="askLeaveChannel()">Leave channel</button>
+            <!-- Two-step confirm in place of a native confirm(), matching the
+                 account-deletion flow above. -->
+            <div id="leave-channel-confirm" style="display:none">
+                <p id="leave-channel-prompt"></p>
+                <div class="leave-channel-actions">
+                    <button class="settings-danger-btn settings-danger-btn-confirm" onclick="leaveChannel()">Leave</button>
+                    <button id="leave-channel-cancel-btn" onclick="cancelLeaveChannel()">Cancel</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -604,6 +655,7 @@
             <li>Upload or remove a profile avatar (max {{ max_avatar_mb }} MB)</li>
             <li>Click the gear icon in the header for Settings (font size, Enter key, notifications)</li>
             <li>Click the bell icon in the header to mute or unmute notification sounds</li>
+            <li>Alerts stay quiet while MiniMost is the focused window — turn on <em>Notify while MiniMost is focused</em> in Settings to be alerted anyway</li>
         </ul>
 
         <h3 class="help-section">Trusting This Site</h3>
@@ -1143,6 +1195,11 @@ codeBlockSearch.addEventListener("keydown", e => {
 document.addEventListener("load", e => {
     if (e.target.tagName === "IMG") {
         e.target.classList.add("loaded");
+        // An image settling into its real height is the one way the message
+        // list grows without a DOM mutation, so the observers below can't see
+        // it. It is also the most common: open a channel full of screenshots
+        // and every decode pushes the newest message further out of view.
+        scheduleJumpLatestUpdate();
     }
 }, true);
 
@@ -1612,7 +1669,149 @@ document.getElementById("chat").addEventListener("scroll", () => {
     if (chat.scrollTop < historyPrefetchPx(chat)) {
         loadOlderMessages();
     }
+    scheduleJumpLatestUpdate();
 }, { passive: true });
+
+// ── Jump to latest ────────────────────────────────────────────────────────────
+// Reading back through history used to be a one-way trip: new messages append
+// silently below the fold (auto-scroll is correctly suppressed while the user
+// is scrolled up), and the only way back was the `G` hotkey. The pill both
+// offers the ride back and says how much was missed on the way.
+let _unseenBelow = 0;
+
+// Deliberately looser than isNearBottom()'s 120px auto-scroll threshold. That
+// one answers "did the user mean to stay at the bottom"; this answers "can the
+// user see the newest message" — offering a jump while the latest message is
+// already on screen is just noise.
+const JUMP_LATEST_THRESHOLD_PX = 40;
+
+// True while a jump is animating. The smooth scroll emits scroll events the
+// whole way down, and without this the pill would reappear as "Jump to latest"
+// for every one of them — a flicker lasting the length of the animation.
+let _jumpingToLatest = false;
+
+function updateJumpLatest() {
+    const chat = document.getElementById("chat");
+    const btn = document.getElementById("jump-latest");
+    if (!chat || !btn) return;
+
+    if (isNearBottom(chat, JUMP_LATEST_THRESHOLD_PX)) {
+        // Arriving at the bottom is itself the acknowledgement — everything
+        // that was counted is now on screen.
+        _unseenBelow = 0;
+        _jumpingToLatest = false;
+        btn.hidden = true;
+        btn.classList.remove("has-unread");
+        return;
+    }
+
+    if (_jumpingToLatest) {
+        btn.hidden = true;
+        return;
+    }
+
+    const label = document.getElementById("jump-latest-text");
+    if (_unseenBelow > 0) {
+        label.textContent = _unseenBelow === 1
+            ? "1 new message"
+            : `${_unseenBelow} new messages`;
+        btn.classList.add("has-unread");
+        btn.setAttribute("aria-label", `${label.textContent} below — jump to latest`);
+    } else {
+        label.textContent = "Jump to latest";
+        btn.classList.remove("has-unread");
+        btn.setAttribute("aria-label", "Jump to latest message");
+    }
+    btn.hidden = false;
+}
+
+function jumpToLatest() {
+    const chat = document.getElementById("chat");
+    if (!chat) return;
+    _unseenBelow = 0;
+    _jumpingToLatest = true;
+    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    chat.scrollTo({
+        top: chat.scrollHeight,
+        behavior: reduceMotion ? "auto" : "smooth",
+    });
+    updateJumpLatest();
+
+    // Belt and braces: a smooth scroll that never reaches the bottom (the user
+    // grabs the scrollbar mid-flight, or the list grows underneath it) would
+    // otherwise leave the pill suppressed forever, since only arriving at the
+    // bottom clears the flag.
+    setTimeout(() => {
+        if (!_jumpingToLatest) return;
+        _jumpingToLatest = false;
+        updateJumpLatest();
+    }, 1000);
+}
+
+// Called on channel switch: the count belongs to the conversation being left.
+function resetJumpLatest() {
+    _unseenBelow = 0;
+    _jumpingToLatest = false;
+    const btn = document.getElementById("jump-latest");
+    if (btn) btn.hidden = true;
+}
+
+// Whether the pill should be up is a function of one number: how far the
+// scroller is from its own bottom. That number moves for three reasons —
+// scrollTop changes, the content gets taller or shorter, or the viewport
+// resizes — and only the first of them fires a scroll event. Recomputing on
+// scroll alone left the pill asserting something that had quietly stopped
+// being true: still up after the list shrank back under the fold, or still
+// down after an image decoded and pushed the newest message out of sight.
+//
+// So every cause gets an observer, and they all recompute from scratch rather
+// than trying to track the state incrementally.
+//
+// The recompute is deferred to an animation frame rather than run inline in the
+// observer callbacks. updateJumpLatest() reads scrollHeight; doing that from a
+// MutationObserver microtask means forcing a synchronous layout in the middle of
+// a render pass that is still writing to the DOM — the write/read/write pattern
+// that makes appending a page of history thrash. At frame time the layout is
+// already clean and the read is free. One flag collapses a burst of observer
+// callbacks into a single update.
+//
+// If frames stop (backgrounded tab), the pending frame simply runs when the tab
+// is shown again, which is the first moment the answer could matter anyway.
+let _jumpLatestFrame = 0;
+function scheduleJumpLatestUpdate() {
+    if (_jumpLatestFrame) return;
+    _jumpLatestFrame = requestAnimationFrame(() => {
+        _jumpLatestFrame = 0;
+        updateJumpLatest();
+    });
+}
+
+(function observeChatBottom() {
+    const chat = document.getElementById("chat");
+    if (!chat) return;
+
+    // Viewport height: the composer grows with a multi-line draft, the
+    // screen-share banner opens and closes, phones rotate.
+    if (typeof ResizeObserver === "function") {
+        new ResizeObserver(scheduleJumpLatestUpdate).observe(chat);
+    }
+
+    // Content height: messages appended or deleted, an edit reflowing, a
+    // reaction chip wrapping to a new line, a link preview card resolving.
+    // Watching the subtree rather than hooking each of those sites means a
+    // render path added later is covered without having to know about this.
+    if (typeof MutationObserver === "function") {
+        new MutationObserver(scheduleJumpLatestUpdate).observe(chat, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            // Catches the chat font-size setting, which resizes every message
+            // without adding or removing a single node.
+            attributes: true,
+            attributeFilter: ["style", "class"],
+        });
+    }
+})();
 
 function _refreshUserAvatar(username) {
     document.querySelectorAll(`.avatar-wrap[data-username="${username}"]`).forEach(wrap => {
@@ -1684,6 +1883,7 @@ function switchChannel(c) {
     oldestLoadedTs = null;
     hasMoreHistory = true;
     loadingOlderHistory = false;
+    resetJumpLatest();
 
     // Silence the live region until this channel's backlog has painted, or a
     // screen reader would announce every message in the history. armChatLog()
@@ -2261,6 +2461,10 @@ function applyMessages(data, requestedChannel = channel) {
             let appended = false;
             let playNewMsgSound = false;
             let mentionMsg = null;
+            // Counted separately from `appended`, which also goes true for date
+            // dividers and for the user's own sends — neither is something the
+            // user "missed" and needs offering a ride back down to.
+            let newFromOthers = 0;
 
             data.forEach(m => {
               // One malformed message must not abort the batch. Without this,
@@ -2372,7 +2576,10 @@ function applyMessages(data, requestedChannel = channel) {
                     schedulePreview(d);
                     _checkDeletedFiles(d);
                     appended = true;
-                    if (m.sender !== CURRENT_USER) playNewMsgSound = true;
+                    if (m.sender !== CURRENT_USER) {
+                        playNewMsgSound = true;
+                        newFromOthers++;
+                    }
                     if (m.sender !== CURRENT_USER && isMentioned(m)) mentionMsg = m;
                 }
 
@@ -2394,7 +2601,12 @@ function applyMessages(data, requestedChannel = channel) {
             // message, or — even when focused — when the user is mentioned.
             // Messages in other channels are handled by maybeNotifyUnread;
             // playNotifSound is debounced so the two paths can't double-play.
-            if ((playNewMsgSound && !pageActive()) || mentionAlert) {
+            const backgroundAlert = playNewMsgSound && !pageActive();
+            // "Notify while active" alerts on focused messages too, but only
+            // once the channel's baseline load is done — otherwise opening a
+            // channel with unread history would announce all of it.
+            const activeAlert = playNewMsgSound && notifyWhenActive && notifyArmed;
+            if (backgroundAlert || activeAlert || mentionAlert) {
                 playNotifSound();
             }
 
@@ -2409,6 +2621,10 @@ function applyMessages(data, requestedChannel = channel) {
             // another app) must leave new messages unread until the user returns;
             // reconcileOnActive() then marks them read on focus/visibilitychange.
             if (appended && pageActive()) {
+                // Until that POST lands the channel still reads as unread, so
+                // tell maybeNotifyUnread the rise it is about to see belongs to
+                // a message the user is looking at.
+                if (newFromOthers > 0) globalThis.lastActiveChannelMsgAt = Date.now();
                 fetch(`/mark_read/${channel}`, { method: "POST" });
             }
 
@@ -2435,8 +2651,16 @@ function applyMessages(data, requestedChannel = channel) {
                 && !globalThis.pendingJumpMsgId && !suppressBottomScroll) {
                 requestAnimationFrame(() => {
                     chat.scrollTop = chat.scrollHeight;
+                    updateJumpLatest();
                 });
                 forceScrollToBottom = false;
+            } else {
+                // The view stayed put, so anything that just landed is below the
+                // fold. Only count once the channel's backlog is on screen —
+                // notifyArmed is false for the baseline load, whose messages are
+                // history the user is choosing to read, not new arrivals.
+                if (notifyArmed) _unseenBelow += newFromOthers;
+                updateJumpLatest();
             }
 }
 

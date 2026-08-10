@@ -326,11 +326,15 @@ describe("leaveChannel()", () => {
     expect(global.switchChannel).toHaveBeenCalledWith("general");
   });
 
-  test("does nothing if user cancels confirm", async () => {
+  test("arming the confirm does not call the endpoint", () => {
     global.channel = "private:1";
-    global.confirm = jest.fn(() => false);
-    await leaveChannel();
+    global.privateChannelMap = { "private:1": "myteam" };
+    global.fetch.mockClear();
+    askLeaveChannel();
     expect(global.fetch).not.toHaveBeenCalled();
+    expect(document.getElementById("leave-channel-confirm").style.display).toBe(
+      "block",
+    );
   });
 });
 
@@ -467,12 +471,38 @@ describe("leaveChannel()", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
-  test("aborts when user cancels", async () => {
+  test("askLeaveChannel names the channel and swaps in the confirm", () => {
     global.channel = "private:7";
-    global.confirm = jest.fn().mockReturnValue(false);
+    global.privateChannelMap = { "private:7": "myteam" };
     global.fetch.mockClear();
-    await leaveChannel();
+    askLeaveChannel();
+    expect(
+      document.getElementById("leave-channel-prompt").textContent,
+    ).toContain("myteam");
+    expect(document.getElementById("leave-channel-btn").style.display).toBe(
+      "none",
+    );
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("cancelLeaveChannel puts the Leave button back", () => {
+    global.channel = "private:7";
+    global.privateChannelMap = { "private:7": "myteam" };
+    askLeaveChannel();
+    cancelLeaveChannel();
+    expect(document.getElementById("leave-channel-confirm").style.display).toBe(
+      "none",
+    );
+    expect(document.getElementById("leave-channel-btn").style.display).toBe("");
+  });
+
+  test("askLeaveChannel does nothing outside a private channel", () => {
+    global.channel = "general";
+    cancelLeaveChannel();
+    askLeaveChannel();
+    expect(document.getElementById("leave-channel-confirm").style.display).toBe(
+      "none",
+    );
   });
 });
 

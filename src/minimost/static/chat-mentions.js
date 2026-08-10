@@ -325,6 +325,7 @@ function openMentionsChannel() {
   cancelReply();
   setChannel(MENTIONS_CHANNEL);
   closeSidebar();
+  resetJumpLatest();
 
   document.getElementById("chat").innerHTML = "";
   const ti = document.getElementById("typing-indicator");

@@ -1,5 +1,9 @@
 let notifMuted = localStorage.getItem("notifMuted") === "true";
 let nativeNotifEnabled = localStorage.getItem("nativeNotifEnabled") !== "false";
+// Alerts normally stay quiet while MiniMost is the focused window, on the
+// assumption that a message you can already see needs no announcing. Opt in to
+// alerting on every message regardless of focus. Off by default.
+let notifyWhenActive = localStorage.getItem("notifyWhenActive") === "true";
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -231,6 +235,9 @@ function openSettings() {
     : "none";
   _updateNativeNotifIcon();
 
+  document.getElementById("settings-notify-active").checked = notifyWhenActive;
+  _updateNotifyActiveIcon();
+
   settingsModal.style.display = "flex";
 }
 
@@ -268,6 +275,16 @@ document
     _updateNativeNotifIcon();
   });
 
+function _updateNotifyActiveIcon() {
+  const on = document.getElementById("settings-notify-active").checked;
+  document.getElementById("notify-active-slash").style.display = on
+    ? "none"
+    : "";
+}
+document
+  .getElementById("settings-notify-active")
+  .addEventListener("change", _updateNotifyActiveIcon);
+
 document.getElementById("settings-font-size").addEventListener("input", (e) => {
   document.getElementById("settings-font-size-label").textContent =
     `(${e.target.value}px)`;
@@ -301,9 +318,13 @@ document
       .forEach((s) => s.classList.remove("selected"));
   });
 
-document.getElementById("settings-cancel-btn").addEventListener("click", () => {
+function closeSettings() {
   settingsModal.style.display = "none";
-});
+}
+
+document
+  .getElementById("settings-cancel-btn")
+  .addEventListener("click", closeSettings);
 
 document.getElementById("settings-save-btn").addEventListener("click", () => {
   // Font size
@@ -324,11 +345,15 @@ document.getElementById("settings-save-btn").addEventListener("click", () => {
   nativeNotifEnabled = document.getElementById("settings-native-notif").checked;
   localStorage.setItem("nativeNotifEnabled", nativeNotifEnabled);
 
-  settingsModal.style.display = "none";
+  // Alert even while MiniMost has focus
+  notifyWhenActive = document.getElementById("settings-notify-active").checked;
+  localStorage.setItem("notifyWhenActive", notifyWhenActive);
+
+  closeSettings();
 });
 
 settingsModal.addEventListener("click", (e) => {
-  if (e.target === settingsModal) settingsModal.style.display = "none";
+  if (e.target === settingsModal) closeSettings();
 });
 
 // ── Account profile (avatar / bio / name colour) ───────────────────────────────
@@ -620,6 +645,9 @@ async function openUsersModal() {
   document.getElementById("users-modal-leave").style.display = isPrivate
     ? "block"
     : "none";
+  // Back out of a leave confirmation left armed from a previous visit, so the
+  // dialog never reopens sitting on a destructive button.
+  cancelLeaveChannel();
   document.getElementById("users-modal-title").textContent = isPrivate
     ? "Members: " + (privateChannelMap[channel] || "channel")
     : "Members";
@@ -774,8 +802,9 @@ function filterUsersModal(query) {
 
 function closeUsersModal() {
   usersModal.style.display = "none";
+  cancelLeaveChannel();
 }
 
 usersModal.addEventListener("click", (e) => {
-  if (e.target === usersModal) usersModal.style.display = "none";
+  if (e.target === usersModal) closeUsersModal();
 });

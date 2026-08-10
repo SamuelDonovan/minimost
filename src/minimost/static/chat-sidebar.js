@@ -376,6 +376,25 @@ function pageActive() {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
+// Whether a new-message alert (sound + OS notification) should be held back.
+// Alerts exist to surface messages the user would otherwise miss, so the
+// default is silence while the page is in front of them; the "notify while
+// active" setting opts out of that and alerts on everything.
+function alertsSuppressed() {
+  return pageActive() && !notifyWhenActive;
+}
+
+// A message rendered into the channel the user is watching keeps counting as
+// unread until POST /mark_read lands, so with "notify while active" on the
+// unread watcher below would raise an OS notification for a message already on
+// screen. applyMessages stamps the time it rendered one while the page was
+// active; the notification is skipped for a moment afterwards, the same way a
+// just-fired mention notification suppresses it.
+globalThis.lastActiveChannelMsgAt = 0;
+function justRenderedInActiveChannel() {
+  return Date.now() - globalThis.lastActiveChannelMsgAt < 2000;
+}
+
 // Play the alert sound, debounced so the per-channel poll (fetchMessages) and
 // the cross-channel unread watcher (maybeNotifyUnread) can't both fire for the
 // same incoming message.
@@ -392,7 +411,7 @@ function sendDesktopNotification(count) {
   if (!("Notification" in globalThis) || Notification.permission !== "granted")
     return;
   if (!nativeNotifEnabled) return;
-  if (pageActive()) return;
+  if (alertsSuppressed()) return;
   new Notification("MiniMost", {
     body: `You have ${count} unread message${count === 1 ? "" : "s"}`,
     icon: "/static/web-app-manifest-192x192.png",
@@ -420,12 +439,16 @@ function maybeNotifyUnread() {
   if (
     Date.now() >= notifReadyAt &&
     total > lastNotifiedTotal &&
-    !pageActive()
+    !alertsSuppressed()
   ) {
     playNotifSound();
     // Skip the generic notification if a specific mention notification just
-    // fired for the same message (avoids stacking two notifications).
-    if (Date.now() - globalThis.lastMentionNotifAt > 2000)
+    // fired for the same message (avoids stacking two notifications), or if
+    // the rise is the active channel's own message, still awaiting /mark_read.
+    if (
+      Date.now() - globalThis.lastMentionNotifAt > 2000 &&
+      !justRenderedInActiveChannel()
+    )
       sendDesktopNotification(total);
   }
   lastNotifiedTotal = total;
