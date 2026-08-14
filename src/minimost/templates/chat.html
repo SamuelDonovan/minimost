@@ -1662,6 +1662,41 @@ document.getElementById("chat").addEventListener("mouseout", e => {
     if (span) _hideDmHoverCard();
 });
 
+// Touch equivalent of hovering a message. The reply/edit/delete/react row is
+// revealed by :hover, which a touch device never fires — so on a phone those
+// four actions were simply unreachable. Tapping a message opens its row (and
+// closes any other), tapping elsewhere closes it.
+//
+// Gated on the pointer type of the actual event rather than a media query, so
+// a hybrid laptop keeps hover-to-reveal for its mouse and still responds to its
+// touchscreen. Taps that land on something already interactive — a link, an
+// action button, the code "Copy" control, a reaction chip — are left alone.
+function closeMessageActions(except) {
+    document.querySelectorAll(".msg.actions-open").forEach(msg => {
+        if (msg !== except) msg.classList.remove("actions-open");
+    });
+}
+
+document.getElementById("chat").addEventListener("pointerup", e => {
+    if (e.pointerType === "mouse") return;
+    const msg = e.target.closest(".msg");
+    if (!msg || e.target.closest("a, button, input, textarea, .reaction-chip")) {
+        closeMessageActions(null);
+        return;
+    }
+    const open = !msg.classList.contains("actions-open");
+    closeMessageActions(msg);
+    msg.classList.toggle("actions-open", open);
+});
+
+// A tap that misses the message list entirely still dismisses the open row.
+// closest() is called optionally because a pointerup retargeted to the document
+// itself has no such method, and a throw here would break every later listener.
+document.addEventListener("pointerup", e => {
+    if (e.pointerType === "mouse") return;
+    if (!e.target.closest?.(".msg")) closeMessageActions(null);
+});
+
 // Infinite scroll upward: pull the previous page as the user approaches the
 // top of what's loaded. loadOlderMessages() guards against overlapping runs.
 document.getElementById("chat").addEventListener("scroll", () => {

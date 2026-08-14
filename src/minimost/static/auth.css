@@ -4,8 +4,28 @@
   box-sizing: border-box;
 }
 
+/* Kept in step with the same tokens in styles.css — login and the app are one
+   product and should not greet you in two different typefaces. color-scheme
+   makes natively-painted UI (autofill backgrounds, the password reveal glyph,
+   scrollbars) follow the dark card instead of assuming a white page. */
+:root {
+  --font-ui:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+  color-scheme: dark;
+}
+
+/* Form controls do not inherit the page font on their own. */
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
 body {
-  font-family: sans-serif;
+  font-family: var(--font-ui);
   background: #1e1e1e;
   color: #ddd;
   margin: 0;
@@ -272,7 +292,7 @@ button[type="submit"]:disabled {
   position: fixed;
   bottom: 14px;
   right: 18px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: #6a9955;
 }

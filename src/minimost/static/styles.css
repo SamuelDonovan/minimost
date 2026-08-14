@@ -52,14 +52,40 @@
   }
 }
 
+:root {
+  /* One UI stack for the whole app. Previously body said `sans-serif`, .msg
+     said `system-ui, sans-serif`, and every form control fell back to the UA
+     default (Arial for inputs, monospace for textareas) — so up to three
+     different faces were visible at once, and the composer rendered your
+     draft in a font the posted message would not use. */
+  --font-ui:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+  /* Tells the engine this is a dark UI, so natively-painted controls follow
+     suit: the unfilled half of a range track, date/colour pickers and their
+     glyphs, select popups, autofill backgrounds and default scrollbars. Without
+     it Chromium paints them for a light page — a white slider track and a white
+     calendar popup in the middle of the settings dialog. */
+  color-scheme: dark;
+}
 body {
   margin: 0;
-  font-family: sans-serif;
+  font-family: var(--font-ui);
   background: #1e1e1e;
   color: #ddd;
   display: flex;
   height: 100vh;
   height: 100dvh;
+}
+/* Form controls do not inherit the page font — without this they fall back to
+   the UA default and break the single-stack rule above. Only the family is
+   inherited: the per-control font-size rules elsewhere stay authoritative. */
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
 }
 #topbar {
   display: grid;
@@ -233,7 +259,7 @@ body {
 }
 
 #help-modal kbd {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: #4db8ff;
   background: #1e1e1e;
@@ -462,7 +488,7 @@ body {
   /* Spacing is top-only so grouped continuations can set their own tight gap
      without inheriting the preceding message's bottom margin. */
   margin: 6px 0 0;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-ui);
 }
 /* "New messages" rule marking where the user left off. Deliberately warmer
    than the date dividers so the two don't read as the same thing. */
@@ -502,7 +528,7 @@ body {
   padding: 24px 16px;
   text-align: center;
   color: #888;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-ui);
 }
 .chat-empty-title {
   margin: 0;
@@ -537,8 +563,24 @@ body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.1s;
+  /* The row floats over the top-right of the message, so on a long first line
+     it lands on top of the text. Backing it makes it read as a toolbar above
+     the message rather than glyphs tangled in the words. */
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 1px 2px;
 }
+/* :focus-within matters as much as :hover here. These buttons stay in the tab
+   order while transparent, so without it a keyboard user tabs onto an invisible
+   Reply/Edit/Delete and cannot tell which one they are on.
+
+   .actions-open is the touch equivalent of hovering: a device with no pointer
+   could not reach reply/edit/delete/react at all, so tapping a message reveals
+   its row (see the pointerup handler in chat.html). */
 .msg:hover .msg-actions,
+.msg:focus-within .msg-actions,
+.msg.actions-open .msg-actions,
 .msg.reaction-picker-open .msg-actions {
   opacity: 1;
   pointer-events: auto;
@@ -701,18 +743,13 @@ body {
   color: #fff;
 }
 
-.reply-btn:hover {
-  opacity: 1;
-}
-.delete-btn:hover {
-  opacity: 1;
-}
-.edit-btn:hover {
-  opacity: 1;
-}
+/* The four per-message action buttons. .react-btn carried a byte-identical
+   copy of this block down in the reactions section; they are one control type
+   and now share one rule. */
 .edit-btn,
 .reply-btn,
-.delete-btn {
+.delete-btn,
+.react-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -723,6 +760,12 @@ body {
   border: none;
   opacity: 0.6;
   padding: 0;
+}
+.edit-btn:hover,
+.reply-btn:hover,
+.delete-btn:hover,
+.react-btn:hover {
+  opacity: 1;
 }
 /* Persistent "(edited)" note in the message header. Muted enough to stay out
    of the way, but always on screen — hover the marker for the edit time. */
@@ -1418,6 +1461,16 @@ textarea {
   border-radius: 8px;
   background: #2d2d2d;
   padding: 8px 10px 6px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+/* The textarea itself clears its outline so the ring does not cut through the
+   toolbar sharing this box; the box takes the focus cue instead. Without this
+   the composer was the one input in the app that gave no sign it had focus —
+   the search field, bio and every picker search already shift their border. */
+#input-main:focus-within {
+  border-color: #007acc;
 }
 #msg {
   flex: 1;
@@ -1623,7 +1676,7 @@ a {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   min-width: 0;
   overflow: hidden;
 }
@@ -1674,7 +1727,7 @@ a {
   overscroll-behavior-y: auto;
   background: #1e1e1e;
   line-height: 1.5;
-  font-family: "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 .code-row {
@@ -1744,7 +1797,7 @@ a {
 }
 .msg-code-lang {
   color: #888;
-  font-family: "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   user-select: none;
 }
@@ -1768,7 +1821,7 @@ a {
   overflow-x: auto;
   background: #1e1e1e;
   line-height: 1.5;
-  font-family: "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   white-space: pre;
 }
 .msg-inline-code {
@@ -1776,27 +1829,14 @@ a {
   border: 1px solid #3a3a3a;
   border-radius: 3px;
   padding: 1px 5px;
-  font-family: "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   color: #d4d4d4;
 }
 
 /* Reactions */
-.react-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  background: none;
-  cursor: pointer;
-  border: none;
-  opacity: 0.6;
-  padding: 0;
-}
-.react-btn:hover {
-  opacity: 1;
-}
+/* .react-btn is sized with the other message action buttons — see the shared
+   .edit-btn/.reply-btn/.delete-btn/.react-btn rule. */
 
 #reaction-picker {
   position: fixed;
@@ -2268,6 +2308,21 @@ a {
   margin: 0;
   max-height: 85vh;
   overflow-y: auto;
+}
+/* Save/Cancel sit in the middle of this dialog — the Password and Danger Zone
+   sections follow them — so on a short window they scrolled out of sight while
+   you were still editing the fields above, and the sections below them read as
+   though Save covered those too. Pinning the row to the bottom of the scroll
+   area keeps the dialog's primary action in reach at every scroll position.
+   The negative offset cancels .modal-content's 20px padding so the bar meets
+   the dialog edge instead of letting content show through underneath. */
+#account-main-view .modal-actions {
+  position: sticky;
+  bottom: -20px;
+  z-index: 1;
+  background: #1e1e1e;
+  padding-bottom: 20px;
+  margin-bottom: 4px;
 }
 #account-signout-btn {
   display: inline-flex;
@@ -4075,4 +4130,52 @@ a {
 .toast.show {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ── Touch targets ──────────────────────────────────────────────────────────
+   A 24px control is a comfortable mouse target and a poor finger one: WCAG
+   2.5.8 puts the floor at 24px and the platform guidelines ask for ~44px.
+   MiniMost installs as a PWA, so a touch-only session is an expected way to
+   use it.
+
+   The buttons themselves grow rather than gaining an invisible expanded hit
+   area: the message action row packs four of them 24px apart, so padded
+   targets would overlap each other and the wrong control would take the tap.
+
+   This block sits last in the file deliberately. Several of the controls it
+   touches are sized by equally-specific id rules further up (#send-btn,
+   #account-avatar), and matching a media query adds no specificity — only
+   source order decides those ties. */
+@media (pointer: coarse) {
+  .icon-btn {
+    min-width: 40px;
+    height: 40px;
+    padding: 0 8px;
+  }
+  /* Labelled buttons are already wide enough, and forcing 40px of minimum
+     width on top of the label wraps the composer toolbar onto a second row. */
+  .icon-btn:has(.icon-text) {
+    min-width: 0;
+  }
+  #send-btn {
+    height: 40px;
+  }
+  /* The avatar carries an inline size from makeAvatarWrap(), so the button
+     pads out around it instead — same 26px face, a 40px target. */
+  #account-btn {
+    height: 40px;
+    padding: 0 7px;
+  }
+  .edit-btn,
+  .reply-btn,
+  .delete-btn,
+  .react-btn {
+    width: 36px;
+    height: 36px;
+  }
+  /* The row is only as tall as its buttons, so it has to give the taller
+     targets somewhere to go without covering the message text they act on. */
+  .msg:not(.grouped) .msg-actions {
+    top: -6px;
+  }
 }
