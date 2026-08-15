@@ -13,10 +13,60 @@
 
 let _eventSource = null;
 
+// ── Connection status ───────────────────────────────────────────────────────
+// EventSource reconnects silently, which is the right transport behaviour but
+// the wrong user experience: a server that has gone down looks identical to a
+// channel where nobody is talking. The banner is only raised once a reconnect
+// has actually failed to land, so the server's routine stream recycle — which
+// briefly trips onerror every few minutes — never flashes it.
+//
+// The grace comfortably clears the server's `retry: 3000`, so an ordinary
+// recycle reconnects well inside it. The instant case is covered separately by
+// the browser's own `offline` event, which needs no waiting.
+const _RECONNECT_GRACE_MS = 8000;
+let _connGraceTimer = null;
+
+function _setConnectionBanner(down) {
+  const banner = document.getElementById("connection-banner");
+  if (banner) banner.hidden = !down;
+}
+
+// Call when a frame arrives or the stream opens: the link is demonstrably up.
+function _markConnected() {
+  clearTimeout(_connGraceTimer);
+  _connGraceTimer = null;
+  _setConnectionBanner(false);
+}
+
+// Call when the stream errors. Waits out the grace period before complaining,
+// so only an outage the user could actually notice raises the banner.
+function _markMaybeDisconnected() {
+  if (_connGraceTimer) return;
+  _connGraceTimer = setTimeout(() => {
+    _connGraceTimer = null;
+    _setConnectionBanner(true);
+  }, _RECONNECT_GRACE_MS);
+}
+
+// The browser knowing it is offline is immediate and certain — no grace needed.
+globalThis.addEventListener?.("offline", () => {
+  clearTimeout(_connGraceTimer);
+  _connGraceTimer = null;
+  _setConnectionBanner(true);
+});
+globalThis.addEventListener?.("online", () => {
+  // Don't clear the banner yet: being back on a network is not the same as the
+  // server answering. Re-open the stream and let its onopen confirm.
+  connectEvents();
+});
+
 // Parse an event payload and forward it to a render function, swallowing a
 // malformed frame rather than letting it throw out of the event loop.
 function _bindEvent(es, name, handler) {
   es.addEventListener(name, (e) => {
+    // Any frame at all proves the stream is alive, even one that fails to
+    // parse — that is a payload problem, not a connectivity one.
+    _markConnected();
     let data;
     try {
       data = JSON.parse(e.data);
@@ -59,7 +109,10 @@ function connectEvents() {
   _bindEvent(es, "unread_count", applyUnreadCount);
   _bindEvent(es, "incoming_calls", applyIncomingCalls);
 
+  es.onopen = _markConnected;
+
   es.onerror = () => {
+    if (_eventSource === es) _markMaybeDisconnected();
     // A normal stream end (the server recycles each stream every few minutes)
     // leaves readyState === CONNECTING and EventSource reconnects on its own
     // using the server-sent `retry:` interval. Only a hard CLOSED state needs a

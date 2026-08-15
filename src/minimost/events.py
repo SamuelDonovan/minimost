@@ -143,6 +143,16 @@ def _safe_messages(channel, user, after):
     generator and tear the whole stream down — the next tick simply tries again.
     """
     try:
+        # A cursor of 0 means "I have nothing yet", not "send me everything".
+        # messages_since is a delta query with no ceiling, so answering it
+        # literally serialises the channel's entire history into a single SSE
+        # frame — seconds of CPU and tens of megabytes on a long-lived channel.
+        # Normally the client loads its first page over HTTP and connects at
+        # that cursor, but it only takes a failed first load for it to arrive
+        # here at 0. Hand back the same recent page /messages would, and let the
+        # cursor advance from there.
+        if not after:
+            return chat.messages_page(channel, user, limit=chat.HISTORY_PAGE_SIZE)
         return chat.messages_since(channel, user, after)
     except Exception:  # noqa: BLE001 — a single bad tick must not kill the stream
         return []

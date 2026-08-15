@@ -132,3 +132,31 @@ def test_read_only_get_does_not_bump_signal(alice):
     before = presence.read_event_signal()
     alice.get("/online_users")
     assert presence.read_event_signal() == before
+
+
+def test_events_zero_cursor_is_capped_to_one_page(alice, fast_stream, monkeypatch):
+    """A stream opened at cursor 0 sends a page, not the channel's whole history.
+
+    ``messages_since`` is a delta query with no ceiling, so answering a zero
+    cursor literally would serialise every message ever sent into one frame. A
+    client at cursor 0 has nothing rendered yet, so the recent page is both
+    sufficient and bounded.
+    """
+    import minimost.chat as chat
+
+    monkeypatch.setattr(chat, "HISTORY_PAGE_SIZE", 5)
+    for i in range(12):
+        _insert_message("general", "bob", f"backlog {i}")
+
+    body = alice.get("/events?channel=general&after=0").get_data(as_text=True)
+
+    # The newest page arrives; everything older than it does not.
+    assert "backlog 11" in body
+    assert "backlog 0" not in body
+
+
+def test_events_zero_cursor_still_delivers_a_short_channel_whole(alice, fast_stream):
+    """Capping the zero cursor must not lose messages when there are few."""
+    _insert_message("general", "bob", "only message here")
+    body = alice.get("/events?channel=general&after=0").get_data(as_text=True)
+    assert "only message here" in body

@@ -143,6 +143,14 @@
         <button id="screenshare-banner-stop-btn" class="ss-banner-btn danger" style="display:none" onclick="toggleStandaloneScreenShare()">Stop sharing</button>
     </div>
 
+    <!-- Shown while the live event stream is down. Without it a dropped server
+         or a flaky link looks exactly like a quiet channel: nothing arrives and
+         nothing says why. role="status" so it is announced once, politely. -->
+    <div id="connection-banner" role="status" hidden>
+        <span class="conn-dot" aria-hidden="true"></span>
+        <span id="connection-banner-text">Connection lost — reconnecting…</span>
+    </div>
+
     <div id="chat" role="log" aria-live="off" aria-relevant="additions" aria-label="Messages"></div>
 
     <!-- Zero-height anchor so the pill floats over the bottom of the message
@@ -575,7 +583,9 @@
         <ul>
             <li><kbd>Enter</kbd> – Send message</li>
             <li><kbd>Shift + Enter</kbd> – New line</li>
+            <li><kbd>↑</kbd> – Edit your last message (with the box empty)</li>
             <li>Hover a message to reply, edit, delete, or react with emoji</li>
+            <li>On a touch screen, tap a message to show its actions</li>
             <li>A <b>✓</b> on your own message means it has been read by at least one other person</li>
             <li>Hover over the check to see who has read your message</li>
             <li>Messages older than the server's retention period are automatically and permanently removed</li>
@@ -851,7 +861,10 @@ msgBox.addEventListener("input", () => {
     const now = Date.now();
     if (now - lastTypingSend >= 2000) {
         lastTypingSend = now;
-        fetch(`/typing/${channel}`, { method: "POST" });
+        // Fire-and-forget: a dropped typing ping is invisible and self-correcting
+        // (the next keystroke re-sends). Caught so it does not pile up unhandled
+        // rejections in the console on every keystroke while the link is down.
+        fetch(`/typing/${channel}`, { method: "POST" }).catch(() => {});
     }
 });
 
@@ -957,10 +970,26 @@ function applyReadReceipts(data) {
     updateReadReceiptUI();
 }
 
-function updateReadReceiptUI() {
+// Repaints the ✓ on messages other people have read. Scans every loaded message
+// by default; pass *roots* (an element, or a list of them) to rescan only part
+// of the list. The default scan is O(loaded messages) and the querySelectorAll
+// alone is ~5ms at a few thousand of them, so callers that already know which
+// nodes changed should say so. Only a change to readReceiptsMap needs the full
+// sweep — new or re-rendered messages just need their own spans painted.
+function updateReadReceiptUI(roots = null) {
     // A user has read a message iff their watermark reached the message's ts.
     const watermarks = Object.entries(readReceiptsMap);
-    document.querySelectorAll(".read-receipt").forEach(el => {
+    const spans = [];
+    if (roots === null) {
+        spans.push(...document.querySelectorAll(".read-receipt"));
+    } else {
+        for (const root of (Array.isArray(roots) ? roots : [roots])) {
+            if (!root?.querySelectorAll) continue;
+            if (root.classList?.contains("read-receipt")) spans.push(root);
+            spans.push(...root.querySelectorAll(".read-receipt"));
+        }
+    }
+    spans.forEach(el => {
         const ts = Number(el.dataset.ts);
         const names = watermarks
             .filter(([u, w]) => u !== CURRENT_USER && w >= ts)
@@ -1021,6 +1050,23 @@ helpOverlay.addEventListener("click", (e) => {
     }
 });
 
+// Opens the inline editor on the newest message you can still edit here.
+// The rendered DOM is the source of truth for "can edit": an .edit-btn is
+// emitted only for your own messages, and deleted ones are pulled out of the
+// list entirely, so the last one on the page needs no separate ownership or
+// tombstone check. Returns whether an editor was actually opened.
+function editLastOwnMessage() {
+    const buttons = document.querySelectorAll("#chat .msg:not(.system-msg) .edit-btn");
+    const el = buttons[buttons.length - 1]?.closest(".msg");
+    const msgId = el?.id.replace("msg-", "");
+    if (!msgId) return false;
+    // A second ArrowUp while the editor is already open would reset the caret
+    // to the end of the text the user is part-way through repositioning.
+    if (document.getElementById(`msg-text-${msgId}`)?.dataset.editing === "true") return false;
+    startEdit(msgId);
+    return true;
+}
+
 msgBox.addEventListener("keydown", e => {
     if (e.key === "Enter") {
         const enterToSend = localStorage.getItem("enterToSend") !== "false";
@@ -1028,6 +1074,21 @@ msgBox.addEventListener("keydown", e => {
             e.preventDefault();
             send();
         }
+    }
+
+    // Up-arrow on an empty composer edits your last message — the affordance
+    // every other chat client trains. Guarded on the composer being empty so a
+    // multi-line draft still gets normal caret movement, and on there being no
+    // modifier so shortcuts like Shift+Up (select) are untouched. The @mention
+    // dropdown claims ArrowUp in the capture phase and stops propagation, so
+    // this never competes with it.
+    if (
+        e.key === "ArrowUp" &&
+        !msgBox.value &&
+        !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey &&
+        editLastOwnMessage()
+    ) {
+        e.preventDefault();
     }
 });
 
@@ -2123,7 +2184,9 @@ function prependMessages(rows) {
         schedulePreview(el);
         _checkDeletedFiles(el);
     });
-    updateReadReceiptUI();
+    // Same reasoning as the previews above: watermarks did not move, so only
+    // the page just prepended needs its receipts painted.
+    updateReadReceiptUI(added);
 }
 
 // Re-derive every date divider from the messages currently rendered. Cheap
@@ -2310,11 +2373,25 @@ const GROUP_WINDOW_SEC = 300;
 // that runs of messages from the same sender (within GROUP_WINDOW_SEC, and not
 // broken by a date divider or a system message) render as a single cluster.
 // Messages are stored as separate rows in the backend; this is purely visual.
-function regroupMessages() {
+// Pass *startEl* to regroup only from that node onwards. Grouping depends on a
+// message and the one before it and nothing else, so an append only needs the
+// nodes it added — and at a few thousand loaded messages a full re-walk costs
+// ~10ms, which is a dropped frame on every single incoming message.
+function regroupMessages(startEl = null) {
     const chat = document.getElementById("chat");
     let prevSender = null;
     let prevTs = 0;
-    for (const el of chat.children) {
+    // Seed the cluster state from the node before the start point. A divider or
+    // system message there leaves the seed null, which is exactly what the loop
+    // below would have done on reaching it.
+    if (startEl) {
+        const prev = startEl.previousElementSibling;
+        if (prev?.classList.contains("msg") && !prev.classList.contains("system-msg")) {
+            prevSender = prev.dataset.sender;
+            prevTs = parseFloat(prev.dataset.ts) || 0;
+        }
+    }
+    for (let el = startEl || chat.firstElementChild; el; el = el.nextElementSibling) {
         if (!el.classList.contains("msg")) {
             // Date dividers (and anything else) break the cluster.
             prevSender = null;
@@ -2500,6 +2577,14 @@ function applyMessages(data, requestedChannel = channel) {
             // dividers and for the user's own sends — neither is something the
             // user "missed" and needs offering a ride back down to.
             let newFromOthers = 0;
+            // Everything appended in this batch lands after whatever is last
+            // right now, which lets the regroup and receipt passes below touch
+            // only the new tail instead of re-walking the whole channel.
+            const tailBefore = chat.lastElementChild;
+            // Existing rows re-rendered in place (an edit or a reaction) get a
+            // fresh, blank .read-receipt span, so they need repainting too even
+            // though they are not new.
+            const rerendered = [];
 
             data.forEach(m => {
               // One malformed message must not abort the batch. Without this,
@@ -2590,6 +2675,7 @@ function applyMessages(data, requestedChannel = channel) {
                     _injectMsgAvatar(existing, m.sender);
                     schedulePreview(existing);
                     _checkDeletedFiles(existing);
+                    rerendered.push(existing);
                 } else if (oldestLoadedTs !== null && m.ts < oldestLoadedTs) {
                     // A change to a message older than the loaded window — an
                     // edit or reaction on history the user hasn't scrolled back
@@ -2628,7 +2714,14 @@ function applyMessages(data, requestedChannel = channel) {
               }
             });
 
-            regroupMessages();
+            // Only the tail this batch appended, plus the one node before it
+            // whose "is the next message a continuation" answer may have moved.
+            const firstNew = tailBefore ? tailBefore.nextElementSibling : chat.firstElementChild;
+            const newNodes = [];
+            for (let el = firstNew; el; el = el.nextElementSibling) newNodes.push(el);
+            // Nothing appended means no grouping can have moved: a re-rendered
+            // row keeps its sender and ts, which are the only inputs.
+            if (firstNew) regroupMessages(firstNew);
 
             const mentionAlert = mentionMsg && notifyArmed;
 
@@ -2660,7 +2753,9 @@ function applyMessages(data, requestedChannel = channel) {
                 // tell maybeNotifyUnread the rise it is about to see belongs to
                 // a message the user is looking at.
                 if (newFromOthers > 0) globalThis.lastActiveChannelMsgAt = Date.now();
-                fetch(`/mark_read/${channel}`, { method: "POST" });
+                // Fire-and-forget: a missed read marker self-corrects on the next
+                // append or focus, so it is not worth surfacing.
+                fetch(`/mark_read/${channel}`, { method: "POST" }).catch(() => {});
             }
 
             // Track the bottom edge of the loaded window. A first page that
@@ -2673,7 +2768,9 @@ function applyMessages(data, requestedChannel = channel) {
             }
             if (isFirstPage && data.length < HISTORY_PAGE_SIZE) hasMoreHistory = false;
 
-            updateReadReceiptUI();
+            // readReceiptsMap is untouched by this path, so only the rows that
+            // gained or replaced a receipt span need painting.
+            updateReadReceiptUI([...newNodes, ...rerendered]);
             refreshDMs();
             updateEmptyState();
             renderUnreadDivider();
@@ -2784,7 +2881,18 @@ function send() {
                 r,
                 "You're sending messages too quickly. Please slow down.",
             );
+        } else {
+            // Any other refusal (auth expired, server error). Say so rather than
+            // letting the message quietly disappear from the user's mental model
+            // of what was sent; the text stays in the box either way.
+            showToast("Couldn't send that message — it's still in the box, try again.");
         }
+    }).catch(() => {
+        // The request never reached the server: offline, server down, or the
+        // link dropped mid-flight. Without this the promise rejected unhandled
+        // and pressing Enter did nothing at all — no error, no sent message,
+        // and no reason to doubt it had worked.
+        showToast("Couldn't send — you appear to be offline. The message is still in the box.");
     });
 }
 
@@ -2851,7 +2959,8 @@ function cancelEdit(msgId) {
     const originalText = textDiv.dataset.raw || "";
     textDiv.innerHTML = formatText(originalText) + _readReceiptSpan(msgId);
     delete textDiv.dataset.editing;
-    updateReadReceiptUI();
+    // Only this row's span was replaced.
+    updateReadReceiptUI(textDiv);
 }
 
 function saveEdit(msgId) {
@@ -2879,7 +2988,8 @@ function saveEdit(msgId) {
         textDiv.dataset.raw = newText;
         textDiv.innerHTML = formatText(newText) + _readReceiptSpan(msgId);
         delete textDiv.dataset.editing;
-        updateReadReceiptUI();
+        // Only this row's span was replaced.
+        updateReadReceiptUI(textDiv);
     })
     .catch(err => {
         showToast("Could not edit message");

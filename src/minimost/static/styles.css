@@ -2630,6 +2630,46 @@ a {
 }
 
 /* ── Channel screen-share banner ─────────────────────────────────────────── */
+/* ── Connection lost banner ──────────────────────────────────────────────── */
+/* Amber rather than red: the stream dropping is a state to be aware of, not an
+   error to act on — EventSource is already retrying on its own. Matches the
+   screen-share banner's geometry so the two never fight for the same slot. */
+#connection-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 16px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(240, 173, 78, 0.2),
+      rgba(240, 173, 78, 0.07) 60%,
+      transparent
+    ),
+    #1e1e1e;
+  border-bottom: 1px solid rgba(240, 173, 78, 0.3);
+  font-size: 13px;
+  color: #f0c674;
+  flex-shrink: 0;
+}
+/* [hidden] must win over the flex display above. */
+#connection-banner[hidden] {
+  display: none;
+}
+.conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f0ad4e;
+  flex-shrink: 0;
+  animation: conn-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes conn-dot-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
 #screenshare-banner {
   display: flex;
   align-items: center;
@@ -3773,6 +3813,7 @@ a {
 @media (prefers-reduced-motion: reduce) {
   #call-live-dot,
   .ss-live-dot,
+  .conn-dot,
   .call-incoming-halo,
   .call-btn-accept,
   .call-tile.speaking .call-tile-avatar::after,

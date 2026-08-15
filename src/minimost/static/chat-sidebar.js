@@ -258,6 +258,11 @@ function sendPresence(state) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ state }),
+  }).catch(() => {
+    // Fire-and-forget: a presence beat that misses because the link is down is
+    // not worth reporting — the connection banner already says so, and the next
+    // beat corrects it. Swallowed only so it does not surface as an unhandled
+    // rejection in the console every 30s while offline.
   });
 }
 
@@ -460,11 +465,15 @@ function maybeNotifyUnread() {
 function reconcileOnActive() {
   sendPresence("active");
   fetchMessages();
-  fetch(`/mark_read/${channel}`, { method: "POST" }).then(() => {
-    refreshChannels();
-    refreshPrivateChannels();
-    refreshTotalUnreadCount();
-  });
+  fetch(`/mark_read/${channel}`, { method: "POST" })
+    .then(() => {
+      refreshChannels();
+      refreshPrivateChannels();
+      refreshTotalUnreadCount();
+    })
+    // Reconciling on focus is best-effort: if the link is down there is nothing
+    // to refresh from, and the next focus or append retries it.
+    .catch(() => {});
 }
 
 function updateTitleBadge(count) {

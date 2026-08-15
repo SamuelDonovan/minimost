@@ -852,6 +852,9 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: currentPresence }),
+      }).catch(() => {
+        // See sendPresence(): a missed heartbeat is self-correcting, and the
+        // connection banner is what tells the user the link is down.
       });
     }
   }, 30_000);
@@ -864,7 +867,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // function does: load the first page, then open the stream at the cursor that
   // load reached. Connecting straight away would open the stream at after=0 and
   // have it deliver the channel's entire history, defeating the paging.
-  fetchMessages().then(() => connectEvents());
+  // If that first load fails (server not up yet, link down), still open the
+  // stream: EventSource keeps retrying on its own and the connection banner
+  // reports the state, whereas an unhandled rejection here would leave the app
+  // with no live stream at all and no way back short of a reload.
+  fetchMessages()
+    .catch(() => {})
+    .then(() => connectEvents());
 
   setInterval(() => {
     if (

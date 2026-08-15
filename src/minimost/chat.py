@@ -575,20 +575,29 @@ def channel_unreads():
     """
     user = session["user"]
     db = get_db()
-    placeholders = ",".join("?" * len(CHANNELS))
+    # One statement per channel, with the read watermark as a scalar subquery
+    # rather than a joined column.
+    #
+    # The previous form was a single LEFT JOIN ... GROUP BY over every channel
+    # at once, which reads better but cannot use idx_messages_channel_ts beyond
+    # its leading column: `ts > r.last_read_ts` compares against a value the
+    # join produces, so SQLite has to visit every message row in each channel
+    # and filter afterwards. Feeding the watermark in as a subquery makes it a
+    # constant at plan time, so the index bounds `ts` too and each channel
+    # becomes a range scan over just its unread tail — the thing being counted.
+    # On a channel with 40k messages that is ~40ms versus ~0.15ms, and this runs
+    # from the /events collector for every connected client.
     sql = (
-        "SELECT m.channel AS channel, COUNT(*) AS count "  # nosec B608
-        "FROM messages m "
-        "LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel "
-        f"WHERE m.channel IN ({placeholders}) AND m.sender != ? AND m.deleted = 0 "
-        "AND m.ts > COALESCE(r.last_read_ts, 0) "
-        "GROUP BY m.channel"
+        "SELECT COUNT(*) FROM messages "
+        "WHERE channel = ? "
+        "  AND ts > COALESCE("
+        "        (SELECT last_read_ts FROM read_state WHERE user = ? AND channel = ?), 0) "
+        "  AND sender != ? AND deleted = 0"
     )
-    rows = db.execute(sql, (user, *CHANNELS, user)).fetchall()
+    result = {}
+    for ch in CHANNELS:
+        result[ch] = db.execute(sql, (ch, user, ch, user)).fetchone()[0]
     db.close()
-    result = dict.fromkeys(CHANNELS, 0)
-    for row in rows:
-        result[row["channel"]] = row["count"]
     return jsonify(result)
 
 
@@ -688,12 +697,20 @@ def unread_count():
     user = session["user"]
     db = get_db()
 
+    # The DM prefix is matched as a range rather than ``channel LIKE 'dm:%'``.
+    # SQLite's LIKE is case-insensitive for ASCII by default, so it cannot use
+    # the BINARY-collated idx_messages_channel_ts and the planner falls back to
+    # scanning every message row — on a busy server this query runs from the
+    # /events collector for every connected client. ``>= 'dm:' AND < 'dm;'``
+    # (';' is the byte after ':') is an index range SEARCH instead, and matches
+    # exactly the channels dm_channel_name() can build, since every other DM
+    # check in this codebase is a case-sensitive startswith("dm:").
     row = db.execute(
         """
         SELECT COUNT(*) AS unread
         FROM messages m
         LEFT JOIN read_state r ON r.user = ? AND r.channel = m.channel
-        WHERE m.channel LIKE 'dm:%'
+        WHERE m.channel >= 'dm:' AND m.channel < 'dm;'
           AND m.sender != ?
           AND m.deleted = 0
           AND m.ts > COALESCE(r.last_read_ts, 0)
@@ -739,6 +756,7 @@ def dms():
     user = session["user"]
     db = get_db()
 
+    # Range rather than LIKE on the dm: prefix — see unread_count() for why.
     rows = db.execute(
         """
         SELECT
@@ -754,7 +772,7 @@ def dms():
         FROM messages m
         LEFT JOIN dm_hidden dh ON dh.user = ? AND dh.channel = m.channel
         LEFT JOIN read_state rs ON rs.user = ? AND rs.channel = m.channel
-        WHERE m.channel LIKE 'dm:%'
+        WHERE m.channel >= 'dm:' AND m.channel < 'dm;'
           AND (
                 m.channel LIKE 'dm:' || ? || ':%' ESCAPE '\\'
              OR m.channel LIKE 'dm:%:' || ? ESCAPE '\\'
@@ -1399,6 +1417,13 @@ def messages(channel):
     # A first load (after=0) asks for a page, not the whole channel. Deltas
     # (after>0) stay uncapped — they are bounded by how much changed since the
     # cursor, and dropping any of them would desynchronise the client.
+    #
+    # Omitting ``limit`` at after=0 deliberately still returns the whole channel
+    # including deleted tombstones: that is the full-sync form of this endpoint
+    # (see test_messages_deleted_tombstone and the paging tests that use it as
+    # their reference). The app's own callers always page — the browser client
+    # sends HISTORY_PAGE_SIZE, and the /events stream resolves a zero cursor to
+    # a page in _safe_messages — so nothing on the hot path takes this branch.
     if after == 0 and request.args.get("limit"):
         try:
             limit = max(1, min(int(request.args["limit"]), 200))
