@@ -415,6 +415,15 @@ describe("_renderCall() tiles", () => {
     expect(tileFor("screen:alice").className).toContain("is-screen");
   });
 
+  test("mutes a remote screen tile so it can autoplay", () => {
+    // In-call shares are captured with `audio: false`, so a screen tile never
+    // carries sound. Leaving it unmuted only bought a NotAllowedError from the
+    // autoplay policy, which froze remote screens on their first frame.
+    addPeer("bob").screenStream = stream([track("video")]);
+    _renderCall();
+    expect(tileFor("screen:bob").querySelector("video").muted).toBe(true);
+  });
+
   test("names a remote screen after its owner", () => {
     addPeer("bob").screenStream = stream([track("video")]);
     _renderCall();
@@ -2132,6 +2141,24 @@ describe("share viewer", () => {
     expect(viewer.tileEl.classList.contains("live")).toBe(true);
   });
 
+  test("keeps video and audio on one stream when both tracks arrive", () => {
+    // The sharer attaches tracks with replaceTrack(), so they belong to no
+    // stream and `e.streams` is empty. Minting a stream per track meant the
+    // audio m-line replaced the video one and the viewer saw nothing.
+    applyScreenShares([{ share_id: "s1", sharer: "bob" }]);
+    openShareViewer();
+    const viewer = shareViewers.get("s1");
+    const video = track("video");
+    const audio = track("audio");
+
+    viewer.pc.ontrack({ track: video, streams: [] });
+    viewer.pc.ontrack({ track: audio, streams: [] });
+
+    const kinds = viewer.videoEl.srcObject.getTracks().map((t) => t.kind);
+    expect(kinds).toContain("video");
+    expect(kinds).toContain("audio");
+  });
+
   test("relays the viewer's ICE candidates to the sharer", () => {
     applyScreenShares([{ share_id: "s1", sharer: "bob" }]);
     openShareViewer();
@@ -2302,7 +2329,11 @@ describe("acceptCall()", () => {
 
   test("joins the call and opens the panel", async () => {
     global.incomingCallData = { call_id: "c1", initiator: "bob" };
-    fetch.mockResolvedValueOnce({ ok: true });
+    // /accept answers with the signal cursor the client starts polling from.
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ status: "ok", last_signal_id: 0 }),
+    });
     await acceptCall();
     expect(activeCallId).toBe("c1");
     expect(callState).toBe("active");
@@ -2320,7 +2351,10 @@ describe("acceptCall()", () => {
   test("hangs up when the microphone cannot be opened", async () => {
     const error = jest.spyOn(console, "error").mockImplementation(() => {});
     global.incomingCallData = { call_id: "c1", initiator: "bob" };
-    fetch.mockResolvedValueOnce({ ok: true });
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ status: "ok", last_signal_id: 0 }),
+    });
     navigator.mediaDevices.getUserMedia.mockRejectedValueOnce(
       new Error("denied"),
     );

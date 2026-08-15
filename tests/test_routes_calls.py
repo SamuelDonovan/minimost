@@ -51,6 +51,23 @@ def _insert_signal(call_id, from_user, to_user, signal_type="offer", payload=Non
     return signal_id
 
 
+def _insert_presence(username, last_seen=None):
+    """Give *username* a fresh presence heartbeat.
+
+    An ``active`` call whose accepted participants have all gone quiet is
+    treated as abandoned and swept (see ``_sweep_stale_calls``), so a test that
+    wants a call to still be live has to look live.
+    """
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    db.execute(
+        "INSERT OR REPLACE INTO presence (user, last_seen, state)"
+        " VALUES (?, ?, 'active')",
+        (username, int(last_seen or time.time())),
+    )
+    db.commit()
+    db.close()
+
+
 def _get_call(call_id):
     db = sqlite3.connect(presence_mod.PRESENCE_DB)
     db.row_factory = sqlite3.Row
@@ -258,6 +275,127 @@ def test_accept_updates_participant_and_call_state(alice_and_bob, app):
     assert bob_p["joined_ts"] is not None
 
 
+def test_accept_seeds_signal_cursor_and_drops_stale_signals(alice_and_bob, app):
+    """Re-joining must not replay the call's signalling history.
+
+    ``call_signals`` rows live until the whole call ends, so a participant who
+    left and came back used to restart their poll at 0 and answer offers whose
+    peer connections were already closed, wedging the reconnect. Accepting now
+    clears that user's rows and hands back a cursor past everything else.
+    """
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="left")
+
+    stale = _insert_signal(call_id, "alice", "bob")
+    _insert_signal(call_id, "bob", "alice")
+    keep = _insert_signal(call_id, "alice", "carol")
+
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    resp = bob_client.post(f"/calls/{call_id}/accept")
+    assert resp.status_code == 200
+    # The cursor skips whatever survived, so nothing is replayed.
+    assert resp.get_json()["last_signal_id"] == keep
+
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    remaining = [
+        r[0]
+        for r in db.execute("SELECT id FROM call_signals WHERE call_id = ?", (call_id,))
+    ]
+    db.close()
+    assert stale not in remaining
+    assert remaining == [keep]
+
+
+def test_end_clears_departing_participants_signals(alice_and_bob, app):
+    """Leaving drops that user's signalling rows so a rejoin cannot replay them."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob:carol", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+    _insert_participant(call_id, "carol", role="participant", state="accepted")
+
+    _insert_signal(call_id, "alice", "bob")
+    _insert_signal(call_id, "bob", "carol")
+    survives = _insert_signal(call_id, "alice", "carol")
+
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    assert bob_client.post(f"/calls/{call_id}/end").status_code == 200
+
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    remaining = [
+        r[0]
+        for r in db.execute("SELECT id FROM call_signals WHERE call_id = ?", (call_id,))
+    ]
+    db.close()
+    assert remaining == [survives]
+
+
+def test_active_call_lists_live_call_for_channel_member(alice_and_bob, app):
+    """The join banner's data source: who is on the call, and am I already?"""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_presence("alice")
+
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    resp = bob_client.get("/calls/active?channel=dm:alice:bob")
+    assert resp.status_code == 200
+    call = resp.get_json()["call"]
+    assert call["call_id"] == call_id
+    assert call["participants"] == ["alice"]
+    assert call["joined"] is False
+
+
+def test_active_call_returns_none_when_channel_is_quiet(alice_and_bob, app):
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    resp = bob_client.get("/calls/active?channel=dm:alice:bob")
+    assert resp.status_code == 200
+    assert resp.get_json()["call"] is None
+
+
+def test_active_call_hides_abandoned_call(alice_and_bob, app):
+    """An active call whose participants have all gone quiet is not offered.
+
+    Otherwise a browser that died without ending its call would leave a "join"
+    banner pointing at nothing, for everyone, until someone placed a new call.
+    """
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_presence("alice", last_seen=time.time() - 600)
+
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    resp = bob_client.get("/calls/active?channel=dm:alice:bob")
+    assert resp.status_code == 200
+    assert resp.get_json()["call"] is None
+
+
+def test_active_call_denies_non_member(alice_and_bob, app):
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    resp = bob_client.get("/calls/active?channel=dm:alice:carol")
+    assert resp.status_code == 403
+
+
 def test_accept_ended_call_returns_409(alice_and_bob, app):
     call_id = str(uuid.uuid4())
     _insert_call(call_id, "dm:alice:bob", "alice", state="ended")
@@ -271,9 +409,31 @@ def test_accept_ended_call_returns_409(alice_and_bob, app):
     assert resp.status_code == 409
 
 
-def test_accept_non_participant_returns_403(alice_and_bob, app):
+def test_accept_admits_uninvited_channel_member(alice_and_bob, app):
+    """A member of the call's channel may join without a participant row.
+
+    Ringing only reaches whoever was there to answer it, so someone who missed
+    the ring (or declined by accident) must still be able to walk into a call
+    happening in their own channel.
+    """
     call_id = str(uuid.uuid4())
     _insert_call(call_id, "dm:alice:bob", "alice", state="ringing")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    resp = bob_client.post(f"/calls/{call_id}/accept")
+    assert resp.status_code == 200
+    assert "bob" in resp.get_json()["participants"]
+    assert _get_participant(call_id, "bob")["state"] == "accepted"
+
+
+def test_accept_outside_channel_returns_403(alice_and_bob, app):
+    """Someone who is not in the call's channel is still refused."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:carol", "alice", state="ringing")
     _insert_participant(call_id, "alice", role="initiator", state="accepted")
 
     bob_client = app.test_client()

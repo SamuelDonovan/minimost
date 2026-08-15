@@ -2620,6 +2620,7 @@ a {
 #call-panel,
 #call-incoming,
 #screenshare-banner,
+#calljoin-banner,
 #screenshare-viewer {
   --c-bg: #0b0e14;
   --c-surface: rgba(22, 27, 37, 0.92);
@@ -2693,7 +2694,11 @@ a {
   }
 }
 
-#screenshare-banner {
+/* The join-a-call-in-progress banner is the same object as the screen-share
+   banner — a live thing happening in this channel, with one action — so it
+   shares the styling rather than growing a near-duplicate rule. */
+#screenshare-banner,
+#calljoin-banner {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2748,7 +2753,8 @@ a {
 .ss-banner-avatars .avatar-presence {
   display: none;
 }
-#screenshare-banner-text {
+#screenshare-banner-text,
+#calljoin-banner-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

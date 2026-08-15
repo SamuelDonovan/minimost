@@ -99,6 +99,7 @@ function connectEvents() {
   _bindEvent(es, "typing", applyTyping);
   _bindEvent(es, "read_receipts", applyReadReceipts);
   _bindEvent(es, "screenshares", applyScreenShares);
+  _bindEvent(es, "active_call", applyActiveCall);
 
   // Global events, independent of the open channel.
   _bindEvent(es, "online_users", applyOnlineUsers);

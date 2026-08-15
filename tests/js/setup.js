@@ -109,14 +109,25 @@ global.URL.createObjectURL = jest.fn(() => "blob:mock-url");
 global.URL.revokeObjectURL = jest.fn();
 
 // ── WebRTC mocks ──────────────────────────────────────────────────────────────
-global.MediaStream = jest.fn().mockImplementation((tracks = []) => ({
-  _tracks: tracks,
-  getTracks: jest.fn(() => tracks),
-  getAudioTracks: jest.fn(() => tracks.filter((t) => t.kind === "audio")),
-  getVideoTracks: jest.fn(() => tracks.filter((t) => t.kind === "video")),
-  addTrack: jest.fn(),
-  removeTrack: jest.fn(),
-}));
+// addTrack/removeTrack actually mutate the track list, as the real thing does:
+// code that builds a stream up track by track (the share viewer collecting a
+// screen's video and audio) is only testable if the mock reflects the result.
+global.MediaStream = jest.fn().mockImplementation((tracks = []) => {
+  const _tracks = [...tracks];
+  return {
+    _tracks,
+    getTracks: jest.fn(() => _tracks),
+    getAudioTracks: jest.fn(() => _tracks.filter((t) => t.kind === "audio")),
+    getVideoTracks: jest.fn(() => _tracks.filter((t) => t.kind === "video")),
+    addTrack: jest.fn((t) => {
+      if (!_tracks.includes(t)) _tracks.push(t);
+    }),
+    removeTrack: jest.fn((t) => {
+      const i = _tracks.indexOf(t);
+      if (i !== -1) _tracks.splice(i, 1);
+    }),
+  };
+});
 
 global.RTCPeerConnection = jest.fn().mockImplementation(() => ({
   localDescription: null,

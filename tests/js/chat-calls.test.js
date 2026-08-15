@@ -423,7 +423,7 @@ describe("acceptCall()", () => {
       getTracks: jest.fn(() => []),
     });
     global.fetch
-      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) })
       .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
     await acceptCall();
     const calls = global.fetch.mock.calls.map((c) => c[0]);

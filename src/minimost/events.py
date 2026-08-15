@@ -212,6 +212,11 @@ _CHANNEL_COLLECTORS = (
     # active_screenshares() reads request.args['channel'] itself; the stream URL
     # carries it, so the channel argument is accepted but unused here.
     ("screenshares", 0.5, False, lambda _ch: calls.active_screenshares()),
+    # Lets the channel show a standing "join the call" banner. Pushed rather
+    # than polled so a member who was not rung still sees the call appear
+    # without a refresh; active_call_for_channel() reads the channel from
+    # request.args exactly as active_screenshares() does.
+    ("active_call", 1.0, False, lambda _ch: calls.active_call_for_channel()),
 )
 
 

@@ -184,6 +184,53 @@ function _playCue(name) {
   new Audio(`/static/${name}.mp3`).play().catch(() => {});
 }
 
+// Start a <video>/<audio> element, surviving Chrome's autoplay policy.
+//
+// An element carrying an unmuted audio track cannot autoplay until the user has
+// interacted with the document, and `play()` rejects with NotAllowedError. A
+// call surface opens without a click often enough — answering from a
+// notification, a share starting while you read the channel — that swallowing
+// the rejection leaves the viewer staring at a frozen first frame with no clue
+// why. Fall back to muted playback (always permitted) so the picture moves, and
+// Resolves true only when playback had to be muted to start, so the caller can
+// offer to restore the audio; false means nothing was given up.
+async function _playMedia(el) {
+  try {
+    await el.play();
+    return false;
+  } catch (err) {
+    if (err?.name !== "NotAllowedError") {
+      console.warn("Media playback failed:", err);
+      return false;
+    }
+  }
+  const hadAudio = !el.muted;
+  el.muted = true;
+  try {
+    await el.play();
+    if (hadAudio) {
+      console.info(
+        "Autoplay blocked; playing muted. Audio resumes on the first click.",
+      );
+    }
+    return hadAudio;
+  } catch (err) {
+    console.warn("Muted playback also failed:", err);
+    return false;
+  }
+}
+
+// One document-wide gesture is enough to lift the autoplay block, so unmute
+// everything that had to start muted the moment the user touches the page.
+function _unmuteOnFirstGesture(el) {
+  const restore = () => {
+    el.muted = false;
+    el.play().catch(() => {});
+  };
+  document.addEventListener("pointerdown", restore, { once: true });
+  document.addEventListener("keydown", restore, { once: true });
+}
+
 function updateCallButton() {
   const btn = document.getElementById("call-btn");
   if (!btn) return;
@@ -389,8 +436,14 @@ function _createTile(spec) {
     video.className = "call-tile-video";
     video.autoplay = true;
     video.setAttribute("playsinline", "");
-    // Your own screen is a local preview; leaving it audible would echo.
-    video.muted = spec.self;
+    // In-call screen shares are captured with `audio: false`, so a screen tile
+    // never carries sound — the participant's voice arrives on its own <audio>
+    // element instead. Muting every screen tile therefore costs nothing and
+    // buys unconditional autoplay: an unmuted element is blocked until the user
+    // has interacted with the page, which used to leave remote screens frozen
+    // on their first frame. (Your own tile is a local preview and would echo
+    // anyway.)
+    video.muted = true;
     tile.appendChild(video);
   } else {
     const avatar = document.createElement("div");
@@ -454,7 +507,7 @@ function _updateScreenTile(el, spec, pState) {
   const stream = spec.self ? screenStream : pState?.screenStream;
   if (stream && video.srcObject !== stream) {
     video.srcObject = stream;
-    video.play().catch(() => {});
+    _playMedia(video);
   }
 }
 
@@ -820,8 +873,13 @@ function _sendCallSignal(toUser, type, payload) {
   }).catch(() => {});
 }
 
-function _startCallSignaling() {
-  lastCallSignalId = 0;
+// `seedId` is the newest signal id that already existed when we joined. Starting
+// from 0 instead would replay the whole call's signalling history — every offer,
+// answer and ICE candidate from a previous stint in the same call — and answer
+// offers whose peer connections are long closed, which left a rejoining
+// participant permanently stuck in ICE checking.
+function _startCallSignaling(seedId = 0) {
+  lastCallSignalId = seedId || 0;
   _callSignalPolling = false;
   callSignalPollId = setInterval(_pollCallSignals, 600);
 }
@@ -1727,10 +1785,19 @@ function _startShareViewerConnection(share) {
     pc,
     tileEl,
     videoEl: tileEl.querySelector("video"),
+    // One stream that both arriving tracks are added to. The sharer attaches
+    // its tracks with replaceTrack() onto the transceivers our recvonly offer
+    // created, and a replaced track belongs to no stream — so `e.streams` is
+    // empty and each ontrack would otherwise mint its own MediaStream. Binding
+    // srcObject to whichever arrived last meant the audio track (m-line 1)
+    // replaced the video track (m-line 0), and a share with tab audio showed
+    // the viewer nothing at all.
+    stream: new MediaStream(),
     lastSignalId: 0,
     polling: false,
     pending: [],
   };
+  viewer.videoEl.srcObject = viewer.stream;
   shareViewers.set(share.share_id, viewer);
 
   // recvonly on both kinds: audio only arrives if the sharer's browser captured
@@ -1743,12 +1810,19 @@ function _startShareViewerConnection(share) {
   }
 
   pc.ontrack = (e) => {
-    const stream = e.streams[0] || new MediaStream([e.track]);
-    if (viewer.videoEl.srcObject !== stream) {
-      viewer.videoEl.srcObject = stream;
-      viewer.videoEl.play().catch(() => {});
+    // Add rather than replace: see the note on `stream` above.
+    if (!viewer.stream.getTracks().includes(e.track)) {
+      viewer.stream.addTrack(e.track);
     }
+    // The picture has arrived — say so now rather than after playback settles,
+    // so the tile drops its spinner the moment there is something to show.
     tileEl.classList.add("live");
+    // A screen share may legitimately carry tab/system audio, so unlike an
+    // in-call screen tile this element cannot simply be muted. Try with sound,
+    // fall back to muted, and restore audio on the first gesture.
+    _playMedia(viewer.videoEl).then((lostAudio) => {
+      if (lostAudio) _unmuteOnFirstGesture(viewer.videoEl);
+    });
   };
   pc.onicecandidate = ({ candidate }) => {
     if (candidate)
@@ -1948,6 +2022,7 @@ async function acceptCall() {
   const resp = await fetch(`/calls/${call_id}/accept`, { method: "POST" });
   closeIncomingCallUI();
   if (!resp.ok) return;
+  const accepted = await resp.json().catch(() => ({}));
   activeCallId = call_id;
   callState = "active";
 
@@ -1957,7 +2032,7 @@ async function acceptCall() {
     _startCallTimer();
     _startMicLevelMeter();
     _startSpeakingPoll();
-    _startCallSignaling();
+    _startCallSignaling(accepted.last_signal_id);
     _startCallStatePolling();
   } catch (err) {
     console.error("Call accept failed:", err);
@@ -2007,6 +2082,9 @@ function _cleanupCall() {
     localStream.getTracks().forEach((t) => t.stop());
     localStream = null;
   }
+  // If the others are still talking, offer the way back in immediately rather
+  // than leaving a gap until the next push.
+  refreshActiveChannelCall();
 }
 
 function toggleAudioMute() {
@@ -2198,6 +2276,116 @@ async function _sendCallInvite(username, itemEl) {
     }
   } catch {
     status.textContent = "Failed";
+  }
+}
+
+// ── Join a call already in progress ───────────────────────────────────────────
+// Ringing only reaches whoever was watching at the time. Anyone who missed it
+// would otherwise see no trace of a call happening in their own channel, so the
+// channel carries a standing banner for as long as one is live.
+
+let _activeChannelCall = null;
+let _callJoinKey = ""; // avoids refetching the avatars on every poll
+
+function _renderCallJoinBanner() {
+  const banner = document.getElementById("calljoin-banner");
+  if (!banner) return;
+  const call = _activeChannelCall;
+  // Nothing to offer while you are already in a call, or on your own ring.
+  if (!call || call.joined || activeCallId || incomingCallData) {
+    banner.style.display = "none";
+    _callJoinKey = "";
+    return;
+  }
+
+  const names = call.participants;
+  const who =
+    names.length === 1
+      ? `${names[0]} is on a call`
+      : `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` and ${names.length - 2} more` : ""} are on a call`;
+  document.getElementById("calljoin-banner-text").textContent = who;
+
+  const key = names.join(",");
+  if (key !== _callJoinKey) {
+    _callJoinKey = key;
+    const faces = document.getElementById("calljoin-banner-avatars");
+    if (faces) {
+      faces.replaceChildren(
+        ...names.slice(0, 3).map((u) => makeAvatarWrap(u, 20, null, false)),
+      );
+    }
+  }
+  banner.style.display = "flex";
+}
+
+// React to the SSE "active_call" event. Shared with the fetcher below, which
+// covers the moment right after a channel switch, before the next push lands.
+function applyActiveCall(data) {
+  if (
+    !channel ||
+    (!channel.startsWith("dm:") && !channel.startsWith("private:"))
+  ) {
+    return;
+  }
+  // A public channel answers with an error payload rather than a call.
+  _activeChannelCall = data?.error ? null : (data?.call ?? null);
+  _renderCallJoinBanner();
+}
+
+async function refreshActiveChannelCall() {
+  if (
+    !channel ||
+    (!channel.startsWith("dm:") && !channel.startsWith("private:"))
+  ) {
+    _activeChannelCall = null;
+    _renderCallJoinBanner();
+    return;
+  }
+  try {
+    const resp = await fetch(
+      `/calls/active?channel=${encodeURIComponent(channel)}`,
+    );
+    _activeChannelCall = resp.ok ? (await resp.json()).call : null;
+  } catch {
+    return; // a blip should not blank a banner that is still valid
+  }
+  _renderCallJoinBanner();
+}
+
+// Joining is accepting: the server admits any member of the call's channel, so
+// the same endpoint covers both the invited and the walk-in case.
+async function joinActiveCall() {
+  const call = _activeChannelCall;
+  if (!call || activeCallId) return;
+  if (!_requireSecureContext()) return;
+
+  const resp = await fetch(`/calls/${call.call_id}/accept`, { method: "POST" });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    showToast(err.error || "Could not join the call");
+    refreshActiveChannelCall();
+    return;
+  }
+  const accepted = await resp.json().catch(() => ({}));
+  activeCallId = call.call_id;
+  callState = "active";
+  _activeChannelCall = null;
+  _renderCallJoinBanner();
+
+  try {
+    localStream = await _getLocalMedia();
+    openActiveCallUI();
+    _startCallTimer();
+    _startMicLevelMeter();
+    _startSpeakingPoll();
+    _startCallSignaling(accepted.last_signal_id);
+    _startCallStatePolling();
+  } catch (err) {
+    console.error("Join failed:", err);
+    const callId = activeCallId;
+    activeCallId = null;
+    await fetch(`/calls/${callId}/end`, { method: "POST" }).catch(() => {});
+    _cleanupCall();
   }
 }
 

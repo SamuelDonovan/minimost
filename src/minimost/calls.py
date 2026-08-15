@@ -328,6 +328,69 @@ def incoming_calls():
     )
 
 
+@calls_bp.route("/calls/active", methods=["GET"])
+@auth.login_required
+def active_call_for_channel():
+    """Return the call currently running in a channel, if there is one.
+
+    Route: ``GET /calls/active?channel=<channel>``
+
+    Lets a channel member discover a call that is already under way — one they
+    were never rung for, or whose ring they missed — so the client can offer to
+    join it instead of leaving them with no way in.
+
+    :returns: JSON with ``call`` set to the call object, or ``null`` when the
+        channel has no live call.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    channel = request.args.get("channel", "").strip()
+    if not channel:
+        return jsonify({"error": _ERR_CHANNEL_REQUIRED}), 400
+
+    members = _participants_for_channel(channel)
+    if not members or user not in members:
+        return jsonify({"error": _ERR_ACCESS_DENIED}), 403
+
+    db = _db()
+    try:
+        _sweep_stale_calls(db)
+        db.commit()
+        row = db.execute(
+            "SELECT call_id, initiator, state, started_ts FROM calls"
+            " WHERE channel = ? AND state IN ('ringing', 'active')",
+            (channel,),
+        ).fetchone()
+        if not row:
+            return jsonify({"call": None})
+
+        on_call = [
+            r["username"]
+            for r in db.execute(
+                "SELECT username FROM call_participants"
+                " WHERE call_id = ? AND state = 'accepted'",
+                (row["call_id"],),
+            )
+        ]
+    finally:
+        db.close()
+
+    return jsonify(
+        {
+            "call": {
+                "call_id": row["call_id"],
+                "initiator": row["initiator"],
+                "state": row["state"],
+                "started_ts": row["started_ts"],
+                "participants": on_call,
+                # Whether *this* user is already on it, so the client knows to
+                # offer "Join" rather than nothing at all.
+                "joined": user in on_call,
+            }
+        }
+    )
+
+
 @calls_bp.route("/calls/<call_id>/accept", methods=["POST"])
 @auth.login_required
 def accept_call(call_id):
@@ -360,7 +423,21 @@ def accept_call(call_id):
             (call_id, user),
         ).fetchone()
         if not participant:
-            return jsonify({"error": "not a participant in this call"}), 403
+            # Not invited, but the call is happening in a channel this user
+            # belongs to — let them walk in. Missing the 30-second ring (tab
+            # closed, stepped away, rejected by accident) otherwise locked a
+            # member out of their own channel's call until somebody thought to
+            # invite them by hand.
+            channel = db.execute(
+                "SELECT channel FROM calls WHERE call_id = ?", (call_id,)
+            ).fetchone()["channel"]
+            if user not in _participants_for_channel(channel):
+                return jsonify({"error": "not a participant in this call"}), 403
+            db.execute(
+                "INSERT INTO call_participants (call_id, username, role, state)"
+                " VALUES (?, ?, 'participant', 'pending')",
+                (call_id, user),
+            )
 
         db.execute(
             "UPDATE call_participants SET state = 'accepted', joined_ts = ?"
@@ -371,16 +448,45 @@ def accept_call(call_id):
             "UPDATE calls SET state = 'active', answered_ts = ? WHERE call_id = ?",
             (now, call_id),
         )
+
+        # Someone accepting may be *re*-joining a call they earlier left, and
+        # signalling rows live until the whole call ends. Their old offers,
+        # answers and ICE candidates describe peer connections that no longer
+        # exist, so drop everything exchanged with this user before they get a
+        # fresh cursor below — otherwise the replay renegotiates their new
+        # connections into a dead end.
+        db.execute(
+            "DELETE FROM call_signals"
+            " WHERE call_id = ? AND (to_user = ? OR from_user = ?)",
+            (call_id, user, user),
+        )
+
         accepted = db.execute(
             "SELECT username FROM call_participants"
             " WHERE call_id = ? AND state = 'accepted'",
             (call_id,),
         ).fetchall()
+        # The client starts its signal poll from here. Seeding it with the
+        # newest existing id stops a joiner from replaying the history of a
+        # call that has been running for a while.
+        last_signal_id = (
+            db.execute(
+                "SELECT COALESCE(MAX(id), 0) FROM call_signals WHERE call_id = ?",
+                (call_id,),
+            ).fetchone()[0]
+            or 0
+        )
         db.commit()
     finally:
         db.close()
 
-    return jsonify({"status": "ok", "participants": [r["username"] for r in accepted]})
+    return jsonify(
+        {
+            "status": "ok",
+            "participants": [r["username"] for r in accepted],
+            "last_signal_id": last_signal_id,
+        }
+    )
 
 
 @calls_bp.route("/calls/<call_id>/reject", methods=["POST"])
@@ -479,6 +585,16 @@ def end_call(call_id):
         db.execute(
             _SQL_CLEAR_SCREENSHARE,
             (call_id, user),
+        )
+
+        # Their signalling rows describe peer connections that just died. Drop
+        # them now so they cannot be replayed if this user rejoins, and so a
+        # long call does not accumulate the debris of everyone who passed
+        # through it.
+        db.execute(
+            "DELETE FROM call_signals"
+            " WHERE call_id = ? AND (to_user = ? OR from_user = ?)",
+            (call_id, user, user),
         )
 
         # A call needs two people.  Count everyone who is still on it or could
