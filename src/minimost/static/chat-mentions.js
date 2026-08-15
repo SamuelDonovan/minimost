@@ -293,26 +293,33 @@ function renderMentionsSidebar() {
     item.className = "sidebar-item";
     item.id = "mentions-sidebar-item";
     item.dataset.channel = MENTIONS_CHANNEL;
-    item.onpointerup = (e) => {
-      e.preventDefault();
-      switchChannel(MENTIONS_CHANNEL);
-    };
   }
   // Always keep it pinned to the very top, even after a sidebar rebuild.
   if (sb.firstChild !== item) sb.insertBefore(item, sb.firstChild);
 
   item.innerHTML = "";
+  // A real button, like every other sidebar row — see sidebarEntry().
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "sidebar-item-open";
+  open.setAttribute("aria-label", `Mentions, ${mentionItems.length} unread`);
+  open.onclick = () => switchChannel(MENTIONS_CHANNEL);
+
   const labelSpan = document.createElement("span");
   labelSpan.className = "label";
   labelSpan.textContent = "@ Mentions";
-  item.appendChild(labelSpan);
+  open.appendChild(labelSpan);
+  item.appendChild(open);
 
   const badge = document.createElement("span");
   badge.className = "unread-badge";
   badge.textContent = mentionItems.length;
   item.appendChild(badge);
 
-  if (channel === MENTIONS_CHANNEL) item.classList.add("active");
+  if (channel === MENTIONS_CHANNEL) {
+    item.classList.add("active");
+    open.setAttribute("aria-current", "true");
+  }
 }
 
 // Switch the main pane to the read-only Mentions list. Hides the composer and
@@ -368,7 +375,7 @@ function renderMentionsView() {
   mentionItems.forEach((m) => {
     const card = document.createElement("div");
     card.className = "mention-list-item";
-    card.onclick = () => _goToMention(m.channel, m.id);
+    card.onclick = () => _goToMention(m.channel, m.id, m.ts);
 
     const avatar = makeAvatarWrap(m.sender, 32);
     card.appendChild(avatar);
@@ -413,9 +420,10 @@ function renderMentionsView() {
 }
 
 // Jump to a mentioned message in its real channel. switchChannel marks that
-// channel read (so the mention clears on the next poll); the short delay lets
-// the channel's messages render before we scroll. Mirrors _goToSearchResult.
-function _goToMention(ch, id) {
-  switchChannel(ch);
-  setTimeout(() => scrollToMsg(id), 200);
+// channel read, so the mention clears from this list on the next push.
+// revealMessage() waits for the render and pages in whatever history is needed
+// — a fixed delay used to miss on a slow link and silently do nothing at all
+// for any mention older than the channel's newest page.
+function _goToMention(ch, id, ts) {
+  revealMessage(ch, id, ts);
 }

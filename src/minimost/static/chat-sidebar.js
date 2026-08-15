@@ -125,6 +125,16 @@ function applyChannelUnreads(counts) {
     } else if (badge) {
       badge.remove();
     }
+    // The badge is a sibling of the row's button, so the count has to be folded
+    // into that button's accessible name to be announced with the channel.
+    const open = el.querySelector(".sidebar-item-open");
+    const label = el.querySelector(".label")?.textContent || ch;
+    if (open) {
+      open.setAttribute(
+        "aria-label",
+        count > 0 ? `${label}, ${count} unread` : label,
+      );
+    }
   }
 
   if (hasUnreadChannels || privateChannelUnreadCount > 0) {
@@ -564,6 +574,14 @@ function applyUnreadCount(data) {
   maybeNotifyUnread();
 }
 
+// Build (or refresh) one sidebar row.
+//
+// The row's opening action is a real <button> rather than a click handler on the
+// row div: as a bare div the entire channel and DM list was outside the tab
+// order and announced as plain text, so the app could not be navigated at all
+// without a mouse. The button carries the avatar and label; the DM close
+// control and the unread badge stay outside it, since a control cannot be
+// nested inside another control.
 function sidebarEntry(label, channelName, unread = 0) {
   const sb = document.getElementById("sidebar-dynamic");
 
@@ -576,6 +594,17 @@ function sidebarEntry(label, channelName, unread = 0) {
   }
 
   d.innerHTML = "";
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "sidebar-item-open";
+  // The badge lives outside the button, so name the unread count here or it is
+  // never announced with the channel it belongs to.
+  open.setAttribute(
+    "aria-label",
+    unread > 0 ? `${label}, ${unread} unread` : label,
+  );
+  open.onclick = () => switchChannel(channelName);
 
   const labelSpan = document.createElement("span");
   labelSpan.className = "label";
@@ -593,20 +622,24 @@ function sidebarEntry(label, channelName, unread = 0) {
     // Use .on* assignment so repeated calls to sidebarEntry don't stack listeners.
     avatarWrap.onmouseenter = () => _showDmHoverCard(avatarWrap, avatarUser);
     avatarWrap.onmouseleave = _hideDmHoverCard;
-    d.appendChild(avatarWrap);
-    d.appendChild(labelSpan);
+    open.appendChild(avatarWrap);
+    open.appendChild(labelSpan);
+    d.appendChild(open);
 
     const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
     closeBtn.className = "dm-close-btn";
     closeBtn.title = "Close conversation";
+    closeBtn.setAttribute("aria-label", `Close conversation ${label}`);
     closeBtn.textContent = "×";
-    closeBtn.addEventListener("pointerup", (e) => {
+    closeBtn.onclick = (e) => {
       e.stopPropagation();
       closeDm(channelName);
-    });
+    };
     d.appendChild(closeBtn);
   } else {
-    d.appendChild(labelSpan);
+    open.appendChild(labelSpan);
+    d.appendChild(open);
   }
 
   if (channelName.startsWith("private:")) {
@@ -619,11 +652,6 @@ function sidebarEntry(label, channelName, unread = 0) {
     badge.textContent = unread;
     d.appendChild(badge);
   }
-
-  d.onpointerup = (e) => {
-    e.preventDefault();
-    switchChannel(channelName);
-  };
 
   return d;
 }

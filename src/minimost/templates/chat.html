@@ -5,7 +5,6 @@
 <head>
     <meta charset="utf-8">
     <title>MiniMost</title>
-    <base href="minimost">
     <meta name="description" content="Not skype">
     {{ stylesheet('styles.css') }}
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1935,10 +1934,13 @@ function updateSidebarActive() {
     );
 
     items.forEach(el => {
-        if (el.dataset.channel === channel) {
-            el.classList.add("active");
-        } else {
-            el.classList.remove("active");
+        const isActive = el.dataset.channel === channel;
+        el.classList.toggle("active", isActive);
+        // Announce which conversation is open, not just paint it blue.
+        const open = el.querySelector(".sidebar-item-open");
+        if (open) {
+            if (isActive) open.setAttribute("aria-current", "true");
+            else open.removeAttribute("aria-current");
         }
     });
 }
@@ -2149,10 +2151,8 @@ function prependMessages(rows) {
         });
 
         const d = document.createElement("div");
-        // Matches the append path. (Both branches there key off m.content_type,
-        // which no message query actually selects — so every message, system
-        // included, lands here as a plain .msg today.)
-        d.className = "msg";
+        // Matches the append path, system notices included.
+        d.className = isSystemMessage(m) ? "msg system-msg" : "msg";
         d.id = `msg-${m.id}`;
         d.dataset.sender = m.sender;
         d.dataset.ts = m.ts;
@@ -2333,20 +2333,30 @@ function updateEmptyState() {
     chat.appendChild(el);
 }
 
+// Take a deleted message out of the list, and repair what its absence changes:
+// the date divider it may have been the last message under, and the grouping of
+// whatever now follows it. Without the regroup, deleting the first message of a
+// cluster left the next one still marked `grouped` — so it kept the continuation
+// styling and stayed stripped of its avatar and sender name, attributed to
+// nobody until the channel was reloaded.
 function _removeDeletedMsg(existing, ts) {
     if (!existing) return;
-    let nextMsg = existing.nextElementSibling;
-    while (nextMsg && !nextMsg.classList.contains("msg")) nextMsg = nextMsg.nextElementSibling;
+    const after = existing.nextElementSibling;
     existing.remove();
+
     const divider = document.getElementById(`date-${new Date(ts * 1000).toDateString()}`);
-    if (!divider) return;
-    let next = divider.nextElementSibling;
-    let hasMessages = false;
-    while (next && !next.classList.contains("date-divider")) {
-        if (next.classList.contains("msg")) { hasMessages = true; break; }
-        next = next.nextElementSibling;
+    if (divider) {
+        let next = divider.nextElementSibling;
+        let hasMessages = false;
+        while (next && !next.classList.contains("date-divider")) {
+            if (next.classList.contains("msg")) { hasMessages = true; break; }
+            next = next.nextElementSibling;
+        }
+        if (!hasMessages) divider.remove();
     }
-    if (!hasMessages) divider.remove();
+
+    if (after?.isConnected) regroupMessages(after);
+    updateEmptyState();
 }
 
 
@@ -2414,9 +2424,18 @@ function regroupMessages(startEl = null) {
     }
 }
 
+// A channel notice posted by the server (welcome greeting, "X renamed the
+// channel", "X added Y", "X has left"), not something a person typed. The
+// `content_type` column is authoritative; `sender` is checked as well so a row
+// written before that column was carried in the payload still reads as one.
+function isSystemMessage(m) {
+    return m.content_type === "system" || m.sender === "system";
+}
+
 function _buildMsgHtml(m, time, fullTime, color) {
-    const displayName = m.sender === "system" ? "MiniMost" : m.sender;
-    let headerHtml = `<span class="user ${m.sender === "system" ? "system-msg-name" : ""}" style="color:${m.sender === "system" ? "" : color}" data-username="${m.sender}">${displayName}</span>`;
+    const isSystem = isSystemMessage(m);
+    const displayName = isSystem ? "MiniMost" : m.sender;
+    let headerHtml = `<span class="user ${isSystem ? "system-msg-name" : ""}" style="color:${isSystem ? "" : color}" data-username="${m.sender}">${displayName}</span>`;
     headerHtml += `<span class="time" title="${fullTime}">${time}</span>`;
 
     // Sits in the header proper, not in .msg-actions: that container is
@@ -2431,15 +2450,19 @@ function _buildMsgHtml(m, time, fullTime, color) {
         headerHtml += `<span class="edited-marker" title="Last edited at ${formatted}">(edited)</span>`;
     }
 
+    // A system notice is nobody's message: there is no one to reply to and
+    // nothing to react to, so it gets no action row at all.
     let actionsHtml = "";
-    if (m.sender === CURRENT_USER) {
+    if (m.sender === CURRENT_USER && !isSystem) {
         actionsHtml += `<button class="edit-btn" title="Edit" onclick="startEdit(${m.id})"><svg class="edit-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>`;
         actionsHtml += `<button class="delete-btn" title="Delete" onclick="deleteMsg(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>`;
     }
 
-    actionsHtml += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button>`;
-    actionsHtml += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>`;
-    headerHtml += `<span class="msg-actions">${actionsHtml}</span>`;
+    if (!isSystem) {
+        actionsHtml += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button>`;
+        actionsHtml += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>`;
+    }
+    if (actionsHtml) headerHtml += `<span class="msg-actions">${actionsHtml}</span>`;
 
     let bodyHtml = "";
     if (m.reply_to_id) {
@@ -2466,7 +2489,7 @@ function _buildMsgHtml(m, time, fullTime, color) {
         const files = m.filename.split(",");
         for (const fn of files) {
             if (imageExts.test(fn)) {
-                bodyHtml += `<a href="/files/${fn}" target="_blank"><img src="/files/${fn}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='static/retention.png';"></a>`;
+                bodyHtml += `<a href="/files/${fn}" target="_blank"><img src="/files/${fn}" class="chat-image" loading="lazy" onerror="this.onerror=null; this.src='/static/retention.png';"></a>`;
             } else {
                 const displayName = (fn.length > 33 && fn[32] === "_") ? fn.slice(33) : fn;
                 const safeName = escapeHtml(displayName);
@@ -2476,7 +2499,9 @@ function _buildMsgHtml(m, time, fullTime, color) {
         }
     }
 
-    bodyHtml += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
+    if (!isSystem) {
+        bodyHtml += `<div class="reactions" id="reactions-${m.id}">${buildReactionsHtml(m.id, m.reactions)}</div>`;
+    }
 
     // No text body (e.g. a file/image-only message): trail the receipt after the
     // body so it still shows, left-aligned.
@@ -2607,49 +2632,6 @@ function applyMessages(data, requestedChannel = channel) {
                     return;
                 }
 
-                if (m.content_type === "system") {
-                    if (!existing) {
-                        const d = document.createElement("div");
-                        d.className = "msg system-msg";
-                        d.id = msgId;
-
-                        const avatarWrap = document.createElement("div");
-                        avatarWrap.className = "avatar-wrap";
-                        avatarWrap.style.cssText = "width:32px;height:32px;flex-shrink:0";
-                        const avatarInner = document.createElement("div");
-                        avatarInner.className = "avatar";
-                        const avatarImg = document.createElement("img");
-                        avatarImg.className = "avatar-img";
-                        avatarImg.src = "/static/minimost-icon-32.svg";
-                        avatarImg.alt = "MiniMost";
-                        avatarInner.appendChild(avatarImg);
-                        avatarWrap.appendChild(avatarInner);
-
-                        const contentCol = document.createElement("div");
-                        contentCol.className = "msg-content-col";
-
-                        const header = document.createElement("div");
-                        header.className = "msg-header";
-                        const nameSpan = document.createElement("span");
-                        nameSpan.className = "user system-msg-name";
-                        nameSpan.textContent = "MiniMost";
-                        header.appendChild(nameSpan);
-
-                        const body = document.createElement("div");
-                        body.className = "msg-body";
-                        body.textContent = m.content;
-
-                        contentCol.appendChild(header);
-                        contentCol.appendChild(body);
-                        d.appendChild(avatarWrap);
-                        d.appendChild(contentCol);
-                        chat.appendChild(d);
-                        appended = true;
-                    }
-                    lastTs = Math.max(lastTs, m.ts);
-                    return;
-                }
-
                 const msgDate = new Date(m.ts * 1000);
                 const dateKey = msgDate.toDateString();
                 if (_ensureDateDivider(chat, dateKey, msgDate)) appended = true;
@@ -2661,6 +2643,7 @@ function applyMessages(data, requestedChannel = channel) {
                 });
                 const color = userColor(m.sender);
                 const html = _buildMsgHtml(m, time, fullTime, color);
+                const isSystem = isSystemMessage(m);
 
                 if (existing) {
                     const textSpan = existing.querySelector(".text");
@@ -2671,6 +2654,7 @@ function applyMessages(data, requestedChannel = channel) {
                     existing.innerHTML = html;
                     existing.dataset.sender = m.sender;
                     existing.dataset.ts = m.ts;
+                    existing.classList.toggle("system-msg", isSystem);
                     existing.classList.toggle("mentioned", isMentioned(m));
                     _injectMsgAvatar(existing, m.sender);
                     schedulePreview(existing);
@@ -2686,7 +2670,7 @@ function applyMessages(data, requestedChannel = channel) {
                     return;
                 } else {
                     const d = document.createElement("div");
-                    d.className = "msg";
+                    d.className = isSystem ? "msg system-msg" : "msg";
                     d.id = msgId;
                     d.dataset.sender = m.sender;
                     d.dataset.ts = m.ts;
@@ -2697,11 +2681,14 @@ function applyMessages(data, requestedChannel = channel) {
                     schedulePreview(d);
                     _checkDeletedFiles(d);
                     appended = true;
-                    if (m.sender !== CURRENT_USER) {
+                    // A channel notice ("X renamed the channel") is not someone
+                    // talking to you: it should not ring, and it should not be
+                    // counted as a message you missed.
+                    if (m.sender !== CURRENT_USER && !isSystem) {
                         playNewMsgSound = true;
                         newFromOthers++;
+                        if (isMentioned(m)) mentionMsg = m;
                     }
-                    if (m.sender !== CURRENT_USER && isMentioned(m)) mentionMsg = m;
                 }
 
                 if (m.reply_to_id) loadQuotedMsg(m.id, m.reply_to_id);
@@ -2815,8 +2802,10 @@ function showToast(message, duration = 5000) {
     }, duration);
 }
 
-// Show a rate-limit (429) response as a toast, using the server's message.
-async function showRateLimitToast(response, fallback) {
+// Show a refused response as a toast, preferring the server's own explanation
+// (a rate-limit cooldown, a conversation naming an account that doesn't exist)
+// over the generic *fallback*.
+async function showResponseToast(response, fallback) {
     let message = "";
     try {
         message = (await response.text()).trim();
@@ -2877,10 +2866,15 @@ function send() {
         } else if (r.status === 429) {
             // Rate limited. Keep the text in the box so nothing is lost and the
             // user can resend once the brief cooldown passes.
-            showRateLimitToast(
+            showResponseToast(
                 r,
                 "You're sending messages too quickly. Please slow down.",
             );
+        } else if (r.status === 400) {
+            // The server can say something specific and useful here — e.g. that
+            // this conversation names an account that doesn't exist — so pass
+            // its reason through rather than the generic failure below.
+            showResponseToast(r, "Couldn't send that message.");
         } else {
             // Any other refusal (auth expired, server error). Say so rather than
             // letting the message quietly disappear from the user's mental model
@@ -3001,23 +2995,11 @@ function deleteMsg(msgId) {
     fetch(`/delete/${msgId}`, { method: "POST" })
         .then(res => {
             if (!res.ok) throw new Error("Delete failed");
+            // Same removal the push stream's tombstone takes, so a message
+            // deleted here and one deleted in another tab leave the list in
+            // exactly the same state.
             const el = document.getElementById(`msg-${msgId}`);
-            if (!el) return;
-            // Find the date divider for this message's day before removing the element
-            let node = el.previousElementSibling;
-            while (node && !node.classList.contains("date-divider")) {
-                node = node.previousElementSibling;
-            }
-            el.remove();
-            if (node) {
-                let next = node.nextElementSibling;
-                let hasMessages = false;
-                while (next && !next.classList.contains("date-divider")) {
-                    if (next.classList.contains("msg")) { hasMessages = true; break; }
-                    next = next.nextElementSibling;
-                }
-                if (!hasMessages) node.remove();
-            }
+            if (el) _removeDeletedMsg(el, parseFloat(el.dataset.ts));
         })
         .catch(err => {
             showToast("Could not delete message");
@@ -3130,6 +3112,88 @@ function scrollToMsg(msgId) {
     el.style.transition = "background 0.2s";
     el.style.background = "#2a3a4a";
     setTimeout(() => { el.style.background = ""; }, 1200);
+}
+
+// ── Jumping to a message (search results, mentions) ───────────────────────────
+// Channels render a page at a time, so the message a search hit or a mention
+// points at is usually *not* on screen — anything older than the newest
+// HISTORY_PAGE_SIZE messages has no element to scroll to. The jump used to poll
+// for one that could never appear and then tell the user the message had
+// probably been deleted, which was both a dead end and untrue. It now pulls in
+// the history between here and there first.
+
+// How long to wait for the incoming channel's first page to paint.
+const JUMP_RENDER_TIMEOUT_MS = 8000;
+// Let the reveal scroll settle before releasing the auto-scroll suppression, so
+// the next render pass doesn't snap the list straight back to the bottom.
+const JUMP_SETTLE_MS = 600;
+// Ceiling on how much history one jump will page in. At HISTORY_PAGE_SIZE a
+// page that is ~2000 messages back, past any realistic search hit, and bounded
+// so a jump into the distant past can't walk a whole channel a page at a time.
+const JUMP_MAX_PAGES = 20;
+const JUMP_POLL_MS = 50;
+
+// Poll *predicate* on a timer rather than requestAnimationFrame: frames stop in
+// a backgrounded tab, and a jump left waiting on one would never finish — which
+// stranded pendingJumpMsgId set, silently suppressing every scroll-to-bottom
+// for the rest of the session.
+function _waitUntil(predicate, timeoutMs) {
+    return new Promise(resolve => {
+        const deadline = Date.now() + timeoutMs;
+        const tick = () => {
+            if (predicate()) return resolve(true);
+            if (Date.now() >= deadline) return resolve(false);
+            setTimeout(tick, JUMP_POLL_MS);
+        };
+        tick();
+    });
+}
+
+// Page history backwards until the loaded window reaches back to *targetTs*.
+async function _loadHistoryBackTo(targetTs, requestedChannel) {
+    for (let page = 0; page < JUMP_MAX_PAGES; page++) {
+        if (channel !== requestedChannel) return false;
+        if (oldestLoadedTs !== null && oldestLoadedTs <= targetTs) return true;
+        if (!hasMoreHistory) return false;
+        const before = oldestLoadedTs;
+        await loadOlderMessages();
+        // A scroll-triggered load already running makes loadOlderMessages a
+        // no-op; wait for it rather than spinning through the page budget.
+        if (oldestLoadedTs === before) await new Promise(r => setTimeout(r, 120));
+    }
+    return oldestLoadedTs !== null && oldestLoadedTs <= targetTs;
+}
+
+// Open *msgChannel*, bring message *msgId* on screen, and flash it. *ts* is the
+// message's timestamp, which is what tells us how far back to load.
+async function revealMessage(msgChannel, msgId, ts) {
+    const present = () => document.getElementById(`msg-${msgId}`);
+    // Claim the jump before switching: switchChannel() requests a scroll to the
+    // bottom for the incoming channel, which would otherwise land on top of ours.
+    globalThis.pendingJumpMsgId = msgId;
+    try {
+        switchChannel(msgChannel);
+        // The first page is what sets oldestLoadedTs, and paging back needs it.
+        await _waitUntil(
+            () => channel !== msgChannel || present() || oldestLoadedTs !== null,
+            JUMP_RENDER_TIMEOUT_MS,
+        );
+        if (channel !== msgChannel) return;
+
+        if (!present() && Number.isFinite(ts)) {
+            await _loadHistoryBackTo(ts, msgChannel);
+            if (channel !== msgChannel) return;
+        }
+
+        if (present()) {
+            scrollToMsg(msgId);
+            await new Promise(r => setTimeout(r, JUMP_SETTLE_MS));
+        } else {
+            showToast("Couldn't reach that message — it may have been deleted.");
+        }
+    } finally {
+        if (globalThis.pendingJumpMsgId === msgId) globalThis.pendingJumpMsgId = null;
+    }
 }
 
 </script>

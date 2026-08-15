@@ -756,9 +756,31 @@ describe("linkify()", () => {
     const result = linkify("visit https://example.com now");
     expect(result).toContain('<a href="https://example.com"');
   });
-  test("converts www URL to anchor tag", () => {
+  test("gives a bare www URL an absolute href", () => {
+    // Without the scheme the href is relative and resolves against MiniMost's
+    // own origin, so the link leads to a 404 on the app instead of the site.
     const result = linkify("see www.example.com");
-    expect(result).toContain("www.example.com");
+    expect(result).toContain('<a href="https://www.example.com"');
+    expect(result).toContain(">www.example.com</a>");
+  });
+
+  test("leaves sentence punctuation outside the link", () => {
+    const result = linkify("End (https://example.org/page).");
+    expect(result).toContain('<a href="https://example.org/page"');
+    expect(result).toContain("</a>).");
+  });
+
+  test("keeps balanced brackets that belong to the path", () => {
+    const result = linkify("see https://en.wikipedia.org/wiki/Foo_(bar) ok");
+    expect(result).toContain(
+      '<a href="https://en.wikipedia.org/wiki/Foo_(bar)"',
+    );
+  });
+
+  test("keeps a trailing HTML entity intact", () => {
+    // '&' escapes to '&amp;', whose ';' must not be trimmed as punctuation.
+    const result = linkify("q https://example.com/?a=b&c");
+    expect(result).toContain('href="https://example.com/?a=b&amp;c"');
   });
   test("plain text passes through unchanged", () => {
     expect(linkify("hello world")).toBe("hello world");

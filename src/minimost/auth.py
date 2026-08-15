@@ -783,6 +783,10 @@ def signup_post():
     # identity.  Imported lazily because chat imports auth at module load.
     from . import chat
 
+    # Start them caught up on the existing backlog first, so their first login
+    # isn't buried under an unread count for every message ever posted. Done
+    # before the greeting so the greeting itself lands as their one unread.
+    chat.seed_read_state(username, now)
     chat.post_welcome_message(username)
 
     _start_authenticated_session(username)

@@ -848,6 +848,29 @@ select {
   gap: 6px;
   min-width: 0;
 }
+/* The row's opening action. A real button, so channels and DMs are reachable by
+   keyboard and announced as controls, styled back down to the bare row it
+   replaced so nothing moves. */
+.sidebar-item-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-item-open:focus-visible {
+  outline: 2px solid #7ab7ff;
+  outline-offset: 1px;
+  border-radius: 3px;
+}
 .sidebar-item .label {
   overflow: hidden;
   text-overflow: ellipsis;

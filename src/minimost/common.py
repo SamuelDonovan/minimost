@@ -236,6 +236,15 @@ def init_messages_db():
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_messages_channel_ts ON messages(channel, ts)"
     )
+    # Attachments are authorised by looking up the channels a filename appears
+    # in (chat._can_access_file), which runs for every image the browser loads
+    # and every HEAD the "file deleted?" probe sends. Without this index that is
+    # a full scan of `messages` per attachment. Partial, because the column is
+    # NULL on every text message and only the non-NULL rows are ever queried.
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_filename ON messages(filename) "
+        "WHERE filename IS NOT NULL"
+    )
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS reactions (

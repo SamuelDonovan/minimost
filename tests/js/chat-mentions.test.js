@@ -211,6 +211,7 @@ describe("mentions channel", () => {
     // Cross-file globals the new code calls.
     global.switchChannel = jest.fn();
     global.scrollToMsg = jest.fn();
+    global.revealMessage = jest.fn();
     global.updateSidebarActive = jest.fn();
     global.cancelReply = jest.fn();
     global.closeSidebar = jest.fn();
@@ -281,7 +282,7 @@ describe("mentions channel", () => {
     expect(cards[0].textContent).toContain("bob");
     expect(cards[0].textContent).toContain("label:general");
     cards[0].onclick();
-    expect(switchChannel).toHaveBeenCalledWith("general");
+    expect(global.revealMessage).toHaveBeenCalledWith("general", 7, 1);
   });
 
   test("renderMentionsView shows an empty state when there are no mentions", () => {
@@ -290,13 +291,11 @@ describe("mentions channel", () => {
     expect(document.querySelector(".mentions-empty")).not.toBeNull();
   });
 
-  test("_goToMention switches channel then scrolls to the message", () => {
-    jest.useFakeTimers();
-    _goToMention("dm:alice:bob", 42);
-    expect(switchChannel).toHaveBeenCalledWith("dm:alice:bob");
-    jest.runAllTimers();
-    expect(scrollToMsg).toHaveBeenCalledWith(42);
-    jest.useRealTimers();
+  test("_goToMention delegates to revealMessage with the message timestamp", () => {
+    // revealMessage (chat.html) is what loads whatever history stands between
+    // the loaded page and the mention; the timestamp is how it knows how far.
+    _goToMention("dm:alice:bob", 42, 1700);
+    expect(global.revealMessage).toHaveBeenCalledWith("dm:alice:bob", 42, 1700);
   });
 
   test("openMentionsChannel hides the composer and renders the view", () => {

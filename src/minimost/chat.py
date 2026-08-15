@@ -128,7 +128,11 @@ def _max_avatar_size_bytes() -> int:
 _WAL = "PRAGMA journal_mode=WAL"
 _SQL_AVATAR = "SELECT avatar_file FROM user_settings WHERE username = ?"
 _SQL_ENSURE_SETTINGS = "INSERT OR IGNORE INTO user_settings (username) VALUES (?)"
-_MSG_LOOKUP_SQL = "SELECT channel, sender, ts FROM messages WHERE id = ?"
+# Fields the edit / delete / react routes all need to decide whether the caller
+# may act on a message and whether it is still actionable at all.
+_MSG_LOOKUP_SQL = (
+    "SELECT channel, sender, ts, filename, deleted FROM messages WHERE id = ?"
+)
 # Identifier prefix for private channels (``"private:<id>"``); see module docstring.
 PRIVATE_CHANNEL_PREFIX = "private:"
 # Reused JSON error body for missing-message responses.
@@ -227,6 +231,33 @@ def _mentions_json(text: str, channel: str):
     """Return a JSON-encoded mention list for *text*, or ``None`` if empty."""
     mentions = extract_mentions(text, channel)
     return json.dumps(mentions) if mentions else None
+
+
+def _dedupe(names: List[str]) -> List[str]:
+    """Return *names* with duplicates removed, preserving first-seen order."""
+    seen = set()
+    result = []
+    for name in names:
+        if name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
+def _canonical_username(name: str) -> Optional[str]:
+    """Return the stored casing of *name*, or ``None`` if no such account exists.
+
+    Account names are unique case-insensitively (signup rejects a name that
+    collides with an existing one under ``COLLATE NOCASE``), but every
+    membership and authorisation check compares them exactly. Anything that
+    accepts a username from a client therefore has to resolve it back to the
+    casing the account actually has, or it stores a member nobody can match.
+    """
+    lowered = (name or "").lower()
+    for existing in all_users():
+        if existing.lower() == lowered:
+            return existing
+    return None
 
 
 def _opt_float(value):
@@ -490,6 +521,30 @@ def channel_users(channel: str) -> List[str]:
         except (ValueError, IndexError):
             return []
     return all_users()
+
+
+def unknown_dm_participants(channel: str) -> List[str]:
+    """Return the participants of DM *channel* that have no account.
+
+    A DM channel is addressed by name, not created through any endpoint, so
+    ``is_valid_channel`` only asks whether the caller is one of the participants
+    — which is true of ``dm:ghost:alice`` just as much as ``dm:bob:alice``. A
+    name that was mistyped, or merely mis-cased ("Bob" for the account "bob"),
+    therefore opened a conversation that looked completely normal and that
+    nobody was on the other end of: every message posted to it went nowhere,
+    with no error and no way to tell.
+
+    Checked when posting rather than inside :func:`is_valid_channel`, which runs
+    on every read of every channel and would gain an ``auth.db`` lookup for it.
+
+    :param channel: A ``dm:`` channel identifier.
+    :returns: The participant names with no matching account, in channel order.
+    :rtype: list of str
+    """
+    if not channel.startswith("dm:"):
+        return []
+    registered = set(all_users())
+    return [u for u in channel.split(":")[1:] if u not in registered]
 
 
 def is_valid_channel(channel: str, user: str) -> bool:
@@ -1237,6 +1292,7 @@ def messages_since(channel, user, after):
             channel,
             sender,
             content,
+            content_type,
             filename,
             ts,
             edited,
@@ -1265,8 +1321,13 @@ def messages_since(channel, user, after):
 
 # Columns every message-returning query selects, kept in one place so the
 # cursor query and the paged history query can't drift apart.
+#
+# ``content_type`` is what marks a row as a system notice ("X renamed the
+# channel", the welcome greeting) rather than something a person typed. Leaving
+# it out of the payload made every such notice render as an ordinary message,
+# repliable and reactable, with none of its styling.
 _MESSAGE_COLUMNS = """
-    id, channel, sender, content, filename, ts, edited, edited_ts,
+    id, channel, sender, content, content_type, filename, ts, edited, edited_ts,
     deleted, deleted_ts, reply_to_id, reactions_ts, mentions
 """
 
@@ -1495,6 +1556,33 @@ def _insert_message(
         )
 
 
+def seed_read_state(user: str, ts: Optional[float] = None) -> None:
+    """Start *user* caught up on every public channel as of *ts*.
+
+    Messages live in one shared database, so a new account can see the whole
+    public backlog the instant it exists — and, with no read watermark, every
+    message of it counted as unread. A first login therefore opened on hundreds
+    of unread badges, a flashing favicon and an unread count in the tab title,
+    none of which the user had any way to have read. Seeding the watermark
+    leaves the history there to scroll back through while starting the account
+    at zero unread; anything posted after this point is genuinely new.
+
+    :param user: The new account's canonical username.
+    :param ts: Watermark to set, defaulting to now.
+    :returns: None
+    """
+    if not CHANNELS:
+        return
+    when = time() if ts is None else ts
+    db = get_db()
+    try:
+        for channel in CHANNELS:
+            _advance_read(db, user, channel, when)
+        db.commit()
+    finally:
+        db.close()
+
+
 def post_welcome_message(new_user: str) -> None:
     """Post a system welcome message greeting a new user.
 
@@ -1575,6 +1663,12 @@ def send(channel):
 
     if not is_valid_channel(channel, sender):
         return "forbidden", 403
+
+    # Refuse to post into a conversation with nobody on the other end, rather
+    # than accepting the message and dropping it (see unknown_dm_participants).
+    missing = unknown_dm_participants(channel)
+    if missing:
+        return "no account named {0}".format(", ".join(missing)), 400
 
     text = (request.form.get("text") or "").rstrip()
     if len(text) > MAX_MESSAGE_LEN:
@@ -1935,6 +2029,8 @@ def edit(msg_id):
     """
     editor = session["user"]
     new_text = request.form.get("text", "").strip()
+    if not new_text:
+        return "empty", 400
     if len(new_text) > MAX_MESSAGE_LEN:
         return f"message too long (max {MAX_MESSAGE_LEN} characters)", 413
 
@@ -1944,6 +2040,14 @@ def edit(msg_id):
     if not row or row["sender"] != editor:
         db.close()
         return "forbidden", 403
+
+    # An attachment row has no text body to edit and a deleted one is gone. The
+    # UPDATE's own `filename IS NULL` guard silently matched nothing in the first
+    # case and still answered "ok", so the client showed the edit as applied and
+    # only a reload revealed it had never happened.
+    if row["filename"] is not None or row["deleted"]:
+        db.close()
+        return "not editable", 409
 
     mentions = _mentions_json(new_text, row["channel"])
     db.execute(
@@ -2575,7 +2679,10 @@ def react(msg_id):
     db = get_db()
     row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
 
-    if not row:
+    # A deleted message is a 404 too: the row survives as a tombstone, but from
+    # every caller's point of view the message is gone, and a reaction on one
+    # would only ever be visible to whoever raced the delete.
+    if not row or row["deleted"]:
         db.close()
         return _NOT_FOUND, 404
 
@@ -2845,10 +2952,13 @@ def create_private_channel():
     if len(name) > MAX_CHANNEL_NAME_LEN:
         return f"channel name must be {MAX_CHANNEL_NAME_LEN} characters or fewer", 400
 
-    # Only admit usernames that correspond to real accounts; a non-existent
-    # user must never appear to be a member of the channel.
-    registered = {u.lower() for u in all_users()}
-    members = [m for m in members if m.lower() in registered]
+    # Only admit usernames that correspond to real accounts, and store them in
+    # the account's own casing. Membership is checked with an exact match
+    # (is_valid_channel), so keeping the submitted casing would enrol a "member"
+    # who can never open the channel: "ALICE" is admitted as real because the
+    # lookup is case-insensitive, then never matches the account "alice".
+    canonical = {u.lower(): u for u in all_users()}
+    members = _dedupe([canonical[m.lower()] for m in members if m.lower() in canonical])
 
     if user not in members:
         members.append(user)
@@ -3012,7 +3122,11 @@ def add_private_channel_member(channel_id):
 
     if not username:
         return "username required", 400
-    if username not in all_users():
+    # Resolve to the account's own casing before storing: membership is matched
+    # exactly, so enrolling "Alice" for the account "alice" would add a member
+    # who can never open the channel (see _canonical_username).
+    username = _canonical_username(username)
+    if not username:
         return "user not found", 404
     if username in members:
         return "already a member", 409

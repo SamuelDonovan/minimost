@@ -177,10 +177,30 @@ describe("sidebarEntry()", () => {
     expect(count2).toBe(count1);
   });
 
-  test("clicking element calls switchChannel", () => {
+  test("clicking the row's button calls switchChannel", () => {
     const el = sidebarEntry("# general", "general4");
-    el.onpointerup({ preventDefault: jest.fn() });
+    el.querySelector(".sidebar-item-open").onclick();
     expect(global.switchChannel).toHaveBeenCalledWith("general4");
+  });
+
+  test("the opening action is a focusable button, not a bare div", () => {
+    const el = sidebarEntry("# general", "general5");
+    const open = el.querySelector(".sidebar-item-open");
+    expect(open.tagName).toBe("BUTTON");
+    expect(open.type).toBe("button");
+  });
+
+  test("unread count is folded into the button's accessible name", () => {
+    const el = sidebarEntry("# general", "general6", 3);
+    expect(
+      el.querySelector(".sidebar-item-open").getAttribute("aria-label"),
+    ).toBe("# general, 3 unread");
+  });
+
+  test("DM close button is a sibling of the opening button, not nested in it", () => {
+    const el = sidebarEntry("@ bob", "dm:alice:bob2");
+    expect(el.querySelector(".dm-close-btn")).not.toBeNull();
+    expect(el.querySelector(".sidebar-item-open .dm-close-btn")).toBeNull();
   });
 });
 

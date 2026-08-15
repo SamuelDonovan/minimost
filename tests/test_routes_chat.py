@@ -1374,3 +1374,120 @@ def test_mentions_private_channel_access(alice_and_bob):
     # ...charlie (not a member) does not.
     _as(c, "charlie")
     assert c.get("/mentions").get_json() == []
+
+
+# ── Editing and reacting to rows that have no editable body ───────────────────
+
+
+def test_edit_rejects_an_attachment_row(alice):
+    """An attachment row has no text body, so the edit can never apply.
+
+    The UPDATE's own ``filename IS NULL`` guard used to match nothing and the
+    route still answered "ok", so the client painted the edit as applied and
+    only a reload revealed it had never happened.
+    """
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, filename, ts)"
+        " VALUES ('general', 'alice', '', 'abc.png', ?)",
+        (time.time(),),
+    )
+    db.commit()
+    msg_id = db.execute("SELECT id FROM messages WHERE filename='abc.png'").fetchone()[
+        0
+    ]
+    db.close()
+
+    resp = alice.post(f"/edit/{msg_id}", data={"text": "nope"})
+    assert resp.status_code == 409
+
+
+def test_edit_rejects_a_deleted_message(alice):
+    msg_id, _ = _insert_message("alice", "general", "original")
+    alice.post(f"/delete/{msg_id}")
+    resp = alice.post(f"/edit/{msg_id}", data={"text": "back from the dead"})
+    assert resp.status_code == 409
+
+
+def test_edit_rejects_empty_text(alice):
+    msg_id, _ = _insert_message("alice", "general", "original")
+    resp = alice.post(f"/edit/{msg_id}", data={"text": "   "})
+    assert resp.status_code == 400
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    row = db.execute("SELECT content FROM messages WHERE id=?", (msg_id,)).fetchone()
+    db.close()
+    assert row[0] == "original"
+
+
+def test_react_rejects_a_deleted_message(alice):
+    valid = next(iter(chat_mod.VALID_REACTIONS)) if chat_mod.VALID_REACTIONS else None
+    if valid is None:
+        return
+    msg_id, _ = _insert_message("alice", "general", "msg")
+    alice.post(f"/delete/{msg_id}")
+    resp = alice.post(f"/react/{msg_id}", data={"reaction": valid})
+    assert resp.status_code == 404
+
+
+# ── content_type reaches the client ───────────────────────────────────────────
+
+
+def test_messages_carry_content_type(alice):
+    """Without this column every system notice renders as an ordinary message."""
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, content_type, ts)"
+        " VALUES ('general', 'system', 'welcome', 'system', ?)",
+        (time.time(),),
+    )
+    db.commit()
+    db.close()
+
+    rows = alice.get("/messages/general?after=0").get_json()
+    assert rows
+    assert rows[-1]["content_type"] == "system"
+
+
+def test_message_history_page_carries_content_type(alice):
+    _insert_message("alice", "general", "plain")
+    rows = alice.get("/messages/general?after=0&limit=10").get_json()
+    assert rows
+    assert all("content_type" in r for r in rows)
+
+
+# ── DMs addressed to accounts that don't exist ────────────────────────────────
+# A DM channel is addressed by name rather than created through an endpoint, so
+# a mistyped or mis-cased participant used to open a normal-looking conversation
+# with nobody on the other end, and every message posted to it was accepted and
+# then went nowhere.
+
+
+def test_send_to_dm_with_unknown_participant_is_rejected(alice):
+    resp = alice.post("/send/dm:alice:ghost", data={"text": "into the void"})
+    assert resp.status_code == 400
+    assert b"ghost" in resp.data
+
+
+def test_send_to_dm_with_miscased_participant_is_rejected(alice_and_bob):
+    resp = alice_and_bob.post("/send/dm:BOB:alice", data={"text": "hi"})
+    assert resp.status_code == 400
+
+
+def test_send_to_a_real_dm_still_works(alice_and_bob):
+    resp = alice_and_bob.post("/send/dm:alice:bob", data={"text": "hi"})
+    assert resp.status_code == 200
+
+
+def test_rejected_dm_message_is_not_stored(alice):
+    alice.post("/send/dm:alice:ghost", data={"text": "into the void"})
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    count = db.execute(
+        "SELECT COUNT(*) FROM messages WHERE channel = 'dm:alice:ghost'"
+    ).fetchone()[0]
+    db.close()
+    assert count == 0
+
+
+def test_unknown_dm_participants_ignores_non_dm_channels(alice):
+    assert chat_mod.unknown_dm_participants("general") == []
+    assert chat_mod.unknown_dm_participants("private:1") == []

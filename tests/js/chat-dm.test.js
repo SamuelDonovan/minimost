@@ -33,7 +33,10 @@ beforeEach(() => {
   document.getElementById("dm-users").value = "";
   document.getElementById("dm-suggestions").style.display = "none";
   document.getElementById("dm-suggestions").innerHTML = "";
-  // Reset allUsers / usersLoaded state (they're let-scoped but we can test via behavior)
+  // Reset the shared account list so tests don't inherit each other's, and so
+  // "have the accounts loaded yet" is never accidentally order-dependent.
+  globalThis.allUsers = [];
+  globalThis.usersLoaded = false;
 });
 
 // ── resetDmSuggestions ─────────────────────────────────────────────────────────
@@ -240,6 +243,45 @@ describe("dm-start button", () => {
     expect(arg).toContain("dm:");
     expect(arg).toContain("alice");
     expect(arg).toContain("bob");
+  });
+
+  describe("with the account list loaded", () => {
+    beforeEach(() => {
+      globalThis.allUsers = ["bob", "carol"];
+      globalThis.usersLoaded = true;
+      global.showToast = jest.fn();
+    });
+
+    test("a name with no account is refused, not opened", () => {
+      // Otherwise this opens a normal-looking conversation with nobody on the
+      // other end, and every message posted to it silently goes nowhere.
+      document.getElementById("dm-users").value = "ghost";
+      document.getElementById("dm-start").click();
+      expect(global.switchChannel).not.toHaveBeenCalled();
+      expect(global.showToast).toHaveBeenCalledWith(
+        expect.stringContaining("ghost"),
+      );
+    });
+
+    test("a mis-cased name resolves to the real account", () => {
+      document.getElementById("dm-users").value = "BOB";
+      document.getElementById("dm-start").click();
+      expect(global.switchChannel).toHaveBeenCalledWith("dm:alice:bob");
+    });
+
+    test("naming the same person twice does not duplicate them", () => {
+      document.getElementById("dm-users").value = "bob, Bob";
+      document.getElementById("dm-start").click();
+      expect(global.switchChannel).toHaveBeenCalledWith("dm:alice:bob");
+    });
+  });
+
+  test("names pass through unchecked while the account list is still loading", () => {
+    globalThis.usersLoaded = false;
+    globalThis.allUsers = [];
+    document.getElementById("dm-users").value = "bob";
+    document.getElementById("dm-start").click();
+    expect(global.switchChannel).toHaveBeenCalledWith("dm:alice:bob");
   });
 });
 

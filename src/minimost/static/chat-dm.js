@@ -231,15 +231,46 @@ document.getElementById("dm-start").onclick = () => {
   const raw = dmUsersInput.value.trim();
   if (!raw) return;
 
-  const users = raw
+  const typed = raw
     .split(",")
     .map((u) => u.trim())
     .filter(Boolean);
 
-  if (!users.length) return;
+  if (!typed.length) return;
+
+  // A DM channel is addressed by name, so a typo or the wrong capitalisation
+  // ("Bob" for the account "bob") used to open a perfectly ordinary-looking
+  // conversation that nobody was on the other end of. Resolve every name
+  // against the real account list and refuse the ones that don't exist.
+  const canonical = new Map(
+    [...globalThis.allUsers, CURRENT_USER].map((u) => [u.toLowerCase(), u]),
+  );
+  // If /users hasn't landed yet there is nothing to check against; let it
+  // through and rely on the server's own rejection rather than refusing every
+  // name because the list is late.
+  const unknown = globalThis.usersLoaded
+    ? typed.filter((u) => !canonical.has(u.toLowerCase()))
+    : [];
+  if (unknown.length) {
+    showToast(
+      unknown.length === 1
+        ? `There's no account named "${unknown[0]}".`
+        : `No accounts named: ${unknown.join(", ")}.`,
+    );
+    return;
+  }
+
+  const users = [
+    ...new Set(typed.map((u) => canonical.get(u.toLowerCase()) || u)),
+  ];
 
   if (!users.includes(CURRENT_USER)) {
     users.push(CURRENT_USER);
+  }
+
+  if (users.length < 2) {
+    showToast("Pick someone to message.");
+    return;
   }
 
   users.sort();

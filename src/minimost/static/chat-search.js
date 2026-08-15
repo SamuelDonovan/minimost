@@ -264,6 +264,57 @@ globalThis.onclick = (e) => {
   if (e.target === dmModal) dmModal.style.display = "none";
 };
 
+// URL run inside a message body. `<` terminates the match so a link that
+// happens to sit at the end of a formatted span (**https://x/y**) doesn't
+// swallow the `</strong>` the formatting step just emitted.
+const _URL_REGEX = /(https?:\/\/|www\.)[^\s<]+/gi;
+
+// True when *url* ends in an HTML entity (`&amp;`, `&#39;`). The text has
+// already been escaped by the time we look at it, so the `;` closing an entity
+// must never be mistaken for sentence punctuation and trimmed away.
+function _endsWithEntity(url) {
+  return /&(?:[a-zA-Z]+|#\d+);$/.test(url);
+}
+
+// Strip trailing characters that are punctuation around the URL rather than
+// part of it. "See https://example.org/page)." should link the page, not a
+// URL ending in ")." — while a genuinely parenthesised path such as
+// .../Foo_(bar) keeps its balanced closing bracket.
+function _trimUrlPunctuation(url) {
+  while (url.length > 1 && !_endsWithEntity(url)) {
+    const last = url.at(-1);
+    if (".,:;!?".includes(last)) {
+      url = url.slice(0, -1);
+      continue;
+    }
+    const pairs = { ")": "(", "]": "[", "}": "{" };
+    if (pairs[last]) {
+      const opens = url.split(pairs[last]).length - 1;
+      const closes = url.split(last).length - 1;
+      if (closes > opens) {
+        url = url.slice(0, -1);
+        continue;
+      }
+    }
+    break;
+  }
+  return url;
+}
+
+// Wrap every URL in already-escaped *safe* HTML in an anchor.
+//
+// A bare `www.example.com` has no scheme, so using the matched text as the
+// href made it a *relative* URL: the browser resolved it against the app's own
+// origin and the link led to a 404 on MiniMost instead of to the site.
+function _linkifyEscaped(safe) {
+  return safe.replace(_URL_REGEX, (match) => {
+    const url = _trimUrlPunctuation(match);
+    const href = /^www\./i.test(url) ? `https://${url}` : url;
+    const trailing = match.slice(url.length);
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`;
+  });
+}
+
 // Clickable links
 function linkify(text) {
   // Escape HTML first (important for security). textContent->innerHTML escapes
@@ -271,15 +322,8 @@ function linkify(text) {
   // out of the href="" attribute built below — escape quotes too.
   const div = document.createElement("div");
   div.textContent = text;
-  let safe = div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-
-  // Regex for URLs
-  const urlRegex = /((https?:\/\/|www\.)[^\s]+)/g;
-
-  return safe.replace(urlRegex, (url) => {
-    let href = url;
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
-  });
+  const safe = div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  return _linkifyEscaped(safe);
 }
 
 // Text formating
@@ -361,11 +405,7 @@ function formatText(text) {
   safe = safe.replace(/\*(.+?)\*/gs, "<em>$1</em>");
 
   // 5. Links
-  safe = safe.replace(
-    /((https?:\/\/|www\.)[^\s]+)/g,
-    (url) =>
-      `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`,
-  );
+  safe = _linkifyEscaped(safe);
 
   // 5b. @mention pills (after links so URLs containing @ are left untouched)
   if (typeof applyMentionPills === "function") {
@@ -674,46 +714,13 @@ function scrollIntoViewIfNeeded(el) {
   }
 }
 
-// How long to keep waiting for a jump target to render before giving up. The
-// channel's messages arrive over the network, so the element we want may not
-// exist for a while on a slow link or in a channel with a long backlog.
-const JUMP_TIMEOUT_MS = 5000;
-
-// Once the jump has scrolled, let the message settle before releasing the
-// auto-scroll suppression, so the smooth scroll isn't cut short by the next
-// render pass snapping the list back to the bottom.
-const JUMP_SETTLE_MS = 600;
-
-function _goToSearchResult(msgChannel, msgId) {
+// Jump to a search hit. revealMessage() (chat.html) owns the hard part: the
+// target is usually outside the loaded page, so the history in between has to
+// be pulled in before there is anything to scroll to.
+function _goToSearchResult(msgChannel, msgId, ts) {
   closeSearchPanel();
   searchInput.blur();
-
-  // Claim the jump before switching: switchChannel() requests a scroll to the
-  // bottom for the incoming channel, which would otherwise land on top of ours.
-  globalThis.pendingJumpMsgId = msgId;
-  switchChannel(msgChannel);
-
-  // Poll for the target instead of guessing a fixed delay: the message list is
-  // rendered asynchronously after switchChannel(), and a message that is slow
-  // to arrive used to leave the jump silently doing nothing.
-  const deadline = Date.now() + JUMP_TIMEOUT_MS;
-  const tryReveal = () => {
-    // scrollToMsg() also flashes the message, so it's clear which of the ones
-    // now on screen was the match — the old jump gave no such feedback.
-    if (document.getElementById(`msg-${msgId}`)) {
-      scrollToMsg(msgId);
-      setTimeout(() => {
-        if (globalThis.pendingJumpMsgId === msgId)
-          globalThis.pendingJumpMsgId = null;
-      }, JUMP_SETTLE_MS);
-    } else if (Date.now() < deadline) {
-      requestAnimationFrame(tryReveal);
-    } else {
-      globalThis.pendingJumpMsgId = null;
-      showToast("Couldn't jump to that message — it may have been deleted.");
-    }
-  };
-  requestAnimationFrame(tryReveal);
+  revealMessage(msgChannel, msgId, ts);
 }
 
 // Collect the active filters into a query string. A date picker value is
@@ -774,7 +781,7 @@ function _renderSearchResults(data, q) {
       `<span class="search-result-chan">${escapeHtml(_searchChannelLabel(msg.channel))}</span>` +
       ` · ${when} · <b>${escapeHtml(msg.sender)}</b></div>` +
       `<div class="search-result-text">${snippet}</div>`;
-    d.onclick = () => _goToSearchResult(msg.channel, msg.id);
+    d.onclick = () => _goToSearchResult(msg.channel, msg.id, msg.ts);
     searchResults.appendChild(d);
   });
 }

@@ -718,3 +718,45 @@ def test_rename_private_channel_name_too_long(alice):
         alice, f"/private_channels/{channel_id}/rename", {"name": long_name}
     )
     assert resp.status_code == 400
+
+
+# ── Username casing ───────────────────────────────────────────────────────────
+# Account names are unique case-insensitively but every membership check matches
+# them exactly, so a member admitted under the wrong casing is a member nobody
+# can ever match — visible in the roster, unable to open the channel.
+
+
+def test_create_stores_members_in_the_accounts_own_casing(alice_and_bob):
+    resp = _create_channel(alice_and_bob, "casing", ["BOB"])
+    channel_id = resp.get_json()["id"]
+    assert sorted(chat_mod.get_private_channel_members(channel_id)) == ["alice", "bob"]
+
+
+def test_create_with_miscased_member_grants_that_member_access(alice_and_bob, app):
+    resp = _create_channel(alice_and_bob, "casing", ["BOB"])
+    channel = resp.get_json()["channel"]
+    assert chat_mod.is_valid_channel(channel, "bob")
+    assert _make_bob_client(app).get(f"/messages/{channel}").status_code == 200
+
+
+def test_create_does_not_duplicate_a_member_named_twice(alice_and_bob):
+    resp = _create_channel(alice_and_bob, "dupes", ["bob", "BOB", "Bob"])
+    channel_id = resp.get_json()["id"]
+    assert sorted(chat_mod.get_private_channel_members(channel_id)) == ["alice", "bob"]
+
+
+def test_add_member_accepts_a_miscased_name_and_canonicalises_it(alice_and_bob):
+    channel_id = _create_channel(alice_and_bob, "casing").get_json()["id"]
+    resp = client_post_json(
+        alice_and_bob, f"/private_channels/{channel_id}/add_member", {"username": "BOB"}
+    )
+    assert resp.status_code == 200
+    assert sorted(chat_mod.get_private_channel_members(channel_id)) == ["alice", "bob"]
+
+
+def test_add_member_still_rejects_an_account_that_does_not_exist(alice):
+    channel_id = _create_channel(alice, "casing").get_json()["id"]
+    resp = client_post_json(
+        alice, f"/private_channels/{channel_id}/add_member", {"username": "nobody"}
+    )
+    assert resp.status_code == 404

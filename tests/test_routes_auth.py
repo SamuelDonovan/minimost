@@ -297,3 +297,66 @@ def test_signup_welcome_no_public_channels(client):
     ).fetchone()[0]
     db.close()
     assert count == 0
+
+
+def test_signup_starts_the_account_caught_up_on_existing_history(client):
+    """A new account must not open buried under an unread count for the backlog.
+
+    Messages live in one shared database, so a newcomer can see the whole
+    public history immediately — and with no read watermark every message of it
+    counted as unread, so a first login landed on hundreds of unread badges the
+    user had no way to have read.
+    """
+    import time
+
+    _add_user("existing")
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    for i in range(5):
+        db.execute(
+            "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
+            ("general", "existing", f"old message {i}", time.time()),
+        )
+    db.commit()
+    db.close()
+
+    client.post(
+        "/signup",
+        data={
+            "username": "newuser",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
+        },
+    )
+
+    unreads = client.get("/channel_unreads").get_json()
+    # The pre-existing backlog is read; only the welcome message posted for
+    # them during signup is left as new.
+    assert unreads["general"] == 1
+
+
+def test_signup_leaves_the_backlog_readable(client):
+    """Seeding the watermark must not hide the history, only mark it read."""
+    import time
+
+    _add_user("existing")
+    db = sqlite3.connect(str(common_mod.shared_db_path()))
+    db.execute(
+        "INSERT INTO messages (channel, sender, content, ts) VALUES (?, ?, ?, ?)",
+        ("general", "existing", "hello world", time.time()),
+    )
+    db.commit()
+    db.close()
+
+    client.post(
+        "/signup",
+        data={
+            "username": "newuser",
+            "password": "Password1!longer",
+            "confirm_password": "Password1!longer",
+        },
+    )
+
+    contents = [
+        m["content"] for m in client.get("/messages/general?after=0").get_json()
+    ]
+    assert "hello world" in contents
