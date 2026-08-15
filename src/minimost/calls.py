@@ -51,6 +51,31 @@ _RINGING_TIMEOUT = 30
 # several missed beats rather than one.
 _PRESENCE_STALE = 120
 
+# How long a participant's *in-call* heartbeat may go quiet before the same
+# applies.  Presence alone is not enough: it keeps ticking from any open tab, so
+# a browser that navigated away from the call — or crashed the page but not the
+# process — still looks alive by presence while nobody is on the call at all.
+# The state poll every client runs every 3s while it is in a call is the signal
+# that actually tracks call membership; twenty missed polls is the threshold.
+_CALL_HEARTBEAT_STALE = 60
+
+# How quiet a participant must have gone before another participant's report
+# that they have vanished is acted on (see ``/calls/<id>/gone``).  Comfortably
+# longer than the 3s state poll, so a live participant is never evicted, and
+# far shorter than :data:`_CALL_HEARTBEAT_STALE`, which is what the server
+# falls back on when nobody is left to report anything.
+_GONE_CORROBORATION = 12
+
+# An accepted participant whose in-call heartbeat is still fresh.
+# ``last_seen_ts`` falls back to ``joined_ts`` for rows written before the
+# column existed, so an upgraded database does not evict everybody at once.
+_SQL_LIVE_ACCEPTED = (
+    " p.state = 'accepted' AND COALESCE(p.last_seen_ts, p.joined_ts, 0) >= ?"
+)
+# The sweep is the last resort — it ends a call outright — so it asks for both
+# heartbeats before deciding somebody is gone.
+_SQL_LIVE_PARTICIPANT = _SQL_LIVE_ACCEPTED + " AND COALESCE(pr.last_seen, 0) >= ?"
+
 _SQL_CALL_STATE = "SELECT state FROM calls WHERE call_id = ?"
 _SQL_DELETE_SIGNALS = "DELETE FROM call_signals WHERE call_id = ?"
 _SQL_PARTICIPANT = (
@@ -75,6 +100,128 @@ def _db():
     return db
 
 
+def _format_duration(seconds: float) -> str:
+    """Render a call length the way a person would say it."""
+    total = max(0, int(seconds))
+    minutes, secs = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _post_call_notice(call, now: float) -> None:
+    """Leave a record of a finished call in the channel it happened in.
+
+    A call used to vanish without trace: someone who missed the thirty-second
+    ring came back to a channel that looked like nothing had happened, and a
+    conversation that took place on a call left nothing behind to refer to.
+    One system line — the same kind the channel already uses for renames and
+    joins — is enough to close both gaps.
+
+    Only ever touches the message database, never ``presence.db``: it runs
+    while the caller still holds an open write transaction there, and a second
+    connection reaching for the same file would simply sit on the busy timeout.
+
+    Failures are swallowed. A call ending is the important part; a note about
+    it is not worth propagating an error from the message database into.
+
+    :param call: Row with ``channel``, ``initiator`` and ``answered_ts``.
+    :param now: The moment the call ended.
+    """
+    try:
+        from .common import shared_db_path, init_messages_db
+
+        if call["answered_ts"]:
+            text = "Call ended · " + _format_duration(now - call["answered_ts"])
+        else:
+            text = f"Missed call from {call['initiator']}"
+
+        init_messages_db()
+        db = sqlite3.connect(str(shared_db_path()))
+        try:
+            db.execute(_WAL)
+            db.execute(
+                "INSERT INTO messages (channel, sender, content, content_type, ts)"
+                " VALUES (?, 'system', ?, 'system', ?)",
+                (call["channel"], text, now),
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception:  # nosec B110 - a notice must never break a hang-up
+        pass
+
+
+def _live_members(db, call_id: str, now: float, exclude: str = "") -> int:
+    """Count who could still be talking on *call_id*.
+
+    A call needs two people, and both halves of that count have to mean
+    something.  "On it" is an accepted participant whose in-call heartbeat is
+    still fresh — a row left behind by a browser that died is not somebody to
+    hold a call open for, because nothing is ever going to POST ``/end`` for
+    it, and the channel stays blocked against every later call while it sits
+    there.  "Could still join" is an invitation that is still ringing;
+    ``/calls/incoming`` stops offering it after :data:`_RINGING_TIMEOUT`, and
+    it should stop counting at the same moment.
+
+    :param exclude: A username to leave out — the person leaving, whose row
+        has not been updated yet, or has just been.
+    :returns: How many people the call still has.
+    :rtype: int
+    """
+    started_ts = db.execute(
+        "SELECT started_ts FROM calls WHERE call_id = ?", (call_id,)
+    ).fetchone()["started_ts"]
+    return db.execute(
+        "SELECT COUNT(*) FROM call_participants p"  # nosec B608
+        " WHERE p.call_id = ? AND p.username != ? AND ("
+        + _SQL_LIVE_ACCEPTED  # a constant fragment; every value is bound below
+        + "   OR (p.state = 'pending' AND COALESCE(p.invited_ts, ?) >= ?)"
+        " )",
+        (
+            call_id,
+            exclude,
+            now - _CALL_HEARTBEAT_STALE,
+            started_ts,
+            now - _RINGING_TIMEOUT,
+        ),
+    ).fetchone()[0]
+
+
+def _finish_call(db, call_id: str, now: float, state: str = "ended") -> bool:
+    """Move a live call to its final state, exactly once.
+
+    Several paths can be the one that ends a call — the last participant
+    leaving, the ring timing out, the staleness sweep — and two of them can
+    race.  Making the transition conditional on the call still being live means
+    whichever gets there first does the signalling cleanup and posts the
+    channel notice, and the loser does nothing.
+
+    Does not commit — the caller owns the transaction.
+
+    :returns: ``True`` if this call was the one that ended it.
+    :rtype: bool
+    """
+    changed = db.execute(
+        "UPDATE calls SET state = ?, ended_ts = ?"
+        " WHERE call_id = ? AND state IN ('ringing', 'active')",
+        (state, now, call_id),
+    ).rowcount
+    if not changed:
+        return False
+    db.execute(_SQL_DELETE_SIGNALS, (call_id,))
+    call = db.execute(
+        "SELECT channel, initiator, answered_ts FROM calls WHERE call_id = ?",
+        (call_id,),
+    ).fetchone()
+    if call:
+        _post_call_notice(call, now)
+    return True
+
+
 def _sweep_stale_calls(db) -> None:
     """End calls that no client is going to end for us.
 
@@ -90,10 +237,14 @@ def _sweep_stale_calls(db) -> None:
     * **Unanswered** — a ``'ringing'`` call older than
       :data:`_RINGING_TIMEOUT`.  ``/calls/incoming`` already hides these
       from the callee, so this just makes the stored state agree.
-    * **Abandoned** — an ``'active'`` call in which *every* accepted
-      participant's presence heartbeat has been quiet for longer than
-      :data:`_PRESENCE_STALE`.  One live participant is enough to keep the
-      call, so a call someone is genuinely still sitting in is never swept.
+    * **Abandoned** — an ``'active'`` call in which *no* accepted participant
+      is still live, where live means both heartbeats are fresh: presence
+      (:data:`_PRESENCE_STALE`) *and* the in-call state poll
+      (:data:`_CALL_HEARTBEAT_STALE`).  Presence on its own is not enough —
+      it keeps ticking for as long as any tab is open, so a browser that
+      merely navigated away from the call still looked like a participant
+      and held the channel against every later call indefinitely.  One
+      genuinely live participant is enough to keep the call.
 
     Does not commit — the caller owns the transaction.
 
@@ -109,30 +260,25 @@ def _sweep_stale_calls(db) -> None:
         )
     ]
 
-    # An active call survives while any accepted participant still has a fresh
-    # heartbeat; NULL last_seen (a user with no presence row yet) counts as
-    # stale.  Calls with no accepted participants at all are swept too.
+    # An active call survives while any accepted participant is still live;
+    # NULL last_seen (a user with no presence row yet) counts as stale.  Calls
+    # with no accepted participants at all are swept too.
     stale += [
         row["call_id"]
         for row in db.execute(
-            "SELECT c.call_id FROM calls c"
+            "SELECT c.call_id FROM calls c"  # nosec B608
             " WHERE c.state = 'active'"
             " AND NOT EXISTS ("
             "   SELECT 1 FROM call_participants p"
             "   LEFT JOIN presence pr ON pr.user = p.username"
-            "   WHERE p.call_id = c.call_id AND p.state = 'accepted'"
-            "   AND COALESCE(pr.last_seen, 0) >= ?"
-            " )",
-            (now - _PRESENCE_STALE,),
+            # A constant fragment; both timestamps are bound below.
+            "   WHERE p.call_id = c.call_id AND" + _SQL_LIVE_PARTICIPANT + " )",
+            (now - _CALL_HEARTBEAT_STALE, now - _PRESENCE_STALE),
         )
     ]
 
     for call_id in stale:
-        db.execute(
-            "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
-            (now, call_id),
-        )
-        db.execute(_SQL_DELETE_SIGNALS, (call_id,))
+        _finish_call(db, call_id, now)
 
 
 def reset_all_screenshares_ended() -> None:
@@ -262,15 +408,17 @@ def initiate_call():
             (call_id, channel, user, now),
         )
         db.execute(
-            "INSERT INTO call_participants (call_id, username, role, state, joined_ts)"
-            " VALUES (?, ?, 'initiator', 'accepted', ?)",
-            (call_id, user, now),
+            "INSERT INTO call_participants"
+            " (call_id, username, role, state, joined_ts, last_seen_ts)"
+            " VALUES (?, ?, 'initiator', 'accepted', ?, ?)",
+            (call_id, user, now, now),
         )
         for other in others:
             db.execute(
-                "INSERT INTO call_participants (call_id, username, role, state)"
-                " VALUES (?, ?, 'participant', 'pending')",
-                (call_id, other),
+                "INSERT INTO call_participants"
+                " (call_id, username, role, state, invited_ts)"
+                " VALUES (?, ?, 'participant', 'pending', ?)",
+                (call_id, other, now),
             )
         db.commit()
     finally:
@@ -286,10 +434,13 @@ def incoming_calls():
 
     Route: ``GET /calls/incoming``
 
-    Polled by the client every second to surface the incoming-call
-    notification.  Only returns calls in the ``'ringing'`` state where the
-    current user is a ``'pending'`` participant and the call was started
-    within the last :data:`_RINGING_TIMEOUT` seconds.
+    Pushed to the client (and polled as a fallback) to surface the
+    incoming-call notification.  Returns live calls in which the current user
+    is a ``'pending'`` participant whose invitation is still ringing — younger
+    than :data:`_RINGING_TIMEOUT`, measured from when *they* were invited, so
+    someone pulled into a call that has been running for an hour still rings.
+    Bounding it this way also stops an invitation nobody answered from ringing
+    for the rest of the call's life.
 
     :returns: JSON array of call objects with ``call_id``, ``channel``,
         ``initiator``, and ``started_ts``.
@@ -306,10 +457,8 @@ def incoming_calls():
           JOIN call_participants cp ON c.call_id = cp.call_id
          WHERE cp.username = ?
            AND cp.state   = 'pending'
-           AND (
-               (c.state = 'ringing' AND c.started_ts >= ?)
-               OR c.state = 'active'
-           )
+           AND c.state IN ('ringing', 'active')
+           AND COALESCE(cp.invited_ts, c.started_ts) >= ?
         """,
         (user, cutoff),
     ).fetchall()
@@ -434,15 +583,17 @@ def accept_call(call_id):
             if user not in _participants_for_channel(channel):
                 return jsonify({"error": "not a participant in this call"}), 403
             db.execute(
-                "INSERT INTO call_participants (call_id, username, role, state)"
-                " VALUES (?, ?, 'participant', 'pending')",
-                (call_id, user),
+                "INSERT INTO call_participants"
+                " (call_id, username, role, state, invited_ts)"
+                " VALUES (?, ?, 'participant', 'pending', ?)",
+                (call_id, user, now),
             )
 
         db.execute(
-            "UPDATE call_participants SET state = 'accepted', joined_ts = ?"
+            "UPDATE call_participants"
+            " SET state = 'accepted', joined_ts = ?, last_seen_ts = ?"
             " WHERE call_id = ? AND username = ?",
-            (now, call_id, user),
+            (now, now, call_id, user),
         )
         db.execute(
             "UPDATE calls SET state = 'active', answered_ts = ? WHERE call_id = ?",
@@ -535,10 +686,7 @@ def reject_call(call_id):
         ).fetchone()[0]
 
         if pending_count == 0 and accepted_others == 0:
-            db.execute(
-                "UPDATE calls SET state = 'rejected', ended_ts = ? WHERE call_id = ?",
-                (now, call_id),
-            )
+            _finish_call(db, call_id, now, state="rejected")
 
         db.commit()
     finally:
@@ -597,24 +745,8 @@ def end_call(call_id):
             (call_id, user, user),
         )
 
-        # A call needs two people.  Count everyone who is still on it or could
-        # still join (an invitee who has not answered yet), excluding the
-        # leaver; once fewer than two remain the call cannot continue, so end
-        # it rather than stranding the last participant in an empty call that
-        # also blocks the channel against a fresh one.
-        remaining = db.execute(
-            "SELECT COUNT(*) FROM call_participants"
-            " WHERE call_id = ? AND state IN ('accepted', 'pending')"
-            " AND username != ?",
-            (call_id, user),
-        ).fetchone()[0]
-
-        if remaining < 2:
-            db.execute(
-                "UPDATE calls SET state = 'ended', ended_ts = ? WHERE call_id = ?",
-                (now, call_id),
-            )
-            db.execute(_SQL_DELETE_SIGNALS, (call_id,))
+        if _live_members(db, call_id, now, exclude=user) < 2:
+            _finish_call(db, call_id, now)
 
         db.commit()
         db.execute(_INCREMENTAL_VACUUM)
@@ -622,6 +754,72 @@ def end_call(call_id):
         db.close()
 
     return jsonify({"status": "ok"})
+
+
+@calls_bp.route("/calls/<call_id>/gone", methods=["POST"])
+@auth.login_required
+def report_participant_gone(call_id):
+    """Report a participant whose connection died without them leaving.
+
+    Route: ``POST /calls/<call_id>/gone``
+
+    A browser that crashes, loses its network, or is closed before the unload
+    beacon gets out leaves an ``'accepted'`` row nobody will ever clear.  The
+    server can only notice that by waiting out :data:`_CALL_HEARTBEAT_STALE`,
+    which leaves the channel unable to host a new call for up to a minute after
+    everyone has actually gone.  The remaining participants know sooner: their
+    peer connection failed and did not recover within its grace period.  This
+    lets them say so.
+
+    The report is corroborated, not trusted: it is only acted on when the
+    server has *also* not heard from the reported participant for
+    :data:`_GONE_CORROBORATION` seconds, so a participant cannot use it to
+    evict somebody who is plainly still there.
+
+    Request body (JSON):
+        **username** (str): The participant believed to be gone.
+
+    :param call_id: UUID of the call.
+    :type call_id: str
+    :returns: JSON with ``status`` — ``"removed"`` when the row was cleared,
+        ``"ignored"`` when the reported participant still looks live.
+    :rtype: flask.Response (application/json)
+    """
+    user = session["user"]
+    target = (request.get_json(silent=True) or {}).get("username", "").strip()
+    if not target or target == user:
+        return jsonify({"error": "username required"}), 400
+
+    now = time.time()
+    db = _db()
+    try:
+        reporter = db.execute(_SQL_PARTICIPANT, (call_id, user)).fetchone()
+        if not reporter or reporter["state"] != "accepted":
+            return jsonify({"error": "not a participant"}), 403
+
+        removed = db.execute(
+            "UPDATE call_participants SET state = 'left', left_ts = ?"
+            " WHERE call_id = ? AND username = ? AND state = 'accepted'"
+            " AND COALESCE(last_seen_ts, joined_ts, 0) < ?",
+            (now, call_id, target, now - _GONE_CORROBORATION),
+        ).rowcount
+        if not removed:
+            db.commit()
+            return jsonify({"status": "ignored"})
+
+        db.execute(_SQL_CLEAR_SCREENSHARE, (call_id, target))
+        db.execute(
+            "DELETE FROM call_signals"
+            " WHERE call_id = ? AND (to_user = ? OR from_user = ?)",
+            (call_id, target, target),
+        )
+        if _live_members(db, call_id, now) < 2:
+            _finish_call(db, call_id, now)
+        db.commit()
+    finally:
+        db.close()
+
+    return jsonify({"status": "removed"})
 
 
 @calls_bp.route("/calls/<call_id>/invite", methods=["POST"])
@@ -682,15 +880,17 @@ def invite_to_call(call_id):
                 return jsonify({"status": "ok"})
             # Reset rejected/left participant so they ring again
             db.execute(
-                "UPDATE call_participants SET state = 'pending', left_ts = NULL"
+                "UPDATE call_participants"
+                " SET state = 'pending', left_ts = NULL, invited_ts = ?"
                 " WHERE call_id = ? AND username = ?",
-                (call_id, target),
+                (time.time(), call_id, target),
             )
         else:
             db.execute(
-                "INSERT INTO call_participants (call_id, username, role, state)"
-                " VALUES (?, ?, 'participant', 'pending')",
-                (call_id, target),
+                "INSERT INTO call_participants"
+                " (call_id, username, role, state, invited_ts)"
+                " VALUES (?, ?, 'participant', 'pending', ?)",
+                (call_id, target, time.time()),
             )
         db.commit()
     finally:
@@ -898,21 +1098,33 @@ def call_state(call_id):
         db.close()
         return jsonify({"error": _ERR_NOT_FOUND}), 404
 
+    # This poll *is* the in-call heartbeat.  Every participant runs it every few
+    # seconds for as long as they are on the call and stops the moment they are
+    # not, which makes it the one signal that tracks call membership rather than
+    # merely having a tab open — see :data:`_CALL_HEARTBEAT_STALE`.
+    db.execute(
+        "UPDATE call_participants SET last_seen_ts = ?"
+        " WHERE call_id = ? AND username = ? AND state = 'accepted'",
+        (time.time(), call_id, session["user"]),
+    )
+    db.commit()
+
     if (
         call["state"] == "ringing"
         and time.time() - call["started_ts"] > _RINGING_TIMEOUT
     ):
         now = time.time()
-        db.execute(
-            "UPDATE calls SET state = 'rejected', ended_ts = ? WHERE call_id = ?",
-            (now, call_id),
-        )
+        _finish_call(db, call_id, now, state="rejected")
         db.execute(
             "UPDATE call_participants SET state = 'rejected', left_ts = ?"
             " WHERE call_id = ? AND state = 'pending'",
             (now, call_id),
         )
         db.commit()
+        # This route is a GET, so the app's after_request bump does not cover
+        # it; nudge the SSE streams by hand or the missed-call line waits for
+        # the message collector's slow reconcile.
+        presence_mod.bump_event_signal()
         call = db.execute(_CALL_COLS, (call_id,)).fetchone()
 
     participants = db.execute(

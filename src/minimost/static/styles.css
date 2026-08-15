@@ -2834,6 +2834,22 @@ a {
   font-size: 14px;
   flex-shrink: 0;
 }
+/* Your own share, while you are watching someone else's. The overlay covers the
+   banner that normally carries this, so it is the only thing telling you that
+   your screen is still going out — filled rather than outlined, because a
+   control you need to notice without looking for it should not whisper. */
+#ss-viewer-selfshare-btn {
+  background: #b3242f;
+  border-color: #b3242f;
+  color: #fff;
+}
+#ss-viewer-selfshare-btn:hover {
+  background: #d0313d;
+  border-color: #d0313d;
+}
+#ss-viewer-selfshare-btn .ss-live-dot {
+  background: #fff;
+}
 .ss-live-badge {
   display: inline-flex;
   align-items: center;

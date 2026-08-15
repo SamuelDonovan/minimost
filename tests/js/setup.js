@@ -144,7 +144,22 @@ global.RTCPeerConnection = jest.fn().mockImplementation(() => ({
   getSenders: jest.fn(() => []),
   addTrack: jest.fn(() => ({ track: null })),
   removeTrack: jest.fn(),
-  addTransceiver: jest.fn(),
+  // Peer connections are built from a fixed set of transceivers created up
+  // front, and a screen share is a replaceTrack() on the one already there.
+  addTransceiver: jest.fn(() => ({
+    direction: "sendrecv",
+    currentDirection: null,
+    sender: {
+      track: null,
+      replaceTrack: jest.fn(function (t) {
+        this.track = t;
+        return Promise.resolve();
+      }),
+      getParameters: jest.fn(() => ({ encodings: [{}] })),
+      setParameters: jest.fn(() => Promise.resolve()),
+    },
+    receiver: { track: null },
+  })),
   // Calls open a negotiated "meta" channel per peer for mute/share state.
   createDataChannel: jest.fn(() => ({
     readyState: "connecting",

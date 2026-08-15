@@ -187,6 +187,8 @@ def _init_tables():
             joined_ts REAL,
             left_ts   REAL,
             sharing   INTEGER NOT NULL DEFAULT 0,
+            invited_ts REAL,
+            last_seen_ts REAL,
             PRIMARY KEY (call_id, username),
             FOREIGN KEY (call_id) REFERENCES calls(call_id)
         )
@@ -201,6 +203,15 @@ def _init_tables():
         )
     except sqlite3.OperationalError:
         pass
+    # Migration: `invited_ts` bounds how long an unanswered invitation rings,
+    # and `last_seen_ts` is the in-call heartbeat — the state poll every client
+    # already runs while it is on a call.  Between them they tell a participant
+    # who is genuinely there from a row left behind by a browser that died.
+    for _column in ("invited_ts REAL", "last_seen_ts REAL"):
+        try:
+            db.execute(f"ALTER TABLE call_participants ADD COLUMN {_column}")
+        except sqlite3.OperationalError:
+            pass
     db.execute("""
         CREATE TABLE IF NOT EXISTS call_signals (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,

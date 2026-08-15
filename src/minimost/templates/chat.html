@@ -750,6 +750,13 @@
     <div id="screenshare-viewer-header">
         <span class="ss-live-badge"><span class="ss-live-dot"></span>Live</span>
         <span id="screenshare-viewer-label"></span>
+        <!-- The overlay covers the topbar, and with it the only control that
+             stops your own share. Without this you could sit watching someone
+             else's screen with no sign that yours was still being broadcast. -->
+        <button id="ss-viewer-selfshare-btn" class="ss-banner-btn danger" style="display:none" onclick="toggleStandaloneScreenShare()">
+            <span class="ss-live-dot" aria-hidden="true"></span>
+            You’re sharing — Stop
+        </button>
         <div class="ss-viewer-actions">
             <button id="ss-viewer-fullscreen-btn" class="ss-viewer-btn" onclick="toggleShareViewerFullscreen()" title="Fullscreen (F)" aria-label="Fullscreen">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 16 16">

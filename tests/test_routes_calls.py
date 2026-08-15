@@ -25,13 +25,36 @@ def _insert_call(call_id, channel, initiator, state="ringing", started_ts=None):
 
 
 def _insert_participant(
-    call_id, username, role="participant", state="pending", joined_ts=None
+    call_id,
+    username,
+    role="participant",
+    state="pending",
+    joined_ts=None,
+    last_seen_ts=None,
+    invited_ts=None,
 ):
+    """Insert a participant row, live by default.
+
+    ``last_seen_ts`` is the in-call heartbeat and ``invited_ts`` is when the
+    invitation started ringing; both default to now, so a row written here
+    describes someone who is genuinely on (or being called into) the call.
+    Pass an old timestamp to model a browser that died or an invitation that
+    rang out.
+    """
     db = sqlite3.connect(presence_mod.PRESENCE_DB)
     db.execute(
-        "INSERT INTO call_participants (call_id, username, role, state, joined_ts)"
-        " VALUES (?, ?, ?, ?, ?)",
-        (call_id, username, role, state, joined_ts),
+        "INSERT INTO call_participants"
+        " (call_id, username, role, state, joined_ts, last_seen_ts, invited_ts)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            call_id,
+            username,
+            role,
+            state,
+            joined_ts,
+            time.time() if last_seen_ts is None else last_seen_ts,
+            time.time() if invited_ts is None else invited_ts,
+        ),
     )
     db.commit()
     db.close()
@@ -189,7 +212,10 @@ def test_incoming_excludes_expired_calls(alice_and_bob, app):
     call_id = str(uuid.uuid4())
     old_ts = time.time() - 60
     _insert_call(call_id, "dm:alice:bob", "alice", state="ringing", started_ts=old_ts)
-    _insert_participant(call_id, "bob", role="participant", state="pending")
+    # Rung when the call started, as /calls/initiate writes it.
+    _insert_participant(
+        call_id, "bob", role="participant", state="pending", invited_ts=old_ts
+    )
 
     bob_client = app.test_client()
     with bob_client.session_transaction() as sess:
@@ -662,6 +688,248 @@ def test_initiate_spares_call_with_a_live_participant(alice_and_bob, app):
     resp = alice_and_bob.post("/calls/initiate", json={"channel": "dm:alice:bob"})
     assert resp.status_code == 409
     assert _get_call(live_id)["state"] == "active"
+
+
+def test_initiate_sweeps_call_whose_participant_only_looks_alive(alice_and_bob, app):
+    """Presence alone must not hold a channel hostage.
+
+    A browser that navigated away from the call still heartbeats presence from
+    whatever page it landed on, so by presence it looks like a participant
+    forever — while nobody is on the call at all.  The in-call state poll is
+    the signal that actually tracks membership, and it stopped.
+    """
+    stale_id = str(uuid.uuid4())
+    _insert_call(stale_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(stale_id, "alice", role="initiator", state="left")
+    _insert_participant(
+        stale_id,
+        "bob",
+        role="participant",
+        state="accepted",
+        last_seen_ts=time.time() - 600,
+    )
+    _set_last_seen("bob", time.time())  # tab still open, just not on the call
+
+    resp = alice_and_bob.post("/calls/initiate", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 200
+    assert _get_call(stale_id)["state"] == "ended"
+
+
+def test_state_poll_is_the_in_call_heartbeat(alice_and_bob):
+    """Polling call state marks the poller as still on the call."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(
+        call_id,
+        "alice",
+        role="initiator",
+        state="accepted",
+        last_seen_ts=time.time() - 600,
+    )
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+
+    assert alice_and_bob.get(f"/calls/{call_id}/state").status_code == 200
+
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    (last_seen,) = db.execute(
+        "SELECT last_seen_ts FROM call_participants"
+        " WHERE call_id = ? AND username = 'alice'",
+        (call_id,),
+    ).fetchone()
+    db.close()
+    assert last_seen > time.time() - 5
+
+
+def test_end_ends_call_held_open_only_by_ghosts(alice_and_bob):
+    """Leaving must not strand the call behind rows nobody is behind.
+
+    A participant whose browser died and an invitee who never answered both
+    still had a row saying they might be on the call, which kept it 'active'
+    — and the channel blocked against a new one — indefinitely.
+    """
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob:carol", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(
+        call_id,
+        "bob",
+        role="participant",
+        state="accepted",
+        last_seen_ts=time.time() - 600,
+    )
+    _insert_participant(
+        call_id,
+        "carol",
+        role="participant",
+        state="pending",
+        invited_ts=time.time() - 600,
+    )
+
+    assert alice_and_bob.post(f"/calls/{call_id}/end").status_code == 200
+    assert _get_call(call_id)["state"] == "ended"
+
+
+def test_incoming_stops_ringing_an_invitation_nobody_answered(alice_and_bob, app):
+    """An unanswered invite into an active call must stop ringing eventually.
+
+    The active-call branch used to carry no cutoff at all, so a pending row
+    rang its owner for as long as the call lived.
+    """
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(
+        call_id,
+        "bob",
+        role="participant",
+        state="pending",
+        invited_ts=time.time() - 600,
+    )
+
+    bob_client = app.test_client()
+    with bob_client.session_transaction() as sess:
+        sess["user"] = "bob"
+
+    assert bob_client.get("/calls/incoming").get_json() == []
+
+
+def test_gone_report_clears_a_dead_participant(alice_and_bob):
+    """The people still on the call are the fastest evidence a peer died."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob:carol", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "carol", role="participant", state="accepted")
+    _insert_participant(
+        call_id,
+        "bob",
+        role="participant",
+        state="accepted",
+        last_seen_ts=time.time() - 60,
+    )
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/gone", json={"username": "bob"})
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "removed"
+    assert _get_participant(call_id, "bob")["state"] == "left"
+    # alice and carol are still on it, so the call carries on.
+    assert _get_call(call_id)["state"] == "active"
+
+
+def test_gone_report_ends_a_call_nobody_is_left_on(alice_and_bob):
+    """Reporting the last other participant frees the channel immediately."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(
+        call_id,
+        "bob",
+        role="participant",
+        state="accepted",
+        last_seen_ts=time.time() - 60,
+    )
+
+    alice_and_bob.post(f"/calls/{call_id}/gone", json={"username": "bob"})
+    assert _get_call(call_id)["state"] == "ended"
+
+    resp = alice_and_bob.post("/calls/initiate", json={"channel": "dm:alice:bob"})
+    assert resp.status_code == 200
+
+
+def test_gone_report_ignores_a_participant_who_is_plainly_there(alice_and_bob):
+    """The report is corroborated, so it cannot be used to evict anybody."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+
+    resp = alice_and_bob.post(f"/calls/{call_id}/gone", json={"username": "bob"})
+    assert resp.get_json()["status"] == "ignored"
+    assert _get_participant(call_id, "bob")["state"] == "accepted"
+    assert _get_call(call_id)["state"] == "active"
+
+
+def test_gone_report_rejects_a_non_participant(alice_and_bob, app):
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(
+        call_id,
+        "bob",
+        role="participant",
+        state="accepted",
+        last_seen_ts=time.time() - 60,
+    )
+
+    carol = app.test_client()
+    with carol.session_transaction() as sess:
+        sess["user"] = "carol"
+
+    assert (
+        carol.post(f"/calls/{call_id}/gone", json={"username": "bob"}).status_code
+        == 403
+    )
+    assert _get_participant(call_id, "bob")["state"] == "accepted"
+
+
+def _channel_notices(channel):
+    """Every system line posted to *channel*, oldest first."""
+    from minimost.common import shared_db_path
+
+    db = sqlite3.connect(str(shared_db_path()))
+    rows = db.execute(
+        "SELECT content FROM messages WHERE channel = ? AND content_type = 'system'"
+        " ORDER BY id",
+        (channel,),
+    ).fetchall()
+    db.close()
+    return [r[0] for r in rows]
+
+
+def test_ending_an_answered_call_records_it_in_the_channel(alice_and_bob):
+    """A call that happened should leave something behind to refer to."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="active")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="accepted")
+    db = sqlite3.connect(presence_mod.PRESENCE_DB)
+    db.execute(
+        "UPDATE calls SET answered_ts = ? WHERE call_id = ?",
+        (time.time() - 75, call_id),
+    )
+    db.commit()
+    db.close()
+
+    alice_and_bob.post(f"/calls/{call_id}/end")
+
+    notices = _channel_notices("dm:alice:bob")
+    assert len(notices) == 1
+    assert notices[0].startswith("Call ended · 1m")
+
+
+def test_unanswered_call_records_a_missed_call(alice_and_bob):
+    """Ringing only reaches whoever was looking; the record reaches everyone."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="ringing")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="pending")
+
+    alice_and_bob.post(f"/calls/{call_id}/end")
+
+    assert _channel_notices("dm:alice:bob") == ["Missed call from alice"]
+
+
+def test_a_call_is_recorded_only_once(alice_and_bob):
+    """Several paths can end a call; only the one that wins the race writes."""
+    call_id = str(uuid.uuid4())
+    _insert_call(call_id, "dm:alice:bob", "alice", state="ringing")
+    _insert_participant(call_id, "alice", role="initiator", state="accepted")
+    _insert_participant(call_id, "bob", role="participant", state="pending")
+
+    alice_and_bob.post(f"/calls/{call_id}/end")
+    alice_and_bob.post(f"/calls/{call_id}/end")
+    alice_and_bob.get(f"/calls/{call_id}/state")
+
+    assert len(_channel_notices("dm:alice:bob")) == 1
 
 
 def test_initiate_sweeps_unanswered_ringing_call(alice_and_bob, app):

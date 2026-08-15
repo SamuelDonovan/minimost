@@ -18,6 +18,11 @@
 // rather than rebuilt, so a <video> never loses its stream to a re-render.
 
 let activeCallId = null;
+// The channel the live call belongs to. Kept apart from `channel` (the one the
+// user is *reading*) because a call outlives a channel switch — the whole point
+// of minimising the panel is to talk in one place while typing in another, and
+// the header must keep naming the call, not whatever is on screen behind it.
+let activeCallChannel = null;
 let incomingCallData = null;
 let localStream = null;
 let callTimerInterval = null;
@@ -88,8 +93,8 @@ function _logPeerState(pc, label) {
 
 // Per-participant remote state: username → {
 //   pc, dc, polite, makingOffer, ignoreOffer, pendingCandidates, audioEl,
-//   vadAnalyser, speaking, muted, remoteSharing, screenStream, screenSenders,
-//   connState, goneTimer }
+//   vadAnalyser, speaking, muted, remoteSharing, screenStream, audioSender,
+//   screenSender, connState, goneTimer }
 const remoteParticipants = new Map();
 // Invitees whose phone is still ringing — shown as dimmed tiles so the caller
 // can see the invite landed instead of staring at an unchanged grid.
@@ -344,6 +349,7 @@ function closeActiveCallUI() {
   document.getElementById("call-timer").textContent = "0:00";
   const ab = document.getElementById("call-mute-audio-btn");
   ab.classList.remove("muted");
+  ab.disabled = false;
   ab.title = "Mute (M)";
   audioMuted = false;
   screenEnabled = false;
@@ -385,7 +391,9 @@ function _tileSpecs() {
     });
   }
   for (const [user, pState] of remoteParticipants) {
-    if (pState.screenStream) {
+    // Both halves matter: the peer says it is sharing, and its video track has
+    // arrived to show. Either alone would give a tile with nothing in it.
+    if (pState.remoteSharing && pState.screenStream) {
       specs.push({ key: `screen:${user}`, kind: "screen", user });
     }
   }
@@ -571,7 +579,7 @@ function _renderHeaderFaces() {
 function _renderCallHeader(specs) {
   const title = document.getElementById("call-header-title");
   if (!title) return;
-  title.textContent = _channelLabel(channel);
+  title.textContent = _channelLabel(activeCallChannel || channel);
 
   const people = 1 + remoteParticipants.size;
   const waiting = specs.filter((s) => s.pending).length;
@@ -731,6 +739,17 @@ function _tuneScreenSender(sender) {
   } catch {
     /* older browsers (and non-simulcast senders) reject this; harmless */
   }
+}
+
+// Put a screen track on (or take it off) the video transceiver every peer
+// connection already carries — see _createPeerConnection for why the layout is
+// fixed. replaceTrack() does not renegotiate, so starting and stopping a share
+// costs one SDP exchange less than nothing: none at all.
+function _attachScreenToPeer(pState, track) {
+  const sender = pState.screenSender;
+  if (!sender) return;
+  sender.replaceTrack(track || null).catch(() => {});
+  if (track) _tuneScreenSender(sender);
 }
 
 // ── Local microphone level meter ────────────────────────────────────────────────
@@ -969,7 +988,7 @@ function _openMetaChannel(pState) {
     }
     if (msg.t !== "state") return;
     pState.muted = !!msg.muted;
-    pState.remoteSharing = !!msg.sharing;
+    _setRemoteSharing(pState.username, !!msg.sharing);
     _renderCall();
   };
   return dc;
@@ -996,19 +1015,37 @@ function _createPeerConnection(username, pState) {
   const pc = new RTCPeerConnection(RTC_CONFIG);
   pState.pc = pc;
 
-  if (localStream) {
-    for (const track of localStream.getAudioTracks())
-      pc.addTrack(track, localStream);
-  }
-  // A late joiner during an active screen share must also receive the screen.
-  if (screenEnabled && screenStream) {
-    for (const track of screenStream.getVideoTracks()) {
-      const sender = pc.addTrack(track, screenStream);
-      pState.screenSenders.push(sender);
-      _tuneScreenSender(sender);
-    }
-  }
+  // A mesh connection is set up from *both* ends at once — either side may be
+  // the one whose state poll notices the other first — so the two offers race,
+  // and perfect negotiation resolves that by having the polite peer roll its
+  // own offer back. Rollback is only safe when both offers describe the same
+  // m-lines in the same order: when they don't (one peer was already sharing,
+  // so its offer carried an extra video section) the rolled-back peer maps the
+  // remote sections onto its own by position, finds a type mismatch, and
+  // answers with a rejected section. A rejected data-channel section can never
+  // be revived on that connection, and because the peer still holds an
+  // RTCDataChannel object the negotiation-needed flag stays set forever: both
+  // ends then renegotiate a few times a second for the life of the call while
+  // the screen never decodes a frame.
+  //
+  // So the layout is fixed here, before anything can trigger negotiation, and
+  // never changes afterwards: audio, screen video, data channel. Sharing a
+  // screen is a replaceTrack() on the transceiver that is already in place,
+  // which needs no renegotiation at all — the picture simply starts flowing.
+  pState.audioSender = pc.addTransceiver("audio", {
+    direction: "sendrecv",
+  }).sender;
+  pState.screenSender = pc.addTransceiver("video", {
+    direction: "sendrecv",
+  }).sender;
   pState.dc = _openMetaChannel(pState);
+
+  const micTrack = localStream?.getAudioTracks()[0];
+  if (micTrack) pState.audioSender.replaceTrack(micTrack).catch(() => {});
+  // A late joiner arriving during an active screen share must also receive it.
+  if (screenEnabled && screenStream) {
+    _attachScreenToPeer(pState, screenStream.getVideoTracks()[0]);
+  }
 
   pc.onnegotiationneeded = async () => {
     try {
@@ -1115,15 +1152,22 @@ function _setupVad(pState, stream) {
 }
 
 // A remote video track is always a screen share: MiniMost calls are audio-only,
-// so nothing else puts video on the wire.
+// so nothing else puts video on the wire. The track arrives once, when the
+// connection is negotiated, and stays for the life of the peer — it carries
+// frames only while that peer is actually sharing.
+//
+// Whether the tile is *shown* is deliberately not decided here. A receiver
+// track goes muted whenever RTP stops, which includes a wifi roam or a second
+// of packet loss, so hanging the tile off track events threw the screen away
+// on every hiccup and never brought it back. Sharing state comes from the
+// sharer instead — over the meta data channel, with the server's list as a
+// backstop — and this track is just where the pixels turn up.
 function _attachRemoteScreen(username, track, stream) {
   const pState = remoteParticipants.get(username);
   if (!pState) return;
   pState.screenStream = stream;
-  pState.remoteSharing = true;
-  focusScreenKey = `screen:${username}`;
   track.addEventListener("ended", () => _clearRemoteScreen(username));
-  track.addEventListener("mute", () => _clearRemoteScreen(username));
+  if (pState.remoteSharing) focusScreenKey = `screen:${username}`;
   _renderCall();
 }
 
@@ -1131,10 +1175,26 @@ function _clearRemoteScreen(username) {
   const pState = remoteParticipants.get(username);
   if (!pState?.screenStream) return;
   pState.screenStream = null;
-  pState.remoteSharing = false;
+  _dropScreenFocus(username);
+  _renderCall();
+}
+
+// Forget any spotlight that was pointing at a screen which is no longer shown.
+function _dropScreenFocus(username) {
   if (focusScreenKey === `screen:${username}`) focusScreenKey = null;
   if (pinnedTileKey === `screen:${username}`) pinnedTileKey = null;
-  _renderCall();
+}
+
+// Record that a participant started or stopped sharing. Called from the meta
+// data channel (immediate) and from the call-state poll (the backstop that
+// catches a share whose announcement never arrived).
+function _setRemoteSharing(username, sharing) {
+  const pState = remoteParticipants.get(username);
+  if (!pState || pState.remoteSharing === sharing) return false;
+  pState.remoteSharing = sharing;
+  if (sharing) focusScreenKey = `screen:${username}`;
+  else _dropScreenFocus(username);
+  return true;
 }
 
 // ── Participant management ─────────────────────────────────────────────────────
@@ -1142,6 +1202,7 @@ function _clearRemoteScreen(username) {
 function _addRemoteParticipant(username) {
   if (remoteParticipants.has(username)) return;
   const pState = {
+    username,
     pc: null,
     dc: null,
     // Deterministic, opposite on the two ends → exactly one polite peer.
@@ -1154,7 +1215,8 @@ function _addRemoteParticipant(username) {
     muted: false,
     remoteSharing: false,
     screenStream: null,
-    screenSenders: [],
+    audioSender: null,
+    screenSender: null,
     connState: "new",
     // Armed while this peer's connection is down; see onconnectionstatechange.
     goneTimer: null,
@@ -1192,6 +1254,17 @@ function _removeRemoteParticipant(username) {
 
 function _handlePeerGone(username) {
   if (!remoteParticipants.has(username)) return;
+  // Tell the server too. Nothing is going to POST /end for a browser that
+  // crashed or lost the network, and until its row is cleared the channel
+  // cannot host a new call — so the people who watched the connection die are
+  // the fastest evidence there is. The server corroborates before acting.
+  if (activeCallId) {
+    fetch(`/calls/${activeCallId}/gone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    }).catch(() => {});
+  }
   _removeRemoteParticipant(username);
   // Last peer standing: the call is over whatever the server still believes,
   // and endCall() tells it so, which frees the channel for the next call.
@@ -1221,7 +1294,7 @@ function _setScreenButton(on) {
 }
 
 async function toggleScreenShare() {
-  if (!localStream || !activeCallId) return;
+  if (!activeCallId) return;
   if (screenEnabled) {
     _stopInCallScreenShare();
     return;
@@ -1253,10 +1326,7 @@ async function toggleScreenShare() {
   _tuneScreenTrack(track);
 
   for (const pState of remoteParticipants.values()) {
-    if (!pState.pc) continue;
-    const sender = pState.pc.addTrack(track, screenStream);
-    pState.screenSenders.push(sender);
-    _tuneScreenSender(sender);
+    _attachScreenToPeer(pState, track);
   }
   // Record that we are sharing, so late joiners and the other clients' state
   // polls agree with what the tracks are doing.
@@ -1272,7 +1342,12 @@ async function toggleScreenShare() {
   });
 
   _setScreenButton(true);
-  focusScreenKey = `screen:${CURRENT_USER}`;
+  // You are already looking at your own screen for real, so only take the
+  // spotlight when there is nothing of someone else's to displace.
+  const othersSharing = [...remoteParticipants.values()].some(
+    (p) => p.remoteSharing,
+  );
+  if (!othersSharing) focusScreenKey = `screen:${CURRENT_USER}`;
   _broadcastSelfState();
   _renderCall();
 }
@@ -1280,14 +1355,7 @@ async function toggleScreenShare() {
 function _stopInCallScreenShare() {
   screenEnabled = false;
   for (const pState of remoteParticipants.values()) {
-    for (const sender of pState.screenSenders) {
-      try {
-        pState.pc?.removeTrack(sender);
-      } catch {
-        /* ignore */
-      }
-    }
-    pState.screenSenders = [];
+    _attachScreenToPeer(pState, null);
   }
   if (screenStream) {
     screenStream.getTracks().forEach((t) => t.stop());
@@ -1637,6 +1705,7 @@ function _renderShareBannerViewBtn(names) {
 function _renderShareBanner() {
   const banner = document.getElementById("screenshare-banner");
   if (!banner) return;
+  _renderViewerSelfShare();
   const others = _currentRemoteShares;
 
   // While watching, the banner would just repeat the overlay's own header.
@@ -1775,6 +1844,16 @@ function _renderShareViewer() {
 
   _reorderChildren(strip, _syncShareViewerTiles(stage));
   if (label) label.textContent = _shareViewerLabel();
+
+  _renderViewerSelfShare();
+}
+
+// Your own share, surfaced inside the viewer overlay — the banner that normally
+// carries it is behind the overlay and hidden while you watch.
+function _renderViewerSelfShare() {
+  const btn = document.getElementById("ss-viewer-selfshare-btn");
+  if (!btn) return;
+  btn.style.display = standaloneShareId ? "inline-flex" : "none";
 }
 
 function _startShareViewerConnection(share) {
@@ -1934,23 +2013,45 @@ function _requireSecureContext() {
   return false;
 }
 
+// Acquire the microphone, and carry on without one rather than refusing the
+// call. A machine with no input device, a mic held by another app, or a denied
+// permission used to mean no call at all — even though listening and watching a
+// shared screen is most of what a call is for, and the person can still type.
+// Every peer connection carries its audio transceiver either way (see
+// _createPeerConnection), so a listener negotiates exactly like everyone else.
+async function _acquireLocalAudio() {
+  try {
+    localStream = await _getLocalMedia();
+    return true;
+  } catch (err) {
+    console.warn("Microphone unavailable, joining listen-only:", err);
+    localStream = null;
+    showToast(
+      "No microphone available — you have joined listen-only. Others can still be heard.",
+    );
+    return false;
+  }
+}
+
+// Listen-only participants have nothing to mute, so say that on the button
+// instead of leaving a control that silently does nothing.
+function _syncMuteButtonForNoMic() {
+  const btn = document.getElementById("call-mute-audio-btn");
+  if (!btn) return;
+  const listening = !localStream;
+  btn.classList.toggle("muted", listening);
+  btn.disabled = listening;
+  if (listening) btn.title = "No microphone — listening only";
+}
+
 async function startCall() {
   if (activeCallId) return;
   if (!_requireSecureContext()) return;
 
-  // Acquire the microphone BEFORE creating the call on the server.  If we
-  // created the call first and then getUserMedia timed out or was denied, the
-  // catch block would call /end while we are the only accepted participant,
-  // ending the call immediately and giving the callee only seconds of ring time.
-  try {
-    localStream = await _getLocalMedia();
-  } catch (err) {
-    console.warn("Microphone access denied:", err);
-    showToast(
-      "Could not access your microphone. Please check your browser permissions.",
-    );
-    return;
-  }
+  // Acquire the microphone BEFORE creating the call on the server: opening a
+  // capture device can take seconds, and every one of them would otherwise be
+  // spent ringing a callee we were not yet ready to talk to.
+  await _acquireLocalAudio();
 
   const resp = await fetch("/calls/initiate", {
     method: "POST",
@@ -1969,6 +2070,7 @@ async function startCall() {
 
   const data = await resp.json();
   activeCallId = data.call_id;
+  activeCallChannel = channel;
   callState = "ringing";
 
   try {
@@ -1977,6 +2079,7 @@ async function startCall() {
       if (user !== CURRENT_USER) pendingInvitees.add(user);
     }
     openActiveCallUI();
+    _syncMuteButtonForNoMic();
     _startCallTimer();
     if (!notifMuted) {
       callingAudio = new Audio("/static/calling.mp3");
@@ -2017,18 +2120,20 @@ async function acceptCall() {
     return;
   }
 
-  const { call_id } = incomingCallData;
+  const { call_id, channel: callChannel } = incomingCallData;
 
   const resp = await fetch(`/calls/${call_id}/accept`, { method: "POST" });
   closeIncomingCallUI();
   if (!resp.ok) return;
   const accepted = await resp.json().catch(() => ({}));
   activeCallId = call_id;
+  activeCallChannel = callChannel || channel;
   callState = "active";
 
   try {
-    localStream = await _getLocalMedia();
+    await _acquireLocalAudio();
     openActiveCallUI();
+    _syncMuteButtonForNoMic();
     _startCallTimer();
     _startMicLevelMeter();
     _startSpeakingPoll();
@@ -2077,6 +2182,7 @@ function _cleanupCall() {
   if (screenEnabled) _stopInCallScreenShare();
   _removeAllParticipants();
   callState = "ringing";
+  activeCallChannel = null;
   closeActiveCallUI();
   if (localStream) {
     localStream.getTracks().forEach((t) => t.stop());
@@ -2115,17 +2221,18 @@ function _diffParticipants(accepted) {
   }
 }
 
-// Reconcile the shares the server knows about with the video tracks we are
-// actually receiving.  Tracks are the fast path; this catches the share that
-// stopped without an 'ended'/'mute' event ever reaching us.
+// Reconcile who the server thinks is sharing with what the tiles show. The
+// meta data channel is the fast path and normally gets there first; this is the
+// backstop for the announcement that never arrived — a data channel that failed
+// to open, or a share that started while we were still connecting.
 function _handleScreenshareState(sharers) {
   // Accepts the list of sharers, a single bare username, or nothing at all.
   let list = [];
   if (Array.isArray(sharers)) list = sharers;
   else if (sharers) list = [sharers];
   const sharing = new Set(list);
-  for (const [user, pState] of remoteParticipants) {
-    if (pState.screenStream && !sharing.has(user)) _clearRemoteScreen(user);
+  for (const user of remoteParticipants.keys()) {
+    _setRemoteSharing(user, sharing.has(user));
   }
 }
 
@@ -2368,13 +2475,15 @@ async function joinActiveCall() {
   }
   const accepted = await resp.json().catch(() => ({}));
   activeCallId = call.call_id;
+  activeCallChannel = channel;
   callState = "active";
   _activeChannelCall = null;
   _renderCallJoinBanner();
 
   try {
-    localStream = await _getLocalMedia();
+    await _acquireLocalAudio();
     openActiveCallUI();
+    _syncMuteButtonForNoMic();
     _startCallTimer();
     _startMicLevelMeter();
     _startSpeakingPoll();

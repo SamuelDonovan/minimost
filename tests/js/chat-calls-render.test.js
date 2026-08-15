@@ -133,6 +133,16 @@ function addPeer(name) {
   return remoteParticipants.get(name);
 }
 
+// A peer whose screen is on show. Both halves are needed: the track carries the
+// picture, and `remoteSharing` — which arrives over the meta data channel, with
+// the server's list as a backstop — is what decides a tile is shown at all.
+function addSharingPeer(name) {
+  const p = addPeer(name);
+  p.screenStream = stream([track("video")]);
+  p.remoteSharing = true;
+  return p;
+}
+
 function tileFor(key) {
   return callTiles.get(key);
 }
@@ -270,7 +280,7 @@ describe("_tileSpecs()", () => {
   });
 
   test("adds a screen tile for each remote sharer", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     addPeer("carol");
     const keys = _tileSpecs().map((s) => s.key);
     expect(keys).toEqual([
@@ -308,7 +318,7 @@ describe("_stageKey()", () => {
   });
 
   test("honours a pin over everything else", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     global.pinnedTileKey = "user:bob";
     expect(_stageKey(_tileSpecs())).toBe("user:bob");
   });
@@ -319,7 +329,7 @@ describe("_stageKey()", () => {
   });
 
   test("spotlights nothing in grid layout", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     global.callLayout = "grid";
     expect(_stageKey(_tileSpecs())).toBeNull();
   });
@@ -327,7 +337,7 @@ describe("_stageKey()", () => {
   test("prefers someone else's screen over your own", () => {
     global.screenEnabled = true;
     global.screenStream = stream([track("video")]);
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     expect(_stageKey(_tileSpecs())).toBe("screen:bob");
   });
 
@@ -338,8 +348,8 @@ describe("_stageKey()", () => {
   });
 
   test("follows the newest share while the layout is automatic", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
-    addPeer("carol").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
+    addSharingPeer("carol");
     global.focusScreenKey = "screen:carol";
     expect(_stageKey(_tileSpecs())).toBe("screen:carol");
   });
@@ -419,13 +429,13 @@ describe("_renderCall() tiles", () => {
     // In-call shares are captured with `audio: false`, so a screen tile never
     // carries sound. Leaving it unmuted only bought a NotAllowedError from the
     // autoplay policy, which froze remote screens on their first frame.
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     _renderCall();
     expect(tileFor("screen:bob").querySelector("video").muted).toBe(true);
   });
 
   test("names a remote screen after its owner", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     _renderCall();
     expect(
       tileFor("screen:bob").querySelector(".call-tile-name").textContent,
@@ -442,7 +452,7 @@ describe("_renderCall() tiles", () => {
   });
 
   test("moves the spotlighted tile onto the stage", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     _renderCall();
     const stage = document.getElementById("call-stage");
     expect(stage.children).toHaveLength(1);
@@ -453,7 +463,7 @@ describe("_renderCall() tiles", () => {
   });
 
   test("drops a stale pin and focus when their tiles disappear", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     global.pinnedTileKey = "screen:bob";
     global.focusScreenKey = "screen:bob";
     _diffParticipants(new Set());
@@ -614,7 +624,7 @@ describe("_renderCallHeader()", () => {
   });
 
   test("counts a single shared screen", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
     _renderCall();
     expect(document.getElementById("call-status-text").textContent).toBe(
       "Screen shared",
@@ -622,8 +632,8 @@ describe("_renderCallHeader()", () => {
   });
 
   test("counts several shared screens", () => {
-    addPeer("bob").screenStream = stream([track("video")]);
-    addPeer("carol").screenStream = stream([track("video")]);
+    addSharingPeer("bob");
+    addSharingPeer("carol");
     _renderCall();
     expect(document.getElementById("call-status-text").textContent).toBe(
       "2 screens shared",
@@ -777,11 +787,22 @@ describe("fullscreen helpers", () => {
 // ── Peer connections ──────────────────────────────────────────────────────────
 
 describe("_createPeerConnection()", () => {
-  test("adds the local audio track to a new peer", () => {
+  test("puts the local audio track on the audio transceiver", () => {
     const audio = track("audio");
     global.localStream = stream([audio]);
     const p = addPeer("bob");
-    expect(p.pc.addTrack).toHaveBeenCalledWith(audio, localStream);
+    expect(p.audioSender.replaceTrack).toHaveBeenCalledWith(audio);
+  });
+
+  test("builds the same m-line layout whether or not there is a mic", () => {
+    // Both ends of a connection must offer the same sections in the same
+    // order, or a rolled-back offer maps them onto each other by position and
+    // rejects one for good — so a listen-only peer still creates both
+    // transceivers, and creates them before the data channel.
+    const p = addPeer("bob");
+    const kinds = p.pc.addTransceiver.mock.calls.map((c) => c[0]);
+    expect(kinds).toEqual(["audio", "video"]);
+    expect(p.pc.createDataChannel).toHaveBeenCalled();
   });
 
   test("sends an existing screen share to a late joiner", () => {
@@ -789,8 +810,7 @@ describe("_createPeerConnection()", () => {
     global.screenEnabled = true;
     global.screenStream = stream([video]);
     const p = addPeer("bob");
-    expect(p.pc.addTrack).toHaveBeenCalledWith(video, screenStream);
-    expect(p.screenSenders).toHaveLength(1);
+    expect(p.screenSender.replaceTrack).toHaveBeenCalledWith(video);
   });
 
   test("picks exactly one polite peer by username order", () => {
@@ -987,6 +1007,7 @@ describe("meta data channel", () => {
     RTCPeerConnection.mockImplementationOnce(() => ({
       addEventListener: jest.fn(),
       addTrack: jest.fn(),
+      addTransceiver: jest.fn(() => ({ sender: { replaceTrack: jest.fn() } })),
       createDataChannel: () => {
         throw new Error("unsupported");
       },
@@ -1096,11 +1117,38 @@ describe("remote tracks", () => {
     warn.mockRestore();
   });
 
-  test("treats a remote video track as a screen share", () => {
+  test("keeps a remote video track ready without showing a tile yet", () => {
+    // The track arrives when the connection is negotiated, long before anyone
+    // shares. Only the sharer saying so puts it on screen.
     const p = addPeer("bob");
     p.pc.ontrack({ track: track("video"), streams: [stream([])] });
-    expect(p.remoteSharing).toBe(true);
+    expect(p.screenStream).not.toBeNull();
+    expect(p.remoteSharing).toBe(false);
+    expect(callTiles.has("screen:bob")).toBe(false);
+  });
+
+  test("shows the screen once the sharer announces it", () => {
+    const p = addPeer("bob");
+    p.pc.ontrack({ track: track("video"), streams: [stream([])] });
+    _setRemoteSharing("bob", true);
+    _renderCall();
     expect(focusScreenKey).toBe("screen:bob");
+    expect(callTiles.has("screen:bob")).toBe(true);
+  });
+
+  test("keeps the screen through a transient track mute", () => {
+    // A receiver track goes muted whenever RTP stops — a wifi roam, a second
+    // of loss. Tearing the tile down there threw the share away for the rest
+    // of the call, since no new track ever arrives to bring it back.
+    const p = addSharingPeer("bob");
+    const videoTrack = track("video");
+    const listeners = {};
+    videoTrack.addEventListener = (type, fn) => {
+      listeners[type] = fn;
+    };
+    p.pc.ontrack({ track: videoTrack, streams: [stream([])] });
+    expect(listeners.mute).toBeUndefined();
+    _renderCall();
     expect(callTiles.has("screen:bob")).toBe(true);
   });
 
@@ -1113,9 +1161,9 @@ describe("remote tracks", () => {
     };
     p.pc.ontrack({ track: videoTrack, streams: [stream([])] });
     global.pinnedTileKey = "screen:bob";
+    global.focusScreenKey = "screen:bob";
     listeners.ended();
     expect(p.screenStream).toBeNull();
-    expect(p.remoteSharing).toBe(false);
     expect(focusScreenKey).toBeNull();
     expect(pinnedTileKey).toBeNull();
   });
@@ -1485,21 +1533,18 @@ describe("toggleScreenShare()", () => {
     expect(screenEnabled).toBe(false);
   });
 
-  test("adds the screen track to every peer and tells the server", async () => {
+  test("puts the screen on every peer's video sender and tells the server", async () => {
     const p = addPeer("bob");
     const video = track("video");
-    p.pc.addTrack.mockReturnValue({
-      track: video,
-      getParameters: () => ({ encodings: [{}] }),
-      setParameters: jest.fn(() => Promise.resolve()),
-    });
     navigator.mediaDevices.getDisplayMedia.mockResolvedValueOnce(
       stream([video]),
     );
     await toggleScreenShare();
     expect(screenEnabled).toBe(true);
     expect(video.contentHint).toBe("detail");
-    expect(p.screenSenders).toHaveLength(1);
+    // replaceTrack, not addTrack: the transceiver is already negotiated, so
+    // starting a share costs no SDP exchange and cannot collide with one.
+    expect(p.screenSender.replaceTrack).toHaveBeenCalledWith(video);
     expect(fetch).toHaveBeenCalledWith(
       "/calls/c1/screenshare",
       expect.objectContaining({ body: JSON.stringify({ on: true }) }),
@@ -1543,19 +1588,30 @@ describe("toggleScreenShare()", () => {
     expect(screenEnabled).toBe(false);
   });
 
-  test("removes the screen senders from every peer when stopping", async () => {
+  test("takes the screen off every peer's video sender when stopping", async () => {
     const p = addPeer("bob");
-    const sender = { getParameters: () => ({}), setParameters: jest.fn() };
-    p.pc.addTrack.mockReturnValue(sender);
     navigator.mediaDevices.getDisplayMedia.mockResolvedValueOnce(
       stream([track("video")]),
     );
     await toggleScreenShare();
     global.pinnedTileKey = "screen:alice";
     _stopInCallScreenShare();
-    expect(p.pc.removeTrack).toHaveBeenCalledWith(sender);
-    expect(p.screenSenders).toHaveLength(0);
+    expect(p.screenSender.replaceTrack).toHaveBeenLastCalledWith(null);
     expect(pinnedTileKey).toBeNull();
+  });
+
+  test("leaves someone else's screen on the stage when you start sharing", async () => {
+    // You are already looking at your own screen for real; taking the
+    // spotlight from the person you were watching helps nobody.
+    const p = addPeer("bob");
+    p.screenStream = stream([track("video")]);
+    _setRemoteSharing("bob", true);
+    expect(focusScreenKey).toBe("screen:bob");
+    navigator.mediaDevices.getDisplayMedia.mockResolvedValueOnce(
+      stream([track("video")]),
+    );
+    await toggleScreenShare();
+    expect(focusScreenKey).toBe("screen:bob");
   });
 });
 
@@ -2348,8 +2404,11 @@ describe("acceptCall()", () => {
     expect(activeCallId).toBeNull();
   });
 
-  test("hangs up when the microphone cannot be opened", async () => {
-    const error = jest.spyOn(console, "error").mockImplementation(() => {});
+  test("joins listen-only when the microphone cannot be opened", async () => {
+    // Refusing the call outright cost the user the whole conversation over a
+    // device they may not even need: they can still hear, watch a shared
+    // screen, and type.
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     global.incomingCallData = { call_id: "c1", initiator: "bob" };
     fetch.mockResolvedValueOnce({
       ok: true,
@@ -2359,9 +2418,13 @@ describe("acceptCall()", () => {
       new Error("denied"),
     );
     await acceptCall();
-    expect(activeCallId).toBeNull();
-    expect(fetch).toHaveBeenCalledWith("/calls/c1/end", { method: "POST" });
-    error.mockRestore();
+    expect(activeCallId).toBe("c1");
+    expect(localStream).toBeNull();
+    expect(document.getElementById("call-mute-audio-btn").disabled).toBe(true);
+    expect(showToast).toHaveBeenCalledWith(
+      expect.stringContaining("listen-only"),
+    );
+    warn.mockRestore();
   });
 });
 
@@ -2478,17 +2541,33 @@ describe("_pollCallState()", () => {
     expect(activeCallId).toBeNull();
   });
 
-  test("clears a screen the server no longer lists", async () => {
+  test("hides a screen the server no longer lists", async () => {
     global.activeCallId = "c1";
-    const p = addPeer("bob");
-    p.screenStream = stream([track("video")]);
+    const p = addSharingPeer("bob");
     stateResponse({
       state: "active",
       participants: [{ username: "bob", state: "accepted" }],
       screensharers: [],
     });
     await _pollCallState();
-    expect(p.screenStream).toBeNull();
+    expect(p.remoteSharing).toBe(false);
+    expect(callTiles.has("screen:bob")).toBe(false);
+  });
+
+  test("shows a share the announcement never arrived for", async () => {
+    // The backstop: the meta data channel normally reports this first, but a
+    // channel that failed to open would otherwise leave the screen invisible.
+    global.activeCallId = "c1";
+    const p = addPeer("bob");
+    p.screenStream = stream([track("video")]);
+    stateResponse({
+      state: "active",
+      participants: [{ username: "bob", state: "accepted" }],
+      screensharers: ["bob"],
+    });
+    await _pollCallState();
+    expect(p.remoteSharing).toBe(true);
+    expect(callTiles.has("screen:bob")).toBe(true);
   });
 
   test("accepts the older single-sharer field", async () => {
@@ -2501,7 +2580,7 @@ describe("_pollCallState()", () => {
       screenshare_user: "bob",
     });
     await _pollCallState();
-    expect(p.screenStream).not.toBeNull();
+    expect(p.remoteSharing).toBe(true);
   });
 
   test("swallows a network error", async () => {
