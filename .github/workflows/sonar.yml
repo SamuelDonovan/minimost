@@ -42,6 +42,11 @@ jobs:
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v6
+        # Wait for the quality gate and fail the job on a red one. Without this
+        # the scan only uploads, the job goes green, and a failing gate is
+        # visible solely as the separate SonarCloud check — easy to miss.
+        with:
+          args: -Dsonar.qualitygate.wait=true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

@@ -5,15 +5,18 @@
     "test:js": "jest --coverage",
     "lint:js": "eslint src/minimost/static",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "sonar:local": "tools/sonar-local.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "eslint": "^9.39.4",
+    "eslint-plugin-sonarjs": "^4.2.0",
     "globals": "^17.6.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
-    "prettier": "3.8.3"
+    "prettier": "3.8.3",
+    "sonarqube-scanner": "^5.0.0"
   },
   "jest": {
     "testEnvironment": "jsdom",

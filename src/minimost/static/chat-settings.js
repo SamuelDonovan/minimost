@@ -733,8 +733,17 @@ async function renderMembersList() {
     row.appendChild(info);
 
     if (u !== CURRENT_USER) {
+      // Code-unit sort, matching chat.normalize_dm server-side and the DM modal
+      // in chat-dm.js. localeCompare would order mixed-case usernames
+      // differently from the server and produce a channel it does not resolve.
       const dmCh =
-        "dm:" + [u, CURRENT_USER].sort((a, b) => a.localeCompare(b)).join(":");
+        "dm:" +
+        [u, CURRENT_USER]
+          .sort((a, b) => {
+            if (a === b) return 0;
+            return a < b ? -1 : 1;
+          })
+          .join(":");
 
       const actions = document.createElement("div");
       actions.className = "users-list-actions";

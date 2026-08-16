@@ -52,6 +52,10 @@ coverage/
 *.cover
 *.py.cover
 
+# Local SonarQube scans (tools/sonar-local.sh) — scanner work dir and its cache
+.scannerwork/
+.sonar/
+
 # Node / JS tooling
 node_modules/
 .hypothesis/

@@ -65,3 +65,16 @@ repos:
         language: system
         types_or: [javascript]
         pass_filenames: false
+      # The eslint hook above now carries eslint-plugin-sonarjs, which covers the
+      # JavaScript Sonar rules on every commit. Nothing local implements the
+      # HTML/CSS/Python ones, so this runs the real analyzers against a local
+      # SonarQube Community Build container. It is pre-push rather than
+      # pre-commit because a scan costs ~40s, and it only fails on issues landing
+      # on lines you changed — see the header of tools/sonar-local.sh.
+      - id: sonar-local
+        name: sonar (local SonarQube)
+        entry: tools/sonar-local.sh
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

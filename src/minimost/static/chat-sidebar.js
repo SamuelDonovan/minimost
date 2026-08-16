@@ -102,6 +102,33 @@ function refreshChannels() {
     .then(applyChannelUnreads);
 }
 
+// Sync one sidebar row's unread badge (and its button's accessible name) to a
+// count. Split out of applyChannelUnreads to keep that function's branching
+// below the complexity ceiling the CI analyser enforces.
+function updateChannelUnreadBadge(el, ch, count) {
+  let badge = el.querySelector(".unread-badge");
+  if (count > 0) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "unread-badge";
+      el.appendChild(badge);
+    }
+    badge.textContent = count;
+  } else if (badge) {
+    badge.remove();
+  }
+  // The badge is a sibling of the row's button, so the count has to be folded
+  // into that button's accessible name to be announced with the channel.
+  const open = el.querySelector(".sidebar-item-open");
+  const label = el.querySelector(".label")?.textContent || ch;
+  if (open) {
+    open.setAttribute(
+      "aria-label",
+      count > 0 ? `${label}, ${count} unread` : label,
+    );
+  }
+}
+
 // Update channel unread badges + favicon flash from a /channel_unreads payload.
 // Shared by the fetcher above and the SSE "channel_unreads" event.
 function applyChannelUnreads(counts) {
@@ -113,28 +140,7 @@ function applyChannelUnreads(counts) {
 
   for (const [ch, count] of Object.entries(counts)) {
     const el = document.querySelector(`[data-channel="${ch}"]`);
-    if (!el) continue;
-    let badge = el.querySelector(".unread-badge");
-    if (count > 0) {
-      if (!badge) {
-        badge = document.createElement("span");
-        badge.className = "unread-badge";
-        el.appendChild(badge);
-      }
-      badge.textContent = count;
-    } else if (badge) {
-      badge.remove();
-    }
-    // The badge is a sibling of the row's button, so the count has to be folded
-    // into that button's accessible name to be announced with the channel.
-    const open = el.querySelector(".sidebar-item-open");
-    const label = el.querySelector(".label")?.textContent || ch;
-    if (open) {
-      open.setAttribute(
-        "aria-label",
-        count > 0 ? `${label}, ${count} unread` : label,
-      );
-    }
+    if (el) updateChannelUnreadBadge(el, ch, count);
   }
 
   if (hasUnreadChannels || privateChannelUnreadCount > 0) {

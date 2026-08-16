@@ -2406,10 +2406,14 @@ function _renderCallJoinBanner() {
   }
 
   const names = call.participants;
-  const who =
-    names.length === 1
-      ? `${names[0]} is on a call`
-      : `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` and ${names.length - 2} more` : ""} are on a call`;
+  let who;
+  if (names.length === 1) {
+    who = `${names[0]} is on a call`;
+  } else {
+    const shown = names.slice(0, 2).join(", ");
+    const more = names.length > 2 ? ` and ${names.length - 2} more` : "";
+    who = `${shown}${more} are on a call`;
+  }
   document.getElementById("calljoin-banner-text").textContent = who;
 
   const key = names.join(",");

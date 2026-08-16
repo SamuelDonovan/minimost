@@ -273,7 +273,16 @@ document.getElementById("dm-start").onclick = () => {
     return;
   }
 
-  users.sort();
+  // Sort by code unit, NOT localeCompare: the server canonicalises the same
+  // channel with Python's sorted() (chat.normalize_dm), which orders by code
+  // point — so "Bob" sorts before "alice". A locale-aware collation would put
+  // them the other way round and build a channel name the server disagrees
+  // with. Usernames are [A-Za-z0-9_-] (auth._USERNAME_RE), so code unit and
+  // code point orderings coincide here.
+  users.sort((a, b) => {
+    if (a === b) return 0;
+    return a < b ? -1 : 1;
+  });
 
   const dmChannel = "dm:" + users.join(":");
 
