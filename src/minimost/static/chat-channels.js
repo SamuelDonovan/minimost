@@ -22,7 +22,10 @@ let addMemberCurrentSuggestions = [];
 const MAX_CHANNEL_NAME_LEN = 80;
 
 function openCreatePrivateChannel() {
-  createPrivateChModal.style.display = "block";
+  openModal(createPrivateChModal, {
+    label: "Create a private channel",
+    focus: privateChNameInput,
+  });
   privateChNameInput.value = "";
   privateChMembersInput.value = "";
   privateChSuggestions.style.display = "none";
@@ -35,11 +38,10 @@ function openCreatePrivateChannel() {
         globalThis.usersLoaded = true;
       });
   }
-  privateChNameInput.focus();
 }
 
 function closeCreatePrivateChannel() {
-  createPrivateChModal.style.display = "none";
+  closeModal(createPrivateChModal);
 }
 
 document.getElementById("private-ch-create-cancel").onclick =
@@ -89,7 +91,7 @@ document.getElementById("private-ch-create-btn").onclick = async () => {
   }
 
   const data = await resp.json();
-  createPrivateChModal.style.display = "none";
+  closeCreatePrivateChannel();
   privateChannelMap[data.channel] = data.name;
   loadSidebar();
   switchChannel(data.channel);
@@ -186,16 +188,18 @@ document.addEventListener("click", (e) => {
 // Rename channel
 function openRenameChannel() {
   if (!channel.startsWith("private:")) return;
-  renamePrivateChModal.style.display = "block";
-  document.getElementById("rename-ch-name-error").textContent = "";
   const renameInput = document.getElementById("rename-ch-input");
+  openModal(renamePrivateChModal, {
+    label: "Rename channel",
+    focus: renameInput,
+  });
+  document.getElementById("rename-ch-name-error").textContent = "";
   renameInput.value = privateChannelMap[channel] || "";
-  renameInput.focus();
   renameInput.select();
 }
 
 function closeRenameChannel() {
-  renamePrivateChModal.style.display = "none";
+  closeModal(renamePrivateChModal);
 }
 
 document.getElementById("rename-ch-cancel-btn").onclick = closeRenameChannel;
@@ -232,7 +236,7 @@ document.getElementById("rename-ch-submit-btn").onclick = async () => {
   document.getElementById("chan").innerText = "";
   const nameBarText = document.getElementById("private-ch-name-bar-text");
   if (nameBarText) nameBarText.textContent = name;
-  renamePrivateChModal.style.display = "none";
+  closeRenameChannel();
   refreshPrivateChannels();
 };
 

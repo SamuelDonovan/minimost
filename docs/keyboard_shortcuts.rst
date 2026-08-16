@@ -105,7 +105,9 @@ Help
    * - Key
      - Action
    * - ``?``
-     - Open the help overlay (shows a quick-reference shortcut list).
+     - Open the help overlay. Focus lands in its filter box, so you can type
+       a word — "mention", "code block", "screen" — to narrow the reference
+       to matching entries; the pills below the box jump to a section.
 
 Visual Mode
 -----------
@@ -127,13 +129,16 @@ one message is highlighted and the following keys act on it directly.
    * - ``k`` / ``↑``
      - Move the selection to the previous (older) message.
    * - ``d``
-     - Delete the highlighted message.
+     - Delete the highlighted message. Only your own messages can be
+       deleted; on anyone else's the key does nothing but explain why.
    * - ``c``
-     - Edit the highlighted message inline.
+     - Edit the highlighted message inline. Only your own messages can be
+       edited; on anyone else's the key does nothing but explain why.
    * - ``o``
      - Reply to the highlighted message.
    * - ``y``
-     - Copy the highlighted message text to the clipboard.
+     - Copy the highlighted message to the clipboard, as it was typed —
+       formatting markers intact and without the read receipt.
    * - ``e``
      - Open the emoji reaction picker for the highlighted message.
    * - ``Esc``

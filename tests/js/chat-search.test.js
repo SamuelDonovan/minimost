@@ -37,6 +37,13 @@ beforeAll(() => {
   global.idleSent = false;
   global.lastActivity = Date.now();
   global.resetDmSuggestions = jest.fn();
+  // Overlay close functions live in the files loaded before chat-search.js in
+  // the browser; closeAllModalsAndFocusChat calls each one by name.
+  global.closeDmModal = jest.fn();
+  global.closeCreatePrivateChannel = jest.fn();
+  global.closeRenameChannel = jest.fn();
+  global.closeUsersModal = jest.fn();
+  global.closeSettings = jest.fn();
 
   loadScript("chat-search.js");
 });
@@ -422,9 +429,10 @@ describe("userInput()", () => {
   test("Escape blurs active element and closes modals", () => {
     const blurMock = jest.fn();
     document.activeElement = { blur: blurMock };
+    global.closeDmModal.mockClear();
     userInput(makeEvent("Escape"));
-    // closeAllModalsAndFocusChat is called — modals hidden
-    expect(document.getElementById("dm-modal").style.display).toBe("none");
+    // closeAllModalsAndFocusChat is called — every overlay is dismissed
+    expect(global.closeDmModal).toHaveBeenCalled();
   });
 
   test("? key opens help (not in an input)", () => {
@@ -568,10 +576,17 @@ describe("visual mode key navigation", () => {
 
 // ── closeAllModalsAndFocusChat ────────────────────────────────────────────────
 describe("closeAllModalsAndFocusChat()", () => {
-  test("closes DM modal", () => {
-    document.getElementById("dm-modal").style.display = "block";
+  // Each overlay is dismissed through its own close function rather than by
+  // hiding the element here — that is what unwinds the shared focus stack in
+  // chat-modals.js, so delegation is the behaviour worth pinning down.
+  test("routes every overlay through its own close function", () => {
     closeAllModalsAndFocusChat();
-    expect(document.getElementById("dm-modal").style.display).toBe("none");
+    expect(global.closeDmModal).toHaveBeenCalled();
+    expect(global.closeCreatePrivateChannel).toHaveBeenCalled();
+    expect(global.closeRenameChannel).toHaveBeenCalled();
+    expect(global.closeUsersModal).toHaveBeenCalled();
+    expect(global.closeSettings).toHaveBeenCalled();
+    expect(global.closeHelp).toHaveBeenCalled();
   });
 
   test("closes the search panel", () => {
@@ -580,14 +595,6 @@ describe("closeAllModalsAndFocusChat()", () => {
     expect(
       document.getElementById("topbar-search").classList.contains("open"),
     ).toBe(false);
-  });
-
-  test("closes create private channel modal", () => {
-    document.getElementById("create-private-ch-modal").style.display = "block";
-    closeAllModalsAndFocusChat();
-    expect(
-      document.getElementById("create-private-ch-modal").style.display,
-    ).toBe("none");
   });
 
   test("does not crash when modals are already hidden", () => {
@@ -887,30 +894,118 @@ describe("_handleVisualKey() action keys", () => {
   function makeVimEvent(key) {
     return { key, preventDefault: jest.fn() };
   }
+  // An .edit-btn is rendered only on the viewer's own messages, so its presence
+  // is what tells the keyboard path whether edit/delete are allowed.
+  function renderMsg({ own }) {
+    const host = document.createElement("div");
+    host.id = "vim-msg-host";
+    host.innerHTML = `
+      <div class="msg" id="msg-42">
+        ${own ? '<button class="edit-btn"></button>' : ""}
+        <div class="text" id="msg-text-42" data-raw="ship **it**">ship it ✓</div>
+      </div>`;
+    document.body.appendChild(host);
+  }
   beforeEach(() => {
-    global.visualMsgId = "msg-42";
+    document.getElementById("vim-msg-host")?.remove();
+    global.visualMsgId = "42";
     global.exitVisualMode = jest.fn();
     global.deleteMsg = jest.fn();
     global.startEdit = jest.fn();
     global.startReply = jest.fn();
+    global.showToast = jest.fn();
   });
-  test("d deletes", () => {
+  test("d deletes your own message", () => {
+    renderMsg({ own: true });
     _handleVisualKey(makeVimEvent("d"));
     expect(exitVisualMode).toHaveBeenCalled();
-    expect(deleteMsg).toHaveBeenCalledWith("msg-42");
+    expect(deleteMsg).toHaveBeenCalledWith("42");
   });
-  test("c edits", () => {
+  test("c edits your own message", () => {
+    renderMsg({ own: true });
     _handleVisualKey(makeVimEvent("c"));
-    expect(startEdit).toHaveBeenCalledWith("msg-42");
+    expect(startEdit).toHaveBeenCalledWith("42");
+  });
+  test("d on someone else's message explains instead of failing", () => {
+    renderMsg({ own: false });
+    _handleVisualKey(makeVimEvent("d"));
+    expect(deleteMsg).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(
+      "You can only delete your own messages",
+    );
+  });
+  test("c on someone else's message never opens an editor", () => {
+    renderMsg({ own: false });
+    _handleVisualKey(makeVimEvent("c"));
+    expect(startEdit).not.toHaveBeenCalled();
+    expect(exitVisualMode).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(
+      "You can only edit your own messages",
+    );
   });
   test("o replies", () => {
+    renderMsg({ own: false });
     _handleVisualKey(makeVimEvent("o"));
-    expect(startReply).toHaveBeenCalledWith("msg-42");
+    expect(startReply).toHaveBeenCalledWith("42");
+  });
+  test("y copies the message source, not the rendered text", async () => {
+    renderMsg({ own: false });
+    global.navigator.clipboard = { writeText: jest.fn().mockResolvedValue() };
+    _handleVisualKey(makeVimEvent("y"));
+    // data-raw, so neither the read-receipt ✓ nor the lost markdown comes along
+    expect(global.navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "ship **it**",
+    );
+    await Promise.resolve();
+    expect(showToast).toHaveBeenCalledWith("Message copied");
   });
   test("no-op when visualMsgId is null", () => {
     global.visualMsgId = null;
     _handleVisualKey(makeVimEvent("d"));
     expect(deleteMsg).not.toHaveBeenCalled();
+  });
+});
+
+// ── gg / G scroll jumps ───────────────────────────────────────────────────────
+describe("_handleNormalKey() jump to top and bottom", () => {
+  function makeVimEvent(key) {
+    return { key, preventDefault: jest.fn() };
+  }
+  let chat;
+  beforeEach(() => {
+    global.visualMode = false;
+    chat = document.getElementById("chat");
+    Object.defineProperty(chat, "scrollHeight", {
+      value: 5000,
+      configurable: true,
+    });
+    chat.scrollTop = 2000;
+    // jsdom has no scrollBy; the j/k/d/u branches only need it to be callable.
+    chat.scrollBy = jest.fn();
+  });
+
+  test("a lone g does not jump", () => {
+    _handleNormalKey(makeVimEvent("g"));
+    expect(chat.scrollTop).toBe(2000);
+  });
+
+  test("gg jumps to the top", () => {
+    _handleNormalKey(makeVimEvent("g"));
+    _handleNormalKey(makeVimEvent("g"));
+    expect(chat.scrollTop).toBe(0);
+  });
+
+  test("a key in between abandons the pending g", () => {
+    _handleNormalKey(makeVimEvent("g"));
+    _handleNormalKey(makeVimEvent("k"));
+    chat.scrollTop = 2000;
+    _handleNormalKey(makeVimEvent("g"));
+    expect(chat.scrollTop).toBe(2000);
+  });
+
+  test("G jumps to the bottom", () => {
+    _handleNormalKey(makeVimEvent("G"));
+    expect(chat.scrollTop).toBe(5000);
   });
 });
 

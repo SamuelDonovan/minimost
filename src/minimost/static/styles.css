@@ -210,24 +210,123 @@ select {
   display: none !important;
 }
 
-/* Modal */
+/* Modal
+   Column layout with a pinned head: the reference material below runs to
+   several screens, so the filter box and jump list have to stay put while it
+   scrolls. #help-body owns the scrolling; the dialog itself never does. */
 #help-modal {
   background: #252525;
   border: 1px solid #3a3a3a;
-  padding: 24px 28px;
+  padding: 0;
   border-radius: 8px;
   width: 90%;
-  max-width: 460px;
+  max-width: 480px;
   max-height: 85vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   position: relative;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
+#help-head {
+  flex: 0 0 auto;
+  padding: 14px 28px 8px;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+/* Title and filter share a line — stacked, they cost a third of the dialog's
+   height on a small window. The right padding keeps them clear of the
+   absolutely-positioned close button. */
+#help-head-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  padding-right: 20px;
+}
+
+#help-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 28px 24px;
+}
+
+/* First heading in the scroller sits right under the head; the default 16px
+   top margin doubled the gap. */
+#help-body .help-sect:first-of-type .help-section {
+  margin-top: 10px;
+}
+
 #help-modal h2 {
-  margin: 0 0 16px 0;
-  font-size: 1.3em;
+  margin: 0;
+  font-size: 1.2em;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+#help-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  color: #ddd;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+}
+
+#help-filter:focus {
+  outline: none;
+  border-color: #007acc;
+}
+
+#help-filter::placeholder {
+  color: #777;
+}
+
+/* One scrolling row rather than a wrapping block: thirteen section pills wrap
+   to four lines on a narrow window, which ate half the dialog and left barely
+   a paragraph of the help visible underneath. */
+#help-toc {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding-bottom: 5px;
+  scrollbar-width: thin;
+}
+
+#help-toc[hidden] {
+  display: none;
+}
+
+.help-toc-btn {
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  color: #aaa;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.help-toc-btn:hover,
+.help-toc-btn:focus-visible {
+  border-color: #007acc;
+  color: #ddd;
+}
+
+#help-empty {
+  color: #888;
+  font-size: 13px;
+  margin: 20px 0 4px;
+  text-align: center;
 }
 
 .help-section {
@@ -292,6 +391,7 @@ select {
   position: absolute;
   top: 10px;
   right: 12px;
+  z-index: 1;
   background: none;
   border: none;
   font-size: 22px;

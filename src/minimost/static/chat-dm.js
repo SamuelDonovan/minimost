@@ -77,8 +77,10 @@ function resetDmSuggestions() {
 let currentSuggestions = [];
 
 async function openDmModal() {
-  dmModal.style.display = "block";
-  dmUsersInput.focus();
+  openModal(dmModal, {
+    label: "Start a direct message",
+    focus: dmUsersInput,
+  });
 
   // Fetch users once (or remove this guard if you want to refresh every time)
   if (!globalThis.usersLoaded) {
@@ -183,7 +185,7 @@ function selectSuggestion(idx) {
 }
 
 function closeDmModal() {
-  dmModal.style.display = "none";
+  closeModal(dmModal);
 }
 
 document.getElementById("dm-cancel").onclick = closeDmModal;
@@ -287,7 +289,7 @@ document.getElementById("dm-start").onclick = () => {
   const dmChannel = "dm:" + users.join(":");
 
   resetDmModal();
-  dmModal.style.display = "none";
+  closeDmModal();
 
   addPendingDm(dmChannel);
   refreshDMs();

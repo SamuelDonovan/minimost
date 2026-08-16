@@ -244,8 +244,11 @@ implementation details:
 
 - ``Ctrl+B/I/U/S`` — format shortcuts wrap the selected text or toggle
   prefix/suffix markers at the cursor position.
-- Navigation shortcuts (``j/k/d/u/G/g``) scroll the ``.messages`` container
-  by a fixed number of pixels.
+- Navigation shortcuts (``j/k/d/u``) scroll the ``.messages`` container by a
+  fixed number of pixels; ``G`` jumps to the bottom.
+- ``gg`` is a real chord: the first ``g`` arms a 500 ms timer and the second
+  jumps to the top. Any other key in between abandons it, so a stray ``g``
+  while reading scrollback no longer throws you to the oldest message.
 - ``Ctrl+J/Ctrl+K`` — cycle through the channel list by finding the current
   channel's index in the sidebar and activating the next/previous sibling.
 
@@ -517,6 +520,45 @@ the Canvas API before the upload request is sent:
 
 This means no server-side image library is required — the server stores
 whatever JPEG the client sends.
+
+Overlays (chat-modals.js)
+-------------------------
+
+Every overlay in the app — Account, Settings, Members, New DM, create/rename
+private channel, and Help — is shown and hidden through one pair of functions
+in ``chat-modals.js``:
+
+.. code-block:: javascript
+
+   openModal(el, { display, label, focus });
+   closeModal(el);
+
+``openModal`` sets ``role="dialog"`` and ``aria-modal="true"``, applies the
+overlay's display value, records the element that had focus, and moves focus
+inside. Where a dialog opens onto a field the caller passes it as ``focus``;
+otherwise focus lands on the dialog's ``.modal-close-x`` button rather than
+whatever comes first in the markup — in Account that would be **Sign out**.
+
+``closeModal`` hides the element and hands focus back to whatever opened it,
+but only if focus is still inside the dialog: if the user clicked elsewhere
+first, pulling focus back would be the surprise. When the opener is gone, or
+nothing held focus to begin with, focus falls to the message list.
+
+Open dialogs are tracked on a stack, and one document-level ``keydown``
+listener keeps ``Tab`` cycling inside the top-most one. Containment stands
+down while an autocomplete list is open inside the dialog, since those fields
+use ``Tab`` to accept the highlighted suggestion.
+
+Help Dialog
+~~~~~~~~~~~
+
+The help overlay is a scrolling reference of thirteen sections, so it carries
+a filter box and a jump list. ``filterHelp(query)`` hides every ``<li>`` that
+does not match and then any section left empty; a section whose *heading*
+matches keeps all its entries, so filtering for "calls" yields the whole Calls
+section rather than one stray line. The jump list is built once from the
+section headings themselves (``_buildHelpToc``), so adding a ``.help-sect`` to
+the template is all it takes for a new pill to appear.
 
 Settings Modal
 --------------

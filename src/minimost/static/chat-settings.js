@@ -238,7 +238,7 @@ function openSettings() {
   document.getElementById("settings-notify-active").checked = notifyWhenActive;
   _updateNotifyActiveIcon();
 
-  settingsModal.style.display = "flex";
+  openModal(settingsModal, { display: "flex", label: "Settings" });
 }
 
 document.getElementById("settings-bio").addEventListener("input", (e) => {
@@ -319,7 +319,7 @@ document
   });
 
 function closeSettings() {
-  settingsModal.style.display = "none";
+  closeModal(settingsModal);
 }
 
 document
@@ -633,8 +633,8 @@ async function updateMembersCount() {
 }
 
 async function openUsersModal() {
-  usersModal.style.display = "block";
   const searchEl = document.getElementById("users-modal-search");
+  openModal(usersModal, { label: "Channel members", focus: searchEl });
   searchEl.value = "";
 
   // The "Add Member" controls only make sense for private channels.
@@ -810,7 +810,7 @@ function filterUsersModal(query) {
 }
 
 function closeUsersModal() {
-  usersModal.style.display = "none";
+  closeModal(usersModal);
   cancelLeaveChannel();
 }
 

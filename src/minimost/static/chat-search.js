@@ -261,7 +261,7 @@ searchFrom.addEventListener("focus", openSearchPanel);
 // Close the dropdown on any click outside the search component.
 globalThis.onclick = (e) => {
   if (!searchWrap.contains(e.target)) closeSearchPanel();
-  if (e.target === dmModal) dmModal.style.display = "none";
+  if (e.target === dmModal) closeDmModal();
 };
 
 // URL run inside a message body. `<` terminates the match so a link that
@@ -551,6 +551,14 @@ function _handleCtrlKey(e, isInput) {
   }
 }
 
+// Whether the current user may edit/delete a given message. The rendered DOM
+// is the source of truth: an .edit-btn is emitted only for your own,
+// non-system messages, so this needs no separate ownership check to drift out
+// of step with the renderer.
+function _canModifyMsg(id) {
+  return !!document.querySelector(`#msg-${id} .edit-btn`);
+}
+
 function _handleVisualKey(e) {
   const key = e.key;
   if (key === "j" || key === "ArrowDown") {
@@ -566,12 +574,8 @@ function _handleVisualKey(e) {
   const id = visualMsgId;
   if (!id) return;
   e.preventDefault();
-  if (key === "d") {
-    exitVisualMode();
-    deleteMsg(id);
-  } else if (key === "c") {
-    exitVisualMode();
-    startEdit(id);
+  if (key === "d" || key === "c") {
+    _visualModifyMsg(key, id);
   } else if (key === "o") {
     exitVisualMode();
     startReply(id);
@@ -579,14 +583,70 @@ function _handleVisualKey(e) {
     exitVisualMode();
     document.querySelector(`#msg-${id} .react-btn`)?.click();
   } else if (key === "y") {
-    const el = document.getElementById(`msg-text-${id}`);
-    if (el) navigator.clipboard.writeText(el.innerText).catch(() => {});
+    _visualCopyMsg(id);
   }
+}
+
+// Edit (c) or delete (d) the highlighted message.
+//
+// The hover controls only offer these on your own messages, but the keyboard
+// path used to run on whatever was highlighted. Pressing `c` on someone else's
+// message replaced their text with an edit box that could only ever fail to
+// save, and `d` produced a bare "Could not delete" with no hint as to why.
+function _visualModifyMsg(key, id) {
+  if (!_canModifyMsg(id)) {
+    showToast(
+      key === "d"
+        ? "You can only delete your own messages"
+        : "You can only edit your own messages",
+    );
+    return;
+  }
+  exitVisualMode();
+  if (key === "d") deleteMsg(id);
+  else startEdit(id);
+}
+
+function _visualCopyMsg(id) {
+  const el = document.getElementById(`msg-text-${id}`);
+  if (!el) return;
+  // data-raw is the message as it was typed. innerText would drag in the
+  // read-receipt ✓ that lives inside this div — so a copied message came out as
+  // "ship it ✓" — and would have flattened the markdown along the way.
+  const text = el.dataset.raw ?? el.innerText;
+  navigator.clipboard
+    .writeText(text)
+    .then(() => showToast("Message copied"))
+    .catch(() => showToast("Could not copy — clipboard unavailable"));
+}
+
+// Half of a pending `gg`. Both the help dialog and docs/keyboard_shortcuts.rst
+// have described `gg` as a two-press chord since the shortcut existed, but a
+// lone `g` did it — so brushing the key while reading scrollback threw you to
+// the very first message in the channel, hundreds of messages from where you
+// were. 500 ms is the window the docs promise.
+const GG_CHORD_MS = 500;
+let _ggPending = false;
+let _ggTimer = null;
+
+function _armGg() {
+  _ggPending = true;
+  clearTimeout(_ggTimer);
+  _ggTimer = setTimeout(() => {
+    _ggPending = false;
+  }, GG_CHORD_MS);
+}
+
+function _clearGg() {
+  _ggPending = false;
+  clearTimeout(_ggTimer);
 }
 
 function _handleNormalKey(e) {
   const scrollContainer = document.getElementById("chat");
   const scrollRate = 200;
+  // Any other key abandons a half-typed gg, the way vim does.
+  if (e.key !== "g") _clearGg();
   if (e.key === "v") {
     e.preventDefault();
     enterVisualMode();
@@ -601,7 +661,12 @@ function _handleNormalKey(e) {
   } else if (e.key === "G") {
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
   } else if (e.key === "g") {
-    scrollContainer.scrollTop = 0;
+    if (_ggPending) {
+      _clearGg();
+      scrollContainer.scrollTop = 0;
+    } else {
+      _armGg();
+    }
   } else if (e.key === "i") {
     e.preventDefault();
     focusMessageInput();
@@ -661,10 +726,10 @@ function focusChatContainer() {
 }
 
 function closeAllModalsAndFocusChat() {
-  // Close DM modal
-  if (dmModal.style.display === "block") {
-    dmModal.style.display = "none";
-  }
+  // Each overlay goes through its own close function rather than hiding the
+  // element here: that is what unwinds the shared focus stack in chat-modals.js
+  // (and, for Account and Members, backs out of any armed confirmation).
+  closeDmModal();
 
   // Hide DM suggestions
   if (dmSuggestions.style.display === "block") {
@@ -676,9 +741,9 @@ function closeAllModalsAndFocusChat() {
   closeSearchPanel();
 
   // Close private channel modals
-  if (createPrivateChModal) createPrivateChModal.style.display = "none";
-  if (renamePrivateChModal) renamePrivateChModal.style.display = "none";
-  if (usersModal) usersModal.style.display = "none";
+  closeCreatePrivateChannel();
+  closeRenameChannel();
+  closeUsersModal();
 
   closeHelp();
 
@@ -686,7 +751,7 @@ function closeAllModalsAndFocusChat() {
   // buttons, so leaving it open when every other overlay dismisses on Escape
   // is the one place where the inconsistency is actively risky. closeAccount()
   // also backs out of the delete/change-password confirmation sub-views.
-  if (settingsModal) settingsModal.style.display = "none";
+  closeSettings();
   if (typeof closeAccount === "function") closeAccount();
 
   // Reset DM input state

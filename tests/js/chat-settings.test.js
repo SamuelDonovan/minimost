@@ -6,6 +6,9 @@
 const { loadScript } = require("./loadScript");
 
 beforeAll(() => {
+  // Loaded first in the browser too: every modal open/close goes through it.
+  loadScript("chat-modals.js");
+
   // Stubs needed by sidebar
   global.openCreatePrivateChannel = jest.fn();
   global.bindPCTooltip = jest.fn();

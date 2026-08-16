@@ -588,23 +588,47 @@
 
 <!-- Help Overlay -->
 <div id="help-overlay" class="hidden">
-    <dialog id="help-modal" open aria-label="Keyboard shortcuts and help">
-        <button id="help-close" aria-label="Close help">&times;</button>
+    <dialog id="help-modal" open aria-labelledby="help-title">
+        <div id="help-head">
+            <button id="help-close" aria-label="Close help">&times;</button>
+            <div id="help-head-row">
+                <h2 id="help-title"><span style="color:#FFFFFF">Mini</span><span style="color:#007acc">Most</span></h2>
+                <input type="search" id="help-filter" placeholder="Filter help…" aria-label="Filter help topics" autocomplete="off">
+            </div>
+            <!-- Jump list, built from the section headings below by chat-modals.js -->
+            <nav id="help-toc" aria-label="Help sections"></nav>
+        </div>
 
-        <h2><span style="color:#FFFFFF">Mini</span><span style="color:#007acc">Most</span></h2>
-
+        <div id="help-body">
+        <section class="help-sect">
         <h3 class="help-section">Messaging</h3>
         <ul>
             <li><kbd>Enter</kbd> – Send message</li>
             <li><kbd>Shift + Enter</kbd> – New line</li>
             <li><kbd>↑</kbd> – Edit your last message (with the box empty)</li>
+            <li>While editing: <kbd>Ctrl Enter</kbd> saves, <kbd>Esc</kbd> cancels</li>
             <li>Hover a message to reply, edit, delete, or react with emoji</li>
             <li>On a touch screen, tap a message to show its actions</li>
+            <li>Edited messages carry an <em>(edited)</em> marker; hover it for the time of the last change</li>
             <li>A <b>✓</b> on your own message means it has been read by at least one other person</li>
             <li>Hover over the check to see who has read your message</li>
             <li>Messages older than the server's retention period are automatically and permanently removed</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
+        <h3 class="help-section">Mentions</h3>
+        <ul>
+            <li>Type <kbd>@</kbd> and a few letters to mention someone — <kbd>↑</kbd> <kbd>↓</kbd> pick, <kbd>Enter</kbd> or <kbd>Tab</kbd> accept, <kbd>Esc</kbd> dismisses</li>
+            <li><b>@everyone</b> mentions every member of the channel at once</li>
+            <li>Being mentioned plays a sound and raises a desktop notification, even in a channel you are not looking at</li>
+            <li>Unread mentions collect in a <b>Mentions</b> entry at the top of the sidebar, newest first</li>
+            <li>Click a mention there to jump to it where it was posted; opening the list never marks anything read</li>
+            <li>Mentions leave the list once you have read the channel they came from</li>
+        </ul>
+        </section>
+
+        <section class="help-sect">
         <h3 class="help-section">Navigation</h3>
         <ul>
             <li><kbd>i</kbd> – Focus message input</li>
@@ -616,29 +640,64 @@
             <li><kbd>Ctrl J</kbd> / <kbd>Ctrl K</kbd> – Next / previous channel</li>
             <li><kbd>Esc</kbd> – Close menus / unfocus input</li>
             <li><kbd>?</kbd> – Open this help</li>
+            <li>A <b>New messages</b> line marks where you left off in a channel</li>
+            <li><b>Jump to latest</b> appears at the bottom when you have scrolled back; click it to return</li>
+            <li>A banner across the top means the live connection dropped — messages resume on their own once it is back</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
+        <h3 class="help-section">Search</h3>
+        <ul>
+            <li><kbd>/</kbd> or <kbd>f</kbd> opens search; <kbd>Esc</kbd> closes it</li>
+            <li>Narrow results with <b>From</b>, <b>Channel</b>, <b>After</b> and <b>Before</b> — they combine with the search text</li>
+            <li><kbd>↑</kbd> <kbd>↓</kbd> move through results, <kbd>Enter</kbd> jumps to the highlighted message in its channel</li>
+            <li>Search covers every channel and DM you can read, however far back it goes</li>
+            <li>Only the 50 newest matches are shown — add a filter to narrow an older search</li>
+        </ul>
+        </section>
+
+        <section class="help-sect">
         <h3 class="help-section">Visual Mode</h3>
         <ul>
             <li><kbd>v</kbd> – Enter visual mode (highlights most recent message)</li>
             <li><kbd>j</kbd> / <kbd>↓</kbd> – Move selection to next message</li>
             <li><kbd>k</kbd> / <kbd>↑</kbd> – Move selection to previous message</li>
-            <li><kbd>d</kbd> – Delete highlighted message</li>
-            <li><kbd>c</kbd> – Edit highlighted message</li>
+            <li><kbd>d</kbd> – Delete highlighted message (your own only)</li>
+            <li><kbd>c</kbd> – Edit highlighted message (your own only)</li>
             <li><kbd>o</kbd> – Reply to highlighted message</li>
             <li><kbd>y</kbd> – Copy highlighted message text to clipboard</li>
             <li><kbd>e</kbd> – React to highlighted message with emoji</li>
             <li><kbd>Esc</kbd> – Exit visual mode</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
         <h3 class="help-section">Text Formatting</h3>
         <ul>
-            <li><kbd>Ctrl B</kbd> – Bold</li>
-            <li><kbd>Ctrl I</kbd> – Italic</li>
-            <li><kbd>Ctrl U</kbd> – Underline</li>
-            <li><kbd>Ctrl S</kbd> – Strikethrough</li>
+            <li><kbd>Ctrl B</kbd> – Bold · <kbd>Ctrl I</kbd> – Italic</li>
+            <li><kbd>Ctrl U</kbd> – Underline · <kbd>Ctrl S</kbd> – Strikethrough</li>
+            <li>The same marks work by hand: <kbd>**bold**</kbd>, <kbd>*italic*</kbd>, <kbd>__underline__</kbd>, <kbd>~~strikethrough~~</kbd></li>
+            <li>Wrap a snippet in <kbd>`backticks`</kbd> for inline code</li>
+            <li>Three backticks on their own line open and close a code block; add a language (<kbd>```python</kbd>) for syntax highlighting</li>
+            <li>The <b>&lt;/&gt;</b> button in the composer inserts a code block and picks the language for you</li>
+            <li>Every code block gets a <b>Copy</b> button in its top corner</li>
+            <li>Links are detected as you type them — no markup needed</li>
+            <li>A message that is nothing but emoji is shown extra large</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
+        <h3 class="help-section">Reactions</h3>
+        <ul>
+            <li>Hover a message and click the smiley to react, or press <kbd>e</kbd> in visual mode</li>
+            <li>Click an existing reaction to add yours to it, click again to take it back</li>
+            <li>Hover a reaction to see who reacted</li>
+            <li>The emoji button in the composer inserts emoji into the message you are writing</li>
+        </ul>
+        </section>
+
+        <section class="help-sect">
         <h3 class="help-section">Calls &amp; screen sharing</h3>
         <ul>
             <li>Click the phone icon in a DM or private channel header to start a call</li>
@@ -648,21 +707,27 @@
             <li>Click a tile to spotlight it, or pin it so the layout stops moving</li>
             <li><b>Minimize</b> tucks the call into a corner so you can keep chatting</li>
             <li>Share a screen without calling with the display icon in the header — everyone in the channel gets a <b>Watch</b> banner</li>
+            <li>Missed the ring? A <b>Join</b> banner appears while a call in your channel is still running</li>
             <li>Stopping your browser's screen capture automatically ends the share</li>
         </ul>
         <ul class="help-shortcuts">
             <li><kbd>M</kbd> – Mute / unmute · <kbd>S</kbd> – Share screen · <kbd>A</kbd> – Invite</li>
             <li><kbd>V</kbd> – Switch layout · <kbd>F</kbd> – Fullscreen · <kbd>Esc</kbd> – Minimize</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
         <h3 class="help-section">Channels &amp; DMs</h3>
         <ul>
             <li>Click <b>+</b> next to Direct Messages to start a DM with one or more people</li>
             <li>Click <b>×</b> on a DM to hide it from the sidebar — it reappears when a new message arrives</li>
             <li>Click <b>+</b> next to Channels to create a private invite-only channel</li>
             <li>Private channel members can add or remove people and rename the channel</li>
+            <li>The people icon in the header lists who is in the channel and how to reach them</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
         <h3 class="help-section">Media &amp; Display</h3>
         <ul>
             <li>Paste, drag, or use the paperclip to attach any file type</li>
@@ -671,7 +736,9 @@
             <li>Attachments are periodically deleted to save space; a <em>File deleted</em> label appears in their place</li>
             <li>Pinch or <kbd>Ctrl + Scroll</kbd> to adjust font size</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
         <h3 class="help-section">Account &amp; Settings</h3>
         <ul>
             <li>Click your avatar in the header to open your Account — set your status, edit your profile, or sign out</li>
@@ -681,7 +748,9 @@
             <li>Click the bell icon in the header to mute or unmute notification sounds</li>
             <li>Alerts stay quiet while MiniMost is the focused window — turn on <em>Notify while MiniMost is focused</em> in Settings to be alerted anyway</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
         <h3 class="help-section">Trusting This Site</h3>
         <ul>
             <li>If your browser shows <b>“Not secure”</b>, import MiniMost's certificate authority to fix it — this also lets the installed app hide the address bar.</li>
@@ -693,13 +762,20 @@
             <li><b>Firefox:</b> Settings → Privacy &amp; Security → Certificates → <b>View Certificates…</b> → <b>Authorities</b> → <b>Import…</b>, then tick <em>Trust this CA to identify websites</em>.</li>
             <li>You only need to do this once per device — the certificate renews itself automatically and never needs re-importing.</li>
         </ul>
+        </section>
 
+        <section class="help-sect">
         <h3 class="help-section">Status Indicators</h3>
         <ul>
             <li><span class="help-presence active"></span> <b>Active</b> – Currently using the app</li>
             <li><span class="help-presence idle"></span> <b>Idle</b> – Away or no recent activity</li>
             <li><span class="help-presence offline"></span> <b>Offline</b> – Not connected</li>
+            <li>Set your own status by hand from your avatar menu — it sticks until you set it back to automatic</li>
         </ul>
+        </section>
+
+        <p id="help-empty" hidden>Nothing matches that. Try a different word, or clear the filter.</p>
+        </div>
     </dialog>
 </div>
 
@@ -1044,32 +1120,9 @@ function _hideReceiptTooltip() {
     document.getElementById("receipt-tooltip").style.display = "none";
 }
 
-// Help Button
-const helpBtn     = document.getElementById("help-btn");
-const helpOverlay     = document.getElementById("help-overlay");
-const helpModal       = document.getElementById("help-modal");
-const closeBtn    = document.getElementById("help-close");
-
-function openHelp() {
-    helpOverlay.classList.remove("hidden");
-}
-
-function closeHelp() {
-    helpOverlay.classList.add("hidden");
-}
-
-// Open via button
-helpBtn.addEventListener("click", openHelp);
-
-// Close via X
-closeBtn.addEventListener("click", closeHelp);
-
-// Close by clicking outside modal
-helpOverlay.addEventListener("click", (e) => {
-    if (!helpModal.contains(e.target)) {
-        closeHelp();
-    }
-});
+// The help dialog (open/close, filter, jump list) lives in chat-modals.js
+// alongside the shared focus handling every overlay in the app now goes
+// through.
 
 // Opens the inline editor on the newest message you can still edit here.
 // The rendered DOM is the source of truth for "can edit": an .edit-btn is
@@ -1650,7 +1703,7 @@ async function openAccount() {
         .then(data => _highlightOverride(data.override || "auto"))
         .catch(() => {});
 
-    accountModal.style.display = "flex";
+    openModal(accountModal, { display: "flex", label: "Account" });
 
     // Profile editing (avatar / bio / name colour) — load saved values.
     const cfg = await fetch("/settings").then(r => r.json()).catch(() => ({}));
@@ -1686,7 +1739,7 @@ function setPresenceOverride(value) {
 function closeAccount() {
     cancelDeleteConfirm();
     cancelChangePassword();
-    accountModal.style.display = "none";
+    closeModal(accountModal);
 }
 
 accountModal.addEventListener("click", e => {
@@ -3220,6 +3273,7 @@ async function revealMessage(msgChannel, msgId, ts) {
 }
 
 </script>
+<script src="{{ url_for('static', filename='chat-modals.js') }}"></script>
 <script src="{{ url_for('static', filename='chat-sidebar.js') }}"></script>
 <script src="{{ url_for('static', filename='chat-dm.js') }}"></script>
 <script src="{{ url_for('static', filename='chat-settings.js') }}"></script>
