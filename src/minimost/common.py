@@ -189,6 +189,8 @@ def init_messages_db():
       Unread counts and read receipts are both derived from it, so read state
       costs O(users × channels) rows instead of O(messages × users).
     * ``dm_hidden`` — per-(user, channel) hidden-DM markers.
+    * ``pins`` — one row per pinned message; a channel's pins are shared by
+      every member rather than being a per-user bookmark list.
 
     WAL keeps readers (the 500 ms pollers) from blocking the single writer;
     ``auto_vacuum = INCREMENTAL`` reclaims space from retention/edits without the
@@ -272,6 +274,30 @@ def init_messages_db():
         PRIMARY KEY (user, channel)
     )
     """)
+
+    # A pin belongs to the channel, not to the person who set it: everyone in
+    # the channel sees the same list, and anyone in it may unpin. `message_id`
+    # is therefore the primary key (a message is pinned once, not once per
+    # user), which also makes the toggle a single atomic insert/delete with no
+    # read-modify-write race — the same shape as `reactions`.
+    #
+    # `channel` is denormalised from the message row so the per-channel list
+    # query is answered from the index below without joining `messages` just to
+    # discover which pins are even candidates.
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pins (
+        message_id INTEGER PRIMARY KEY,
+        channel    TEXT NOT NULL,
+        pinned_by  TEXT NOT NULL,
+        pinned_ts  REAL NOT NULL,
+        FOREIGN KEY (message_id) REFERENCES messages(id)
+    )
+    """)
+    # The only read pattern: "this channel's pins, most recently pinned first",
+    # which the SSE collector re-runs for every open stream on every write.
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pins_channel_ts ON pins(channel, pinned_ts)"
+    )
 
     _ensure_search_index(cur)
 

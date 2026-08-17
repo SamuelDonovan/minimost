@@ -74,6 +74,7 @@ _Full-text message search with highlighted results._
 - 🔍 **Every message is saved & searchable** — nothing disappears, and full-text search finds any message in an instant. New users see the history from day one.
 - 📷 **Images show up inline** — paste, drag-and-drop, or use the paperclip button to attach any file. Images embed right in the conversation; everything else becomes a download link.
 - ✏️ **Replies, edits & reactions** — quote any message to reply in context, edit or delete your own messages, and react with emoji. Every change syncs to everyone in real time.
+- 📌 **Pinned messages** — pin the message that matters to the top of a channel so it stops scrolling away. Pins belong to the channel, not to you: everyone sees the same list, anyone can pin anyone's message, and the header shows a count that opens the list — click any entry to jump straight to it.
 - 👀 **Presence, typing & @mentions** — see who's online, watch the typing dots, and ping the right person with an @mention (or `@everyone`). Mentions alert you with a sound and desktop notification even while the tab is focused, and read receipts show who's seen your messages.
 - 📞 **Voice, video & screen sharing** — jump on a call or share your screen right from the chat in any DM or private channel. Calls grow into group calls with the in-call "Add person" button, and participant tiles reflow automatically with live speaking indicators.
 - 🛡️ **LAN-first, peer-to-peer media** — call and screen-share media is sent directly between participants over WebRTC and never touches the server. A small bundled STUN server means there's nothing external to configure — it even works on fully air-gapped LANs.
@@ -342,6 +343,7 @@ Press `v` in normal mode (input unfocused) to enter visual mode, which highlight
 | `o`       | Reply to highlighted message                    |
 | `y`       | Copy highlighted message text to clipboard      |
 | `e`       | React to highlighted message with emoji         |
+| `p`       | Pin / unpin highlighted message                 |
 | `Esc`     | Exit visual mode                                |
 
 ### Text Formatting

@@ -86,14 +86,14 @@ Event Stream
    **Requires authentication.**
 
    :query channel: The tab's currently-open channel; scopes the ``messages``,
-       ``typing``, ``read_receipts`` and ``screenshares`` events. The client
-       reconnects with a new value when the user switches channels.
+       ``typing``, ``read_receipts``, ``pins`` and ``screenshares`` events. The
+       client reconnects with a new value when the user switches channels.
    :query float after: Last-seen message timestamp; the stream sends only newer
        rows. On reconnect the browser's ``Last-Event-ID`` resumes the cursor.
    :resheader Content-Type: ``text/event-stream``
 
    **Named events emitted** — each carries the same JSON its matching REST
-   endpoint returns: ``messages``, ``typing``, ``read_receipts``,
+   endpoint returns: ``messages``, ``typing``, ``read_receipts``, ``pins``,
    ``online_users``, ``dms``, ``channel_unreads``, ``private_channels``,
    ``mentions``, ``unread_count``, ``incoming_calls``, and ``screenshares``.
 
@@ -293,6 +293,59 @@ Reactions
        ``{"thumbs_up": ["alice", "bob"]}``
    :status 400: Invalid reaction name.
    :status 404: Message not found.
+
+Pinned Messages
+---------------
+
+A pin belongs to the channel rather than to the user who set it: every member
+sees the same list, any member may pin any message (not only their own), and
+any member may unpin. Changes are also pushed on the SSE stream as the ``pins``
+event, so clients call ``GET /pins`` only for their first paint.
+
+.. http:post:: /pin/(msg_id)
+
+   Pin or unpin a message in its channel. The pin is toggled.
+
+   **Requires authentication.**
+
+   :param int msg_id: Message ID.
+   :>json array: The channel's pins after the toggle, in the same shape
+       ``GET /pins/(channel)`` returns.
+   :status 404: Message not found, deleted, or in a channel the caller may
+       not access.
+   :status 409: The channel already holds ``MAX_PINS_PER_CHANNEL`` (50) pins.
+       Unpinning still works at the cap.
+
+.. http:get:: /pins/(channel)
+
+   Return the messages pinned in a channel, most recently pinned first.
+   Message ``content`` is truncated to ``PIN_PREVIEW_CHARS`` (300); the client
+   renders one line of it and jumps to the message for the rest. A pinned
+   message that is later deleted stops appearing here.
+
+   **Requires authentication.**
+
+   :param channel: Channel or DM identifier.
+   :>json array: Objects with ``id``, ``channel``, ``sender``, ``content``,
+       ``filename``, ``ts``, ``pinned_by`` and ``pinned_ts``.
+   :status 403: Caller may not access the channel.
+
+   **Example response:**
+
+   .. code-block:: json
+
+      [
+          {
+              "id": 412,
+              "channel": "general",
+              "sender": "bob",
+              "content": "Release checklist is in the wiki",
+              "filename": null,
+              "ts": 1716000000.123,
+              "pinned_by": "alice",
+              "pinned_ts": 1716000042.5
+          }
+      ]
 
 Users and Presence
 ------------------

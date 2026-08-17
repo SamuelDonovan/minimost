@@ -351,6 +351,11 @@ function openMentionsChannel() {
   document.getElementById("call-btn").style.display = "none";
   document.getElementById("topbar-share-btn").style.display = "none";
   document.getElementById("input").style.display = "none";
+  // Mentions is a cross-channel pseudo-channel with no pins of its own; without
+  // this, the channel the user came from would leave its count behind. Clearing
+  // the list also hides the button (see _renderPinsButton), and switchChannel()
+  // restores it on the way back out.
+  applyPins([], MENTIONS_CHANNEL);
 
   renderMentionsView();
   updateSidebarActive();

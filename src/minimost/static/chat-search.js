@@ -584,6 +584,10 @@ function _handleVisualKey(e) {
     document.querySelector(`#msg-${id} .react-btn`)?.click();
   } else if (key === "y") {
     _visualCopyMsg(id);
+  } else if (key === "p") {
+    // Stay in visual mode: unlike reply or edit, pinning does not move focus
+    // anywhere, so dropping the selection would just cost the user their place.
+    togglePin(id);
   }
 }
 
@@ -912,6 +916,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("chan").innerText = channel;
   switchChannel(channel);
   updateMembersCount();
+  // switchChannel() early-returns for the startup channel (it is already the
+  // open one), so its refreshPins() never runs — prime the pin list here the
+  // same way the first message page is primed below.
+  refreshPins();
   // Announce presence immediately on load rather than waiting for the first input event.
   sendPresence(document.visibilityState === "visible" ? "active" : "hidden");
 

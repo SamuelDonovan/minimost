@@ -141,6 +141,10 @@ one message is highlighted and the following keys act on it directly.
        formatting markers intact and without the read receipt.
    * - ``e``
      - Open the emoji reaction picker for the highlighted message.
+   * - ``p``
+     - Pin the highlighted message to the channel, or unpin it if it is
+       already pinned. Unlike ``d`` and ``c`` this works on anyone's message,
+       and the selection stays put afterwards.
    * - ``Esc``
      - Exit visual mode without taking any action.
 

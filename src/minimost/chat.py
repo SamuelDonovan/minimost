@@ -137,6 +137,16 @@ _MSG_LOOKUP_SQL = (
 PRIVATE_CHANNEL_PREFIX = "private:"
 # Reused JSON error body for missing-message responses.
 _NOT_FOUND = "not found"
+# Ceiling on how many messages one channel may have pinned at once. The pin list
+# is pushed in full to every open stream on the channel (see
+# minimost.events._CHANNEL_COLLECTORS), so an unbounded list would grow the
+# payload of every push without limit. It is also a usability floor: a hundred
+# pins is the same as none.
+MAX_PINS_PER_CHANNEL = 50
+# How much of a pinned message's text the panel needs. The full body can be
+# thousands of characters, and the list only ever renders one truncated line of
+# it, so the rest is pure weight in a payload that is re-pushed on every change.
+PIN_PREVIEW_CHARS = 300
 _INSERT_MSG_SQL = (
     "INSERT INTO messages (channel, sender, content, content_type, ts)"
     " VALUES (?, ?, ?, ?, ?)"
@@ -2726,6 +2736,155 @@ def react(msg_id):
         reactions.setdefault(emoji, []).append(reactor)
 
     return jsonify(reactions)
+
+
+def _pins_for_channel(db, channel):
+    """Return *channel*'s pinned messages, most recently pinned first.
+
+    Shared by the :func:`channel_pins` route and the :func:`pin` toggle (which
+    answers with the resulting list so the caller need not re-fetch). Takes an
+    open connection because the toggle already holds one mid-transaction.
+
+    A soft-deleted message is excluded rather than merely hidden: its pin row is
+    left in place so that :func:`delete_message` stays a single ``UPDATE``, and
+    the join here is what makes the pin disappear from every viewer's list at
+    the same moment the message does.
+    """
+    rows = db.execute(
+        "SELECT m.id, m.channel, m.sender, m.content, m.filename, m.ts, "
+        "p.pinned_by, p.pinned_ts "
+        "FROM pins p JOIN messages m ON m.id = p.message_id "
+        "WHERE p.channel = ? AND m.deleted = 0 "
+        "ORDER BY p.pinned_ts DESC "
+        "LIMIT ?",
+        (channel, MAX_PINS_PER_CHANNEL),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "channel": r["channel"],
+            "sender": r["sender"],
+            "content": (r["content"] or "")[:PIN_PREVIEW_CHARS],
+            "filename": r["filename"],
+            "ts": r["ts"],
+            "pinned_by": r["pinned_by"],
+            "pinned_ts": r["pinned_ts"],
+        }
+        for r in rows
+    ]
+
+
+@chat_bp.route("/pins/<channel>", methods=["GET"])
+@auth.login_required
+def channel_pins(channel):
+    """Return the messages pinned in a channel.
+
+    Route: ``GET /pins/<channel>``
+
+    Requires authentication and that the caller may read the channel.  Pins
+    belong to the channel rather than to a user, so every member sees the same
+    list.  Also pushed on the SSE stream as the ``pins`` event, so the client
+    only calls this directly for its first paint.
+
+    Message ``content`` is truncated to :data:`PIN_PREVIEW_CHARS`; the panel
+    renders one line of it and jumps to the real message for the rest.
+
+    :param channel: The channel name or DM identifier.
+    :type channel: str
+    :returns: JSON array of ``{id, channel, sender, content, filename, ts,
+        pinned_by, pinned_ts}`` objects, most recently pinned first.
+    :rtype: flask.Response (application/json)
+
+    :raises: ``403 forbidden`` — if the caller may not access *channel*.
+    """
+    user = session["user"]
+    if not is_valid_channel(channel, user):
+        return "forbidden", 403
+    db = get_db()
+    pins = _pins_for_channel(db, channel)
+    db.close()
+    return jsonify(pins)
+
+
+@chat_bp.route("/pin/<int:msg_id>", methods=["POST"])
+@auth.login_required
+def pin(msg_id):
+    """Pin or unpin a message in its channel.
+
+    Route: ``POST /pin/<msg_id>``
+
+    Requires authentication.  The pin is **toggled**, and it is channel-wide
+    rather than personal: pinning surfaces the message for everyone in the
+    channel, and any member may unpin — the same permission the channel already
+    grants for adding members or renaming it.  Unlike edit and delete, this is
+    deliberately *not* restricted to the message's author, since the point is to
+    let a channel mark someone else's message as the one that matters.
+
+    **Storage:** one row per pinned message in the ``pins`` table, keyed by the
+    real message ``id``, so the toggle is a single atomic insert or delete with
+    no read-modify-write race (see :func:`react`, which has the same shape).
+
+    **Propagation:** the ``after_request`` signal hook wakes every held-open SSE
+    stream, whose ``pins`` collector re-reads the channel's list — so no
+    ``reactions_ts``-style bump on the message row is needed here.
+
+    :param msg_id: The integer ``id`` of the message to pin or unpin.
+    :type msg_id: int
+    :returns: JSON array of the channel's pins after the toggle, in the same
+        shape :func:`channel_pins` returns.
+    :rtype: flask.Response (application/json)
+
+    :raises: ``404 not found`` — if *msg_id* does not exist, is deleted, or the
+        caller may not access its channel.
+    :raises: ``409 too many pins`` — if the channel already holds
+        :data:`MAX_PINS_PER_CHANNEL` pins.  Unpinning still works at the cap.
+    """
+    user = session["user"]
+
+    db = get_db()
+    row = db.execute(_MSG_LOOKUP_SQL, (msg_id,)).fetchone()
+
+    # A deleted message is a 404 for the same reason it is one in react(): the
+    # row survives as a tombstone, but the message is gone from every caller's
+    # point of view.
+    if not row or row["deleted"]:
+        db.close()
+        return _NOT_FOUND, 404
+
+    channel = row["channel"]
+    # Messages live in one shared table, so confirm the caller can actually see
+    # the channel — otherwise pinning would be a way to probe private channels
+    # and DMs they are not in.
+    if not is_valid_channel(channel, user):
+        db.close()
+        return _NOT_FOUND, 404
+
+    existing = db.execute(
+        "SELECT 1 FROM pins WHERE message_id = ?", (msg_id,)
+    ).fetchone()
+
+    if existing:
+        db.execute("DELETE FROM pins WHERE message_id = ?", (msg_id,))
+    else:
+        # Count before inserting. Checked only on the pin path so that a channel
+        # sitting at the cap can still be unpinned back down to size.
+        count = db.execute(
+            "SELECT COUNT(*) FROM pins WHERE channel = ?", (channel,)
+        ).fetchone()[0]
+        if count >= MAX_PINS_PER_CHANNEL:
+            db.close()
+            return f"too many pins (max {MAX_PINS_PER_CHANNEL})", 409
+        db.execute(
+            "INSERT INTO pins (message_id, channel, pinned_by, pinned_ts)"
+            " VALUES (?, ?, ?, ?)",
+            (msg_id, channel, user, time()),
+        )
+
+    pins = _pins_for_channel(db, channel)
+    db.commit()
+    db.close()
+
+    return jsonify(pins)
 
 
 @chat_bp.route("/last_read/<channel>", methods=["GET"])

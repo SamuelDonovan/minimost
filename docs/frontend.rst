@@ -271,6 +271,53 @@ from the array) provides O(1) name-to-character access. The workflow:
 Each reaction chip shows the emoji character and a count. Hovering reveals a
 tooltip with the list of reactor usernames.
 
+Pinned Messages
+---------------
+
+Pinning lives in ``chat-pins.js``. A pin belongs to the **channel**, not to the
+user who set it, so the server is the only source of truth here and the module
+never mutates its list locally. Every path — pinning, unpinning, or someone else
+doing either — ends with the whole list arriving from the server and
+``applyPins()`` repainting from it:
+
+1. The pin button in a message's hover actions (or ``p`` in visual mode) calls
+   ``togglePin(msgId)``, which POSTs to ``/pin/<msgId>``.
+2. The response is the channel's full post-toggle list. Every other viewer gets
+   the same payload as the ``pins`` SSE event, so nobody has to poll.
+3. ``applyPins(data, forChannel)`` stores it as ``pinnedMessages`` plus a
+   ``pinsById`` Map, and drops any payload whose channel is no longer the open
+   one — the guard that keeps an in-flight response from a channel the user has
+   left off the screen.
+
+Three surfaces render from that one payload:
+
+- **The topbar button** (``#pins-btn``) carries a count and is hidden entirely
+  at zero, since a control that can only report emptiness is noise.
+- **The dropdown panel** (``#pins-panel``) lists each pin, newest-pinned first;
+  clicking a row calls the shared ``revealMessage()`` — the same jump search
+  results and mentions use — and each row carries an ``×`` to unpin without
+  hunting for the message first.
+- **The transcript itself**, via ``paintPinMarkers()``, which toggles the
+  ``pinned`` class and inserts a ``Pinned by <user>`` caption into
+  ``.msg-content-col``. The caption goes there rather than in the message header
+  because a grouped message's header is positioned out to the top-right corner,
+  and it is a caption rather than a left border because that slot is already
+  taken by ``mentioned`` and ``visual-selected`` — a message can be any
+  combination of the three.
+
+``_buildMsgHtml()`` has no view of the pin list, so it emits every message with a
+blank pin button; the render passes (``applyMessages`` on append,
+``prependMessages`` on a history page) hand their new nodes to
+``paintPinMarkers()`` afterwards. They pass only the nodes they touched — a full
+repaint on every incoming message would walk the whole loaded window to compute a
+result that cannot have changed for rows nothing rewrote.
+
+``refreshPins()`` does the first paint on each channel switch and clears the
+outgoing channel's pins immediately, so a stale count never lingers while the
+request is in flight. The server caps a channel at ``MAX_PINS_PER_CHANNEL`` (50)
+and truncates each preview to ``PIN_PREVIEW_CHARS`` (300), which bounds a payload
+that is re-pushed to every open stream on the channel whenever it changes.
+
 .. _mentions:
 
 Mentions

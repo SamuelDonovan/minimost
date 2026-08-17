@@ -37,6 +37,9 @@ beforeAll(() => {
     return d;
   });
   global.nativeNotifEnabled = false;
+  // Lives in chat-pins.js; openMentionsChannel() clears the pin list so the
+  // channel the user came from does not leave its count behind.
+  global.applyPins = jest.fn();
 
   loadScript("chat-mentions.js");
 });

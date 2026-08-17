@@ -209,6 +209,10 @@ _GLOBAL_COLLECTORS = (
 _CHANNEL_COLLECTORS = (
     ("typing", 1.0, True, lambda ch: presence.typing_get(ch)),
     ("read_receipts", 0.5, False, lambda ch: chat.read_receipts(ch)),
+    # Pins change rarely, but when one does every member of the channel needs
+    # to see it — the panel, the count badge and the in-list markers all render
+    # from this one payload. Purely write-driven: an idle channel never queries.
+    ("pins", 1.0, False, lambda ch: chat.channel_pins(ch)),
     # active_screenshares() reads request.args['channel'] itself; the stream URL
     # carries it, so the channel argument is accepted but unused here.
     ("screenshares", 0.5, False, lambda _ch: calls.active_screenshares()),

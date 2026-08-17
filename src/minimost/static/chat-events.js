@@ -98,6 +98,7 @@ function connectEvents() {
   _bindEvent(es, "messages", (d) => applyMessages(d, streamChannel));
   _bindEvent(es, "typing", applyTyping);
   _bindEvent(es, "read_receipts", applyReadReceipts);
+  _bindEvent(es, "pins", (d) => applyPins(d, streamChannel));
   _bindEvent(es, "screenshares", applyScreenShares);
   _bindEvent(es, "active_call", applyActiveCall);
 

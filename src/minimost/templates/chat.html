@@ -111,6 +111,18 @@
                 </svg>
                 <span id="members-count" class="icon-text"></span>
             </button>
+            <div id="topbar-pins">
+                <button id="pins-btn" class="icon-btn" style="display:none" title="Pinned messages" aria-label="Pinned messages" aria-expanded="false" onclick="togglePinsPanel()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354"/>
+                    </svg>
+                    <span id="pins-count" class="icon-text"></span>
+                </button>
+                <div id="pins-panel">
+                    <div id="pins-panel-head">Pinned messages</div>
+                    <div id="pins-list"></div>
+                </div>
+            </div>
             <span class="chan-hash">#</span><span id="chan"></span>
             <span id="vim-mode-indicator">-- visual --</span>
         </div>
@@ -668,6 +680,7 @@
             <li><kbd>o</kbd> – Reply to highlighted message</li>
             <li><kbd>y</kbd> – Copy highlighted message text to clipboard</li>
             <li><kbd>e</kbd> – React to highlighted message with emoji</li>
+            <li><kbd>p</kbd> – Pin or unpin highlighted message</li>
             <li><kbd>Esc</kbd> – Exit visual mode</li>
         </ul>
         </section>
@@ -694,6 +707,19 @@
             <li>Click an existing reaction to add yours to it, click again to take it back</li>
             <li>Hover a reaction to see who reacted</li>
             <li>The emoji button in the composer inserts emoji into the message you are writing</li>
+        </ul>
+        </section>
+
+        <section class="help-sect">
+        <h3 class="help-section">Pinned messages</h3>
+        <ul>
+            <li>Hover a message and click the pin to pin it to the channel, or press <kbd>p</kbd> in visual mode</li>
+            <li>A pin belongs to the channel, not to you — everyone in it sees the same list, and anyone in it can unpin</li>
+            <li>Pin anyone's message, not just your own</li>
+            <li>The pin icon in the channel header shows how many there are; click it for the list, and click any entry to jump to that message</li>
+            <li>A pinned message carries a <b>Pinned by</b> note where it sits in the conversation</li>
+            <li>Unpin from the message itself, or with the <b>×</b> on its row in the list</li>
+            <li>Each channel holds up to 50 pins; deleting a pinned message removes it from the list</li>
         </ul>
         </section>
 
@@ -2122,6 +2148,7 @@ function switchChannel(c) {
     // at the new channel starting from the cursor that load advanced us to.
     fetchMessages().then(() => connectEvents());
     fetchReadReceipts();
+    refreshPins();
     refreshDMs();
     refreshTotalUnreadCount();
 }
@@ -2260,6 +2287,9 @@ function prependMessages(rows) {
         schedulePreview(el);
         _checkDeletedFiles(el);
     });
+    // Same as the append path: a page of history arrives with blank pin buttons
+    // and needs the current pin list painted onto just those nodes.
+    paintPinMarkers(added);
     // Same reasoning as the previews above: watermarks did not move, so only
     // the page just prepended needs its receipts painted.
     updateReadReceiptUI(added);
@@ -2537,6 +2567,11 @@ function _buildMsgHtml(m, time, fullTime, color) {
     if (!isSystem) {
         actionsHtml += `<button class="reply-btn" title="Reply" onclick="startReply(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button>`;
         actionsHtml += `<button class="react-btn" title="Add reaction" onclick="openReactionPicker(${m.id}, event)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>`;
+        // Pinning is channel-wide and open to any member, so this is offered on
+        // everyone's messages, not just your own. The pressed state is painted
+        // by paintPinMarkers() from the pin list rather than rendered here —
+        // this function has no view of what is currently pinned.
+        actionsHtml += `<button class="pin-btn" title="Pin to channel" aria-pressed="false" onclick="togglePin(${m.id})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354"/></svg></button>`;
     }
     if (actionsHtml) headerHtml += `<span class="msg-actions">${actionsHtml}</span>`;
 
@@ -2785,6 +2820,13 @@ function applyMessages(data, requestedChannel = channel) {
             // Nothing appended means no grouping can have moved: a re-rendered
             // row keeps its sender and ts, which are the only inputs.
             if (firstNew) regroupMessages(firstNew);
+
+            // A row rendered by this batch has a blank pin button and no
+            // .pinned class — _buildMsgHtml has no view of the pin list — so
+            // paint the ones this pass touched. Only those: a full repaint on
+            // every incoming message would walk the whole loaded window for a
+            // result that cannot have changed for rows nothing rewrote.
+            paintPinMarkers([...newNodes, ...rerendered]);
 
             const mentionAlert = mentionMsg && notifyArmed;
 
@@ -3281,6 +3323,7 @@ async function revealMessage(msgChannel, msgId, ts) {
 <script src="{{ url_for('static', filename='chat-reactions.js') }}"></script>
 <script src="{{ url_for('static', filename='chat-search.js') }}"></script>
 <script src="{{ url_for('static', filename='chat-mentions.js') }}"></script>
+<script src="{{ url_for('static', filename='chat-pins.js') }}"></script>
 <script src="{{ url_for('static', filename='chat-calls.js') }}"></script>
 <script src="{{ url_for('static', filename='chat-events.js') }}"></script>
 <script src="{{ url_for('static', filename='auth-password-rules.js') }}"></script>

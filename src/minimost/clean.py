@@ -378,13 +378,7 @@ def _evict_until_under_cap(conn, size: int, max_bytes: int, batch: int) -> int:
         conn.execute(
             f"DELETE FROM messages WHERE id IN ({placeholders})", ids  # nosec B608
         )
-        # Reactions reference messages by id; drop any now-orphaned rows.
-        # (The FTS index self-cleans via its delete trigger.)
-        if _has_table(conn, "reactions"):
-            conn.execute(
-                "DELETE FROM reactions WHERE message_id NOT IN "
-                "(SELECT id FROM messages)"
-            )
+        _prune_orphan_rows(conn)
         conn.commit()
         deleted_total += len(ids)
 
@@ -487,6 +481,30 @@ def _has_table(conn, name: str) -> bool:
     )
 
 
+# Side tables that reference messages by id and so need their orphans dropped
+# after any retention delete. (The FTS index is absent here on purpose: it
+# self-cleans via its delete trigger.)
+_MESSAGE_CHILD_TABLES = ("reactions", "pins")
+
+
+def _prune_orphan_rows(conn) -> None:
+    """Drop rows in the message side tables whose message no longer exists.
+
+    Retention deletes rows straight out of ``messages``; without this the
+    ``reactions`` and ``pins`` rows that pointed at them would accumulate
+    forever. Each table is guarded by :func:`_has_table` because a database
+    written by an older MiniMost may predate it.
+    """
+    for table in _MESSAGE_CHILD_TABLES:
+        if _has_table(conn, table):
+            # nosec B608 — table comes from the module-level tuple above, never
+            # from user input.
+            conn.execute(
+                f"DELETE FROM {table} WHERE message_id NOT IN "  # nosec B608
+                "(SELECT id FROM messages)"
+            )
+
+
 def _clean_user_db(db_file: Path, cutoff: float, dry_run: bool) -> None:
     # try/finally guarantees the connection is closed even when a query raises
     # (e.g. a locked DB or a VACUUM error). The caller swallows the exception,
@@ -505,12 +523,7 @@ def _clean_user_db(db_file: Path, cutoff: float, dry_run: bool) -> None:
             cur = conn.execute("DELETE FROM messages WHERE ts < ?", (cutoff,))
             if cur.rowcount > 0:
                 print(f"Deleted {cur.rowcount} messages from {db_file.name}")
-            # Reactions reference messages by id; drop any now-orphaned rows so
-            # they don't accumulate. (The FTS index self-cleans via its trigger.)
-            if _has_table(conn, "reactions"):
-                conn.execute(
-                    "DELETE FROM reactions WHERE message_id NOT IN (SELECT id FROM messages)"
-                )
+            _prune_orphan_rows(conn)
             conn.commit()
             if conn.execute("PRAGMA auto_vacuum").fetchone()[0] == 0:
                 conn.execute("PRAGMA auto_vacuum = FULL")

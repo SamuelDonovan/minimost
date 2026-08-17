@@ -85,6 +85,10 @@ Every message lives exactly once in a single shared SQLite file
 - **read_state** — one read **watermark** (``last_read_ts``) per
   ``(user, channel)`` (see *Read state*).
 - **dm_hidden** — one row per ``(user, channel)`` for hidden DM threads.
+- **pins** — one row per pinned message, keyed by ``message_id`` (a message is
+  pinned once for the whole channel, not once per user). ``channel`` is
+  denormalised from the message row so the per-channel list is answered from
+  ``idx_pins_channel_ts`` without a join to find candidates.
 
 **Why a single database?**
 
@@ -240,6 +244,10 @@ the payload to the *same* render function the poller used (``applyMessages``,
    * - ``typing`` / ``read_receipts``
      - 1 s / 3 s
      - Typing indicator and per-user read watermarks for the open channel.
+   * - ``pins``
+     - 1 s
+     - The open channel's pinned messages (count badge, panel list and the
+       in-transcript markers all render from this one payload).
    * - ``online_users`` / ``dms``
      - 1 s
      - Presence map and the DM list + unread badges.

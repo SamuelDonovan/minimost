@@ -843,13 +843,14 @@ select {
   color: #fff;
 }
 
-/* The four per-message action buttons. .react-btn carried a byte-identical
+/* The five per-message action buttons. .react-btn carried a byte-identical
    copy of this block down in the reactions section; they are one control type
    and now share one rule. */
 .edit-btn,
 .reply-btn,
 .delete-btn,
-.react-btn {
+.react-btn,
+.pin-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -864,8 +865,15 @@ select {
 .edit-btn:hover,
 .reply-btn:hover,
 .delete-btn:hover,
-.react-btn:hover {
+.react-btn:hover,
+.pin-btn:hover {
   opacity: 1;
+}
+/* An already-pinned message keeps its pin control lit, so the button reads as
+   a toggle that is currently on rather than an action that did nothing. */
+.pin-btn.active {
+  opacity: 1;
+  color: #f7c948;
 }
 /* Persistent "(edited)" note in the message header. Muted enough to stay out
    of the way, but always on screen — hover the marker for the edit time. */
@@ -1413,6 +1421,136 @@ mark.fuzzy-highlight {
   padding: 18px 4px;
   text-align: center;
   color: #888;
+}
+
+/* Pinned messages: a channel-wide list, reached from a topbar button whose
+   dropdown mirrors the search panel above. */
+#topbar-pins {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+#pins-btn.icon-btn {
+  color: #f7c948;
+  opacity: 0.85;
+}
+#pins-btn.icon-btn:hover {
+  opacity: 1;
+}
+#pins-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  /* Anchored to the button's LEFT edge so the panel opens rightward into the
+     message area. #topbar-channel is grid-column 1 (it is last in the markup
+     but leftmost on screen), so this button sits at the far left of the top
+     bar — anchoring the panel's right edge here would hang its whole width off
+     the left of the viewport. */
+  left: 0;
+  z-index: 1000;
+  width: 380px;
+  max-width: 92vw;
+  max-height: min(70vh, 520px);
+  box-sizing: border-box;
+  flex-direction: column;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+#topbar-pins.open #pins-panel {
+  display: flex;
+}
+#pins-panel-head {
+  padding: 10px 12px;
+  border-bottom: 1px solid #333;
+  font-size: 12px;
+  font-weight: 600;
+  color: #bbb;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+#pins-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+.pin-item {
+  position: relative;
+  padding: 8px 30px 8px 10px; /* right padding clears the unpin button */
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pin-item + .pin-item {
+  border-top: 1px solid #2c2c2c;
+}
+.pin-item:hover {
+  background: #2d2d2d;
+}
+.pin-item-meta {
+  font-size: 11px;
+  color: #888;
+}
+.pin-item-text {
+  font-size: 13px;
+  color: #ddd;
+  line-height: 1.4;
+  /* One line only. The panel is an index, not a reader — clicking a row jumps
+     to the message in the transcript, where the full text already is. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pin-item-unpin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  font-size: 16px;
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.pin-item:hover .pin-item-unpin,
+.pin-item-unpin:focus-visible {
+  opacity: 1;
+}
+.pin-item-unpin:hover {
+  color: #ddd;
+  background: #3a3a3a;
+}
+.pins-empty {
+  padding: 18px 4px;
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+}
+/* The marker in the transcript itself: a caption row above the message body,
+   not a left border — that slot is already spoken for by .mentioned and
+   .visual-selected, and a message can be any combination of the three. Sitting
+   inside .msg-content-col also means it stays in flow on a grouped message,
+   whose header is lifted out to the top-right corner. */
+.pin-marker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #f7c948;
+  opacity: 0.85;
+  margin-bottom: 2px;
+}
+.pin-marker svg {
+  flex-shrink: 0;
 }
 
 /* Mentions pseudo-channel: read-only list of unread @-mentions. */
@@ -3896,6 +4034,20 @@ a {
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 780px) {
+  /* The pin list drops out of the dropdown and becomes a sheet under the top
+     bar. The dropdown opens rightward from a button that sits just past the
+     sidebar, so with the sidebar at its 220px minimum its right edge lands
+     around 650px — off the right of any viewport narrower than that. This
+     breakpoint rather than the 600px one below because the sidebar only stops
+     taking space in flow at 600px, which is what leaves 601–650px short. */
+  #pins-panel {
+    position: fixed;
+    top: 46px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+  }
   #call-body {
     flex-direction: column;
     padding: 0 10px 96px;

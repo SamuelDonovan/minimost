@@ -32,6 +32,7 @@ const APPLY_FNS = [
   "applyMessages",
   "applyTyping",
   "applyReadReceipts",
+  "applyPins",
   "applyScreenShares",
   "applyOnlineUsers",
   "applyDMs",
@@ -81,6 +82,13 @@ describe("connectEvents()", () => {
     connectEvents();
     lastStream().emit("messages", JSON.stringify([{ id: 1 }]));
     expect(applyMessages).toHaveBeenCalledWith([{ id: 1 }], "general");
+  });
+
+  test("routes a pins event with the stream's channel", () => {
+    global.channel = "general";
+    connectEvents();
+    lastStream().emit("pins", JSON.stringify([{ id: 7 }]));
+    expect(applyPins).toHaveBeenCalledWith([{ id: 7 }], "general");
   });
 
   test("routes a global event to its render function", () => {
