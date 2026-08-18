@@ -1,3 +1,11 @@
+# Hooks run at commit time only unless they say otherwise. Leaving `stages`
+# unset means *every* stage, which made a push re-run the entire commit-time
+# suite (pytest included, ~6min) on top of the Sonar scan. That kept the
+# pre-push hook busy for ~7m43s, and GitHub drops an idle SSH connection
+# somewhere between 5 and 7 minutes, so the pack upload failed after every
+# check had already reported green. sonar-local overrides this below.
+default_stages: [pre-commit]
+
 repos:
   - repo: local
     hooks:
